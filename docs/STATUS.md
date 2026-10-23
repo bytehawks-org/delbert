@@ -49,7 +49,7 @@ See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI only at mileston
 
 ## Next steps
 
-1. Frontend M1 onwards ([FRONTEND.md](FRONTEND.md)): read-only views (tenants, agents, policies, proxies, audit), then operations and governance. M0 is in `web/`.
+1. Frontend M2 onwards ([FRONTEND.md](FRONTEND.md)): operations (enrollment keys, secrets, artifacts, policy editor with validation), then governance. M0 and M1 (read-only views) are in `web/`.
 2. Per-action audit events from agents (also through the proxy); Kubernetes Operator; Windows agent study.
 3. Proxy config file and live branch check of proxy renewal; SSH remotes and signed commits for content sources; Entra ID check against a real tenant.
 

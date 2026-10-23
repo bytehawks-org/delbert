@@ -213,4 +213,4 @@ Back up first. Start the new Core image: it applies the pending migrations on st
 
 - No published images, packages or Helm chart; the agent binary is dynamically linked against the glibc of the build image (Debian 13), so older hosts may need a build on an older base.
 - Kubernetes manifests not yet run on a cluster; no PodDisruptionBudget, NetworkPolicy or HA of NATS and the Core (see [ROADMAP.md](ROADMAP.md)).
-- The rest of the web UI (M1 onwards), the Kubernetes Operator, the Windows agent, per-action audit events from agents and the `command` resource are planned.
+- Editing in the web UI (M2 onwards), the Kubernetes Operator, the Windows agent, per-action audit events from agents and the `command` resource are planned.

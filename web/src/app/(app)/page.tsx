@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { core } from "@/lib/core";
 import { requireMe } from "@/lib/me";
@@ -65,7 +66,11 @@ export default async function Dashboard() {
               <dd className="text-2xl font-semibold text-ok">{compliant}</dd>
             </div>
           </dl>
-          <p className="mt-4 text-sm text-muted">{t("m1")}</p>
+          <p className="mt-4 text-sm">
+            <Link href="/agents?state=attention" className="text-accent hover:underline">
+              {agents.length - compliant} {t("needsAttention")} →
+            </Link>
+          </p>
         </section>
       </div>
     </div>

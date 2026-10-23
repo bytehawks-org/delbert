@@ -66,7 +66,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Core API for the UI: audit search/export, pagination and filters, policy versions/diff/schema, tenant delete, SSE status | to-do | 2026-10-23 |
 | Frontend design ([FRONTEND.md](FRONTEND.md)) | complete | 2026-10-23 |
 | Frontend M0 (Next.js BFF, generated client, login with MFA/SSO, i18n, theme, Playwright) | complete | 2026-10-23 |
-| Frontend M1-M4 (read-only, operations, governance, hardening) | to-do | 2026-10-23 |
+| Frontend M1 (read-only: dashboard, tenants, agents, policies and versions, proxies, audit) | complete | 2026-10-23 |
+| Frontend M2-M4 (operations, governance, hardening) | to-do | 2026-10-23 |
 | `git init`, CI pipeline (tests, clippy, image build) | to-do | 2026-10-23 |
 | Audit browse and export API (`GET /v1/audit`, `/v1/audit/export`) | complete | 2026-10-23 |
 | Artifact storage outside PostgreSQL: local directory and S3-compatible (Garage verified) | complete | 2026-10-23 |

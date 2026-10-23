@@ -1759,26 +1759,26 @@ export interface operations {
     };
     list: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query?: {
                 /** @description Only events of this tenant (by name). */
-                tenant: string | null;
-                actor: string | null;
+                tenant?: string;
+                actor?: string;
                 /** @description Exact action, or a prefix when it ends with `*` (`policy.*`). */
-                action: string | null;
-                target: string | null;
+                action?: string;
+                target?: string;
                 /** @description `ok`, `denied`, ... */
-                outcome: string | null;
+                outcome?: string;
                 /** @description Unix seconds, inclusive. */
-                from: number | null;
+                from?: number;
                 /** @description Unix seconds, exclusive. */
-                to: number | null;
+                to?: number;
                 /** @description Keyset cursor: only events with a lower sequence number (the `next` of the previous page). */
-                before: number | null;
+                before?: number;
                 /** @description Page size (default 100, at most 1000). */
-                limit: number | null;
+                limit?: number;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -1808,26 +1808,26 @@ export interface operations {
     };
     export: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query?: {
                 /** @description Only events of this tenant (by name). */
-                tenant: string | null;
-                actor: string | null;
+                tenant?: string;
+                actor?: string;
                 /** @description Exact action, or a prefix when it ends with `*` (`policy.*`). */
-                action: string | null;
-                target: string | null;
+                action?: string;
+                target?: string;
                 /** @description `ok`, `denied`, ... */
-                outcome: string | null;
+                outcome?: string;
                 /** @description Unix seconds, inclusive. */
-                from: number | null;
+                from?: number;
                 /** @description Unix seconds, exclusive. */
-                to: number | null;
+                to?: number;
                 /** @description Keyset cursor: only events with a lower sequence number (the `next` of the previous page). */
-                before: number | null;
+                before?: number;
                 /** @description Page size (default 100, at most 1000). */
-                limit: number | null;
+                limit?: number;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

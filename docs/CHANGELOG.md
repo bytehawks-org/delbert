@@ -8,6 +8,9 @@
 ### Authentication hardening
 - Migration `0013`. Cookie sessions with CSRF (double-submit token stored hashed), idle timeout, listable/revocable sessions; TOTP MFA with sealed secret, replay protection and recovery codes, optional or mandatory (`DELBERT_MFA_REQUIRED`); login throttling per (user, address), address and user; admin reset of MFA/sessions. Tests in `tests/auth.rs`. See [API.md](API.md).
 
+### Frontend M1
+- Read-only views in `web/`: tenants (agents, policies, artifacts, secret names), fleet-wide agent list with state filter and agent detail, policy source with versions and approval history, proxies, audit browser (filters, keyset paging, hash-chain status). Sections a role does not cover show a notice instead of failing. Two more Playwright scenarios (administrator browse; tenant-scoped viewer). Core fix: the audit filters were documented as path parameters in the OpenAPI document; they are now query parameters (`web/openapi.json` regenerated).
+
 ### Frontend M0
 - `web/`: Next.js 16.4.2 (App Router), React 19.3.1, Tailwind CSS 4.3.3, TypeScript 5.9; backend-for-frontend with the Core session in an encrypted HttpOnly SameSite=Strict cookie (`jose`), `Origin` check on mutations, per-request CSP nonce in `proxy.ts`, login with MFA and SSO callback/exchange, IT/EN (`next-intl`), light/dark/system theme, typed client generated from the Core's OpenAPI (`delbert-core --print-openapi`), dashboard skeleton. Containerfile target `web`, `web` service in `compose.e2e.yaml`, `deploy/kubernetes/web.yaml`. Playwright tests (security headers, login/logout, language/theme, cross-origin refusal, TOTP login) pass against the live stack. See [web/README.md](../web/README.md).
 

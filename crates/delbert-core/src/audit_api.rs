@@ -26,6 +26,7 @@ const MAX_LIMIT: i64 = 1000;
 const EXPORT_CHUNK: i64 = 1000;
 
 #[derive(Deserialize, IntoParams, Clone, Default)]
+#[into_params(parameter_in = Query)]
 pub struct AuditQuery {
     /// Only events of this tenant (by name).
     pub tenant: Option<String>,

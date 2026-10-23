@@ -1,7 +1,20 @@
 {
-  "app": { "name": "Delbert", "tagline": "Configuration management and state enforcement" },
-  "common": { "loading": "Loading…", "skipToContent": "Skip to content" },
-  "nav": { "dashboard": "Dashboard", "main": "Main navigation" },
+  "app": {
+    "name": "Delbert",
+    "tagline": "Configuration management and state enforcement"
+  },
+  "common": {
+    "loading": "Loading…",
+    "skipToContent": "Skip to content"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "main": "Main navigation",
+    "tenants": "Tenants",
+    "agents": "Agents",
+    "proxies": "Proxies",
+    "audit": "Audit"
+  },
   "header": {
     "signedInAs": "Signed in as {name}",
     "logout": "Sign out",
@@ -49,6 +62,103 @@
     "agents": "Agents",
     "compliant": "compliant",
     "drifted": "drifted or unknown",
-    "m1": "Agents, policies, proxies and the audit trail arrive in the next milestone."
+    "needsAttention": "need attention"
+  },
+  "tenants": {
+    "title": "Tenants",
+    "subtitle": "Customers or environments you can reach. Each has its own agents, policies, secrets and artifacts.",
+    "name": "Name",
+    "agents": "Agents",
+    "policies": "Policies",
+    "none": "No tenants.",
+    "denied": "Your roles do not cover this section.",
+    "activeVersion": "Live version",
+    "latestVersion": "Latest version",
+    "inactive": "not live",
+    "noPolicies": "No policies.",
+    "artifacts": "Artifacts",
+    "noArtifacts": "No artifacts.",
+    "version": "Version",
+    "size": "Size (bytes)",
+    "secrets": "Secrets",
+    "secretsNote": "Names only: values are write-only and never shown.",
+    "noSecrets": "No secrets.",
+    "updatedBy": "Updated by",
+    "updatedAt": "Updated"
+  },
+  "agents": {
+    "title": "Agents",
+    "subtitle": "{count, plural, one {# agent} other {# agents}} across the tenants you can reach.",
+    "detail": "Detail",
+    "tenant": "Tenant",
+    "name": "Name",
+    "state": "State",
+    "groups": "Groups",
+    "version": "Policy version",
+    "proxy": "Proxy",
+    "reportedAt": "Last report",
+    "none": "No agents.",
+    "unknown": "no report",
+    "compliant": "compliant",
+    "drifted": "drifted",
+    "applied": "applied {version}",
+    "filters": "Filter agents",
+    "filterAll": "All",
+    "filterAttention": "Needs attention",
+    "direct": "direct",
+    "effectiveVersion": "Effective policy version",
+    "reportedVersion": "Version applied by the agent"
+  },
+  "policies": {
+    "denied": "Your roles do not cover this policy.",
+    "none": "No version to show.",
+    "source": "Policy source, version {version}",
+    "versions": "Versions",
+    "version": "Version",
+    "state": "State",
+    "by": "Author",
+    "live": "live",
+    "history": "History of version {version}"
+  },
+  "proxies": {
+    "title": "Proxies",
+    "subtitle": "Branch-office relays. Agents behind a proxy reach the Core through it.",
+    "name": "Name",
+    "state": "State",
+    "dns": "DNS names",
+    "agents": "Agents",
+    "lastSeen": "Last seen",
+    "enrolled": "enrolled",
+    "pending": "waiting for enrollment",
+    "none": "No proxies.",
+    "denied": "Your roles do not cover proxies."
+  },
+  "audit": {
+    "title": "Audit trail",
+    "subtitle": "Append-only and hash-chained. Newest first.",
+    "denied": "Your roles do not cover the audit trail.",
+    "chain": "Chain integrity",
+    "chainOk": "intact",
+    "chainBroken": "broken",
+    "chainEvents": "{count, plural, one {# event verified} other {# events verified}}",
+    "chainFirstBad": "first inconsistent event: #{seq}",
+    "filters": "Filter events",
+    "filter": {
+      "tenant": "Tenant",
+      "actor": "Actor",
+      "action": "Action",
+      "target": "Target",
+      "outcome": "Outcome"
+    },
+    "apply": "Filter",
+    "reset": "Reset",
+    "when": "When (UTC)",
+    "actor": "Actor",
+    "actionCol": "Action",
+    "targetCol": "Target",
+    "tenantCol": "Tenant",
+    "outcomeCol": "Outcome",
+    "none": "No events match.",
+    "older": "Older events"
   }
 }

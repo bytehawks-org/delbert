@@ -1,7 +1,20 @@
 {
-  "app": { "name": "Delbert", "tagline": "Gestione della configurazione e applicazione dello stato" },
-  "common": { "loading": "Caricamento…", "skipToContent": "Vai al contenuto" },
-  "nav": { "dashboard": "Cruscotto", "main": "Navigazione principale" },
+  "app": {
+    "name": "Delbert",
+    "tagline": "Gestione della configurazione e applicazione dello stato"
+  },
+  "common": {
+    "loading": "Caricamento…",
+    "skipToContent": "Vai al contenuto"
+  },
+  "nav": {
+    "dashboard": "Cruscotto",
+    "main": "Navigazione principale",
+    "tenants": "Tenant",
+    "agents": "Agent",
+    "proxies": "Proxy",
+    "audit": "Audit"
+  },
   "header": {
     "signedInAs": "Accesso come {name}",
     "logout": "Esci",
@@ -49,6 +62,103 @@
     "agents": "Agent",
     "compliant": "conformi",
     "drifted": "non conformi o sconosciuti",
-    "m1": "Agent, policy, proxy e registro di audit arrivano nella prossima milestone."
+    "needsAttention": "da controllare"
+  },
+  "tenants": {
+    "title": "Tenant",
+    "subtitle": "Clienti o ambienti raggiungibili. Ognuno ha i propri agent, policy, segreti e artefatti.",
+    "name": "Nome",
+    "agents": "Agent",
+    "policies": "Policy",
+    "none": "Nessun tenant.",
+    "denied": "I tuoi ruoli non coprono questa sezione.",
+    "activeVersion": "Versione attiva",
+    "latestVersion": "Ultima versione",
+    "inactive": "non attiva",
+    "noPolicies": "Nessuna policy.",
+    "artifacts": "Artefatti",
+    "noArtifacts": "Nessun artefatto.",
+    "version": "Versione",
+    "size": "Dimensione (byte)",
+    "secrets": "Segreti",
+    "secretsNote": "Solo i nomi: i valori sono in sola scrittura e non vengono mai mostrati.",
+    "noSecrets": "Nessun segreto.",
+    "updatedBy": "Aggiornato da",
+    "updatedAt": "Aggiornato"
+  },
+  "agents": {
+    "title": "Agent",
+    "subtitle": "{count, plural, one {# agent} other {# agent}} nei tenant raggiungibili.",
+    "detail": "Dettaglio",
+    "tenant": "Tenant",
+    "name": "Nome",
+    "state": "Stato",
+    "groups": "Gruppi",
+    "version": "Versione policy",
+    "proxy": "Proxy",
+    "reportedAt": "Ultimo report",
+    "none": "Nessun agent.",
+    "unknown": "nessun report",
+    "compliant": "conforme",
+    "drifted": "difforme",
+    "applied": "applicata {version}",
+    "filters": "Filtra gli agent",
+    "filterAll": "Tutti",
+    "filterAttention": "Da controllare",
+    "direct": "diretto",
+    "effectiveVersion": "Versione effettiva della policy",
+    "reportedVersion": "Versione applicata dall'agent"
+  },
+  "policies": {
+    "denied": "I tuoi ruoli non coprono questa policy.",
+    "none": "Nessuna versione da mostrare.",
+    "source": "Sorgente della policy, versione {version}",
+    "versions": "Versioni",
+    "version": "Versione",
+    "state": "Stato",
+    "by": "Autore",
+    "live": "attiva",
+    "history": "Storico della versione {version}"
+  },
+  "proxies": {
+    "title": "Proxy",
+    "subtitle": "Relay delle sedi remote. Gli agent dietro un proxy raggiungono il Core attraverso di esso.",
+    "name": "Nome",
+    "state": "Stato",
+    "dns": "Nomi DNS",
+    "agents": "Agent",
+    "lastSeen": "Ultimo contatto",
+    "enrolled": "registrato",
+    "pending": "in attesa di registrazione",
+    "none": "Nessun proxy.",
+    "denied": "I tuoi ruoli non coprono i proxy."
+  },
+  "audit": {
+    "title": "Registro di audit",
+    "subtitle": "Append-only e con catena di hash. Dal più recente.",
+    "denied": "I tuoi ruoli non coprono il registro di audit.",
+    "chain": "Integrità della catena",
+    "chainOk": "integra",
+    "chainBroken": "interrotta",
+    "chainEvents": "{count, plural, one {# evento verificato} other {# eventi verificati}}",
+    "chainFirstBad": "primo evento incoerente: #{seq}",
+    "filters": "Filtra gli eventi",
+    "filter": {
+      "tenant": "Tenant",
+      "actor": "Attore",
+      "action": "Azione",
+      "target": "Destinazione",
+      "outcome": "Esito"
+    },
+    "apply": "Filtra",
+    "reset": "Azzera",
+    "when": "Quando (UTC)",
+    "actor": "Attore",
+    "actionCol": "Azione",
+    "targetCol": "Destinazione",
+    "tenantCol": "Tenant",
+    "outcomeCol": "Esito",
+    "none": "Nessun evento corrisponde.",
+    "older": "Eventi precedenti"
   }
 }

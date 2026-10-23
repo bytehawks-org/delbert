@@ -1,5 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { LocaleSwitcher } from "@/components/locale-switcher";
+import { MainNav } from "@/components/nav";
 import { ThemeToggle } from "@/components/theme";
 import { requireMe } from "@/lib/me";
 
@@ -15,11 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-6">
             <span className="text-lg font-semibold tracking-tight">{t("app.name")}</span>
-            <nav aria-label={t("nav.main")} className="flex gap-4 text-sm">
-              <a href="/" aria-current="page" className="font-medium text-accent">
-                {t("nav.dashboard")}
-              </a>
-            </nav>
+            <MainNav />
           </div>
           <div className="flex flex-wrap items-center gap-4">
             <LocaleSwitcher />
