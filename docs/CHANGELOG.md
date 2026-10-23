@@ -5,6 +5,9 @@
 ### Design
 - Added `RBAC.md` (tenant-scoped roles, `resource:action` permissions, built-in roles, optional per-tenant four-eyes approval with an active-version pointer, cookie sessions, MFA, throttling, API tokens, audit browsing), `FRONTEND.md` (Next.js + Tailwind with a backend-for-frontend, generated client, screens, milestones) and `STATUS.md` (state, how to run, decisions, limits, working agreements for the next session).
 
+### Artifact storage
+- Artifact content no longer lives in PostgreSQL (migration `0012` drops `artifacts.content`; development databases must re-upload). New `blobs` module on `object_store` 0.12 (Apache-2.0): local directory or S3-compatible, keys `artifacts/<tenant id>/<sha256>` (content-addressed, idempotent). Content is written before its metadata row; downloads are streamed and hashed on the way out, so a corrupted object aborts instead of being served; the limit rises to 64 MiB. Verified against Garage v2.1.0 in Podman (`tests/blobs.rs` runs against S3 when `S3_TEST_*` is set). See [API.md](API.md).
+
 ### Audit API
 - `GET /v1/audit` (filters, keyset pagination, tenant scoping) and `GET /v1/audit/export` (NDJSON with hashes, self-audited). Tests in `tests/audit_api.rs`.
 - New crate `delbert-fs`: the crash-safe write helper is now shared; proxy queue/allow-list/caches, agent identity files, artifact staging and the PKI CLI use it too. Private keys are no longer briefly readable (created 0600 instead of chmod after write).

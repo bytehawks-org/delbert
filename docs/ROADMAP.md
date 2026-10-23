@@ -69,3 +69,6 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Frontend M1-M4 (read-only, operations, governance, hardening) | to-do | 2026-10-23 |
 | `git init`, CI pipeline (tests, clippy, image build) | to-do | 2026-10-23 |
 | Audit browse and export API (`GET /v1/audit`, `/v1/audit/export`) | complete | 2026-10-23 |
+| Artifact storage outside PostgreSQL: local directory and S3-compatible (Garage verified) | complete | 2026-10-23 |
+| Artifacts: streaming upload (multipart/range) beyond 64 MiB, garbage collection of unreferenced objects, retention | to-do | 2026-10-23 |
+| Artifacts: lifecycle with Garage in compose and Kubernetes manifests | to-do | 2026-10-23 |

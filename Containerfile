@@ -16,6 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10001 --no-create-home delbert
 COPY --from=build /out/delbert-core /usr/local/bin/delbert-core
+# Local artifact store (DELBERT_ARTIFACT_STORE=local); mount a volume here, or use s3.
+RUN mkdir -p /var/lib/delbert-core/artifacts && chown -R 10001 /var/lib/delbert-core
+ENV DELBERT_ARTIFACT_DIR=/var/lib/delbert-core/artifacts
+VOLUME /var/lib/delbert-core
 USER 10001
 EXPOSE 8080
 ENTRYPOINT ["delbert-core"]

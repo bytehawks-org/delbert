@@ -121,7 +121,33 @@ async fn main() -> anyhow::Result<()> {
     };
     let agent_cert_days = var("DELBERT_AGENT_CERT_DAYS").map(|v| v.parse()).transpose().context("DELBERT_AGENT_CERT_DAYS")?.unwrap_or(365);
 
-    let state = AppState { pool, signer: load_signer()?, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true") };
+    let blobs = match var("DELBERT_ARTIFACT_STORE").as_deref().unwrap_or("local") {
+        "local" => {
+            let dir = var("DELBERT_ARTIFACT_DIR").unwrap_or_else(|| "./data/artifacts".into());
+            tracing::info!("artifact store: local directory {dir}");
+            delbert_core::blobs::Blobs::local(dir)?
+        }
+        "s3" => {
+            let need = |k: &str| var(k).with_context(|| format!("{k} is required with DELBERT_ARTIFACT_STORE=s3"));
+            let secret_key = match var("DELBERT_S3_SECRET_KEY_FILE") {
+                Some(f) => fs::read_to_string(&f).with_context(|| format!("reading {f}"))?.trim().to_owned(),
+                None => need("DELBERT_S3_SECRET_KEY")?,
+            };
+            let blobs = delbert_core::blobs::Blobs::s3(delbert_core::blobs::S3Config {
+                endpoint: need("DELBERT_S3_ENDPOINT")?,
+                bucket: need("DELBERT_S3_BUCKET")?,
+                region: var("DELBERT_S3_REGION").unwrap_or_else(|| "garage".into()),
+                access_key: need("DELBERT_S3_ACCESS_KEY")?,
+                secret_key,
+            })?;
+            blobs.probe().await.context("the S3 artifact store is not reachable with these settings")?;
+            tracing::info!("artifact store: S3-compatible");
+            blobs
+        }
+        other => anyhow::bail!("DELBERT_ARTIFACT_STORE must be 'local' or 's3', not '{other}'"),
+    };
+
+    let state = AppState { pool, signer: load_signer()?, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs };
     if state.bus.is_some() {
         tokio::spawn(delbert_core::bus::serve(state.clone()));
     }

@@ -68,6 +68,7 @@ services:
     volumes:
       - ./dev/k1.key:/keys/k1.key:ro,Z
       - ./dev/pki:/pki:ro,Z
+      - core-data:/var/lib/delbert-core
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_healthy }
@@ -100,3 +101,6 @@ services:
     volumes:
       - ./dev/pki/ca.pem:/etc/delbert/ca.pem:ro,Z
     depends_on: [core]
+
+volumes:
+  core-data:

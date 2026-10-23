@@ -14,6 +14,8 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 | `DELBERT_NATS_ISSUER_SEED_FILE`, `NATS_AUTH_USER`, `NATS_AUTH_PASSWORD` | Enable the NATS authorization callout (seed from `delbert-pki nats-issuer`; the Core's callout service connects with this static user) |
 | `DELBERT_NATS_ACCOUNT`, `DELBERT_NATS_SESSION_SECS` | NATS account the clients are placed in (default `APP`) and how long a connection may live before it must be authorized again (default 900) |
 | `DELBERT_PUBLIC_NATS_URL` | NATS URL handed to agents at enrollment |
+| `DELBERT_ARTIFACT_STORE` | Where artifact content lives: `local` (default; directory `DELBERT_ARTIFACT_DIR`, default `./data/artifacts`, `/var/lib/delbert-core/artifacts` in the image) or `s3` (any S3-compatible service, e.g. Garage). PostgreSQL only keeps metadata |
+| `DELBERT_S3_ENDPOINT`, `DELBERT_S3_BUCKET`, `DELBERT_S3_REGION` (default `garage`), `DELBERT_S3_ACCESS_KEY`, `DELBERT_S3_SECRET_KEY` or `DELBERT_S3_SECRET_KEY_FILE` | S3 settings (path-style addressing; `http://` endpoints are accepted for development only). The Core checks reachability and credentials at startup |
 | `DELBERT_APPROVAL_DEFAULT` | `true` = new tenants require policy approval (default `false`) |
 | `DATABASE_URL` | PostgreSQL connection of the runtime role (member of `delbert_app`, see Database) (required) |
 | `DATABASE_MIGRATE_URL` | Schema owner connection used only to run migrations; defaults to `DATABASE_URL` |
@@ -53,7 +55,7 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 | `POST /v1/proxy/enroll-agent`, `GET /v1/proxy/{site}/artifacts/{tenant}/{name}` | proxy proof | Used by a proxy for its agents: enrollment relay, artifact fetch |
 | `POST /v1/enroll` | the enrollment key | Agent enrollment: CSR + age public key in, certificate + CA + signing keys out |
 | `PUT/GET /v1/tenants/{t}/secrets[/{name}]`, `DELETE` | `secrets:write` / `secrets:read` | Tenant secrets: write-only, the list shows names only |
-| `PUT /v1/tenants/{t}/artifacts/{name}`, `GET .../artifacts` | `artifacts:write` / `artifacts:read` | Immutable artifact versions (16 MiB at most); same content is a no-op |
+| `PUT /v1/tenants/{t}/artifacts/{name}`, `GET .../artifacts` | `artifacts:write` / `artifacts:read` | Immutable artifact versions (64 MiB at most); same content is a no-op |
 | `GET /v1/agent/{t}/{a}/artifacts/{name}?sha256=` | agent proof | Download by hash, authenticated with `Authorization: Delbert-Agent <base64 proof>` |
 | `POST/GET /v1/tenants/{t}/policies` | `policies:write` / `policies:read` | Upload a policy YAML (`{"yaml": "..."}`, new immutable version) / list |
 | `GET/DELETE /v1/tenants/{t}/policies/{name}` | `policies:read` / `policies:write` | Latest version / deactivate (soft delete, history kept) |

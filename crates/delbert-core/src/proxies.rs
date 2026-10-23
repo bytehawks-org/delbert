@@ -242,14 +242,7 @@ pub async fn proxy_artifact(
         return Err(unauthorized());
     }
     let tid = tenant_id(&st.pool, &tenant).await?;
-    let content: Option<Vec<u8>> = sqlx::query_scalar("SELECT content FROM artifacts WHERE tenant_id = $1 AND name = $2 AND sha256 = decode($3, 'hex') LIMIT 1")
-        .bind(tid)
-        .bind(&name)
-        .bind(&q.sha256)
-        .fetch_optional(&st.pool)
-        .await
-        .map_err(|_| ApiError(StatusCode::NOT_FOUND, "artifact not found".into()))?;
-    Ok(([(header::CONTENT_TYPE, "application/octet-stream")], content.ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "artifact not found".into()))?))
+    crate::artifacts::content_response(&st, tid, &name, &q.sha256).await
 }
 
 // --- NATS: relay, allow-list, reports ---------------------------------------------------------------------

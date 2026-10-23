@@ -4,16 +4,18 @@
 //! HTTPS, authenticated with a proof of their identity key, and refuse anything
 //! whose hash differs.
 //!
-//! Content lives in PostgreSQL for now (16 MiB at most); an S3-compatible store
-//! (Garage) is planned for larger files.
+//! Content lives in the object store (`blobs.rs`: local directory or S3-compatible), never in
+//! PostgreSQL, which keeps only name, version, size and hash. Uploads are buffered in memory
+//! (`MAX_ARTIFACT_BYTES`); downloads are streamed.
 
 use axum::{
     Json,
-    body::Bytes,
+    body::{Body, Bytes},
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode, header},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
+use futures::StreamExt;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use delbert_pki::authn::{self, Proof};
 use serde::{Deserialize, Serialize};
@@ -27,7 +29,7 @@ use crate::{
     auth::Authn,
 };
 
-pub const MAX_ARTIFACT_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_ARTIFACT_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Serialize, ToSchema)]
 pub struct ArtifactOut {
@@ -44,7 +46,7 @@ pub struct ArtifactOut {
 pub async fn put_artifact(State(st): State<AppState>, Authn(user): Authn, Path((tenant, name)): Path<(String, String)>, body: Bytes) -> ApiResult<(StatusCode, Json<ArtifactOut>)> {
     check_name(&name, "artifact")?;
     if body.len() > MAX_ARTIFACT_BYTES {
-        return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE, "artifact too large (16 MiB at most)".into()));
+        return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE, "artifact too large (64 MiB at most)".into()));
     }
     let tid = user.tenant(&st.pool, &tenant, "artifacts:write").await?;
     let sha: Vec<u8> = Sha256::digest(&body).to_vec();
@@ -59,13 +61,15 @@ pub async fn put_artifact(State(st): State<AppState>, Authn(user): Authn, Path((
         }
     }
     let version = latest.map_or(1, |(v, _)| v + 1);
-    sqlx::query("INSERT INTO artifacts (tenant_id, name, version, sha256, size, content, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+    // Content first: an object without a row is harmless (and the same hash is idempotent),
+    // a row without its object would break downloads.
+    st.blobs.put(tid, &hex(&sha), body.clone()).await.map_err(blob_error)?;
+    sqlx::query("INSERT INTO artifacts (tenant_id, name, version, sha256, size, created_by) VALUES ($1, $2, $3, $4, $5, $6)")
         .bind(tid)
         .bind(&name)
         .bind(version)
         .bind(&sha)
         .bind(body.len() as i64)
-        .bind(body.as_ref())
         .bind(&user.username)
         .execute(&mut *tx)
         .await?;
@@ -110,7 +114,7 @@ pub async fn agent_download(
     Path((tenant, agent, name)): Path<(String, String, String)>,
     Query(q): Query<ByHash>,
     headers: HeaderMap,
-) -> ApiResult<impl IntoResponse> {
+) -> ApiResult<Response> {
     let unauthorized = || ApiError(StatusCode::UNAUTHORIZED, "invalid agent proof".into());
     let proof: Proof = headers
         .get(header::AUTHORIZATION)
@@ -125,13 +129,41 @@ pub async fn agent_download(
     }
     let _ = authn::MAX_SKEW_SECS; // documented window, enforced in `proven`
     let tid = tenant_id(&st.pool, &tenant).await?;
-    let content: Option<Vec<u8>> = sqlx::query_scalar("SELECT content FROM artifacts WHERE tenant_id = $1 AND name = $2 AND sha256 = decode($3, 'hex') LIMIT 1")
-        .bind(tid)
-        .bind(&name)
-        .bind(&q.sha256)
-        .fetch_optional(&st.pool)
-        .await
-        .map_err(|_| ApiError(StatusCode::NOT_FOUND, "artifact not found".into()))?;
-    let content = content.ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "artifact not found".into()))?;
-    Ok(([(header::CONTENT_TYPE, "application/octet-stream")], content))
+    content_response(&st, tid, &name, &q.sha256).await
+}
+
+pub(crate) fn blob_error(e: crate::blobs::BlobError) -> ApiError {
+    tracing::error!("artifact store: {e}");
+    ApiError(StatusCode::BAD_GATEWAY, "artifact store unavailable".into())
+}
+
+/// Stream the version of `name` with this hash, if the tenant has it. The bytes are hashed on
+/// the way out: a corrupted object aborts the response instead of being served as valid.
+pub(crate) async fn content_response(st: &AppState, tid: sqlx::types::Uuid, name: &str, sha256: &str) -> ApiResult<Response> {
+    let not_found = || ApiError(StatusCode::NOT_FOUND, "artifact not found".into());
+    if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(not_found());
+    }
+    let sha256 = sha256.to_ascii_lowercase();
+    let known: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM artifacts WHERE tenant_id = $1 AND name = $2 AND sha256 = decode($3, 'hex'))").bind(tid).bind(name).bind(&sha256).fetch_one(&st.pool).await?;
+    if !known {
+        return Err(not_found());
+    }
+    let stream = st.blobs.get(tid, &sha256).await.map_err(blob_error)?.ok_or_else(|| {
+        tracing::error!("artifact {sha256} is registered but missing from the store");
+        not_found()
+    })?;
+    let hasher = std::sync::Arc::new(std::sync::Mutex::new(Sha256::new()));
+    let h = hasher.clone();
+    let body = stream
+        .map(move |chunk| {
+            let chunk = chunk.map_err(std::io::Error::other)?;
+            h.lock().expect("hasher lock").update(&chunk);
+            Ok::<_, std::io::Error>(chunk)
+        })
+        .chain(futures::stream::once(async move {
+            let got = hex(&hasher.lock().expect("hasher lock").clone().finalize());
+            if got == sha256 { Ok(bytes::Bytes::new()) } else { Err(std::io::Error::other("stored content does not match its hash")) }
+        }));
+    Ok(([(header::CONTENT_TYPE, "application/octet-stream")], Body::from_stream(body)).into_response())
 }

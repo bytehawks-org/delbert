@@ -94,3 +94,21 @@ Scenarios run on 2026-10-23 (all passed):
 Findings from this run, fixed: the NATS clients took 91 s to notice a dead link (default ping settings) - proxy and agent now ping every 10 s, recovery takes about 9 s; an agent that started before the proxy was ready waited a whole interval - without a policy it now retries after 5 s (a fresh branch converges in 7 s instead of 40 s).
 
 Not covered: proxy certificate renewal, several proxies sharing agents, a proxy restart under load.
+
+## Artifact store against Garage (S3)
+
+The S3 backend is exercised with a single-node Garage (v2.1.0) on the compose network. Throwaway setup; remove only what you created (`podman rm -f`, `podman volume rm`, never `prune`):
+
+```sh
+podman volume create delbert_garage_test
+podman run -d --name delbert_garage_test --network delbert_default \
+  -v ./garage.toml:/etc/garage.toml:Z -v delbert_garage_test:/var/lib/garage:Z docker.io/dxflrs/garage:v2.1.0
+G="podman exec delbert_garage_test /garage"
+$G status                                   # note the node id
+$G layout assign -z dc1 -c 1G <node id> && $G layout apply --version 1
+$G bucket create delbert-artifacts
+$G key create delbert                       # prints the key id and secret
+$G bucket allow --read --write --owner delbert-artifacts --key delbert
+```
+
+`garage.toml`: `db_engine = "sqlite"`, `replication_factor = 1`, `rpc_secret` (64 hex), `[s3_api] s3_region = "garage"`, `api_bind_addr = "[::]:3900"`. Then run `cargo test -p delbert-core --test blobs` with `S3_TEST_ENDPOINT=http://delbert_garage_test:3900`, `S3_TEST_BUCKET`, `S3_TEST_ACCESS_KEY` and `S3_TEST_SECRET_KEY`. In production the Core uses `DELBERT_ARTIFACT_STORE=s3` with the same settings (`DELBERT_S3_*`).

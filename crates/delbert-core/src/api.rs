@@ -44,6 +44,8 @@ pub struct AppState {
     pub agent_cert_days: i64,
     /// NATS URL handed to agents at enrollment.
     pub public_nats_url: Option<String>,
+    /// Where artifact content lives (local directory or S3-compatible).
+    pub blobs: crate::blobs::Blobs,
     /// Whether new tenants require policy approval (`DELBERT_APPROVAL_DEFAULT`).
     pub approval_default: bool,
 }
