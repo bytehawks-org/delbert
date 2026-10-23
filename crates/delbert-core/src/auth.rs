@@ -34,7 +34,7 @@ use crate::{
 };
 
 /// Every permission a role may contain (besides `*` and `resource:*`).
-pub const PERMISSIONS: [&str; 26] = [
+pub const PERMISSIONS: [&str; 28] = [
     "tenants:read", "tenants:create", "tenants:delete", "tenants:settings",
     "agents:read", "agents:write", "agents:enroll", "agents:preview",
     "policies:read", "policies:write", "policies:approve",
@@ -45,11 +45,13 @@ pub const PERMISSIONS: [&str; 26] = [
     "roles:read", "roles:write", "roles:assign",
     "audit:read", "audit:export", "audit:verify",
     "tokens:manage",
+    "sso:read", "sso:write",
 ];
 
 /// Permissions that only a global assignment can grant (they are not about one tenant).
-pub const GLOBAL_ONLY: [&str; 9] =
-    ["tenants:create", "tenants:delete", "proxies:read", "proxies:write", "users:read", "users:write", "roles:read", "roles:write", "audit:verify"];
+pub const GLOBAL_ONLY: [&str; 11] = [
+    "tenants:create", "tenants:delete", "proxies:read", "proxies:write", "users:read", "users:write", "roles:read", "roles:write", "audit:verify", "sso:read", "sso:write",
+];
 
 /// `*`, the exact permission or `resource:*`.
 fn grants(set: &HashSet<String>, permission: &str) -> bool {
@@ -194,15 +196,15 @@ async fn authenticate(parts: &Parts, st: &AppState, need: Need) -> Result<Curren
     if token.starts_with(TOKEN_PREFIX) {
         return if need == Need::Full { authenticate_token(st, &hash).await } else { Err(ApiError(StatusCode::FORBIDDEN, "API tokens cannot be used here".into())) };
     }
-    let row: Option<(Uuid, String, Uuid, bool, Option<Vec<u8>>, bool)> = sqlx::query_as(
-        "SELECT u.id, u.username, s.id, s.mfa_ok, s.csrf_hash, u.totp_enabled FROM sessions s JOIN users u ON u.id = s.user_id \
+    let row: Option<(Uuid, String, Uuid, bool, Option<Vec<u8>>, bool, bool)> = sqlx::query_as(
+        "SELECT u.id, u.username, s.id, s.mfa_ok, s.csrf_hash, u.totp_enabled, u.sso_provider_id IS NOT NULL FROM sessions s JOIN users u ON u.id = s.user_id \
          WHERE s.token_hash = $1 AND s.expires_at > now() AND s.last_seen > now() - make_interval(mins => $2) AND u.active",
     )
     .bind(&hash)
     .bind(IDLE_MINUTES)
     .fetch_optional(&st.pool)
     .await?;
-    let (id, username, session_id, mfa_ok, csrf_hash, totp_enabled) = row.ok_or_else(unauthorized)?;
+    let (id, username, session_id, mfa_ok, csrf_hash, totp_enabled, is_sso) = row.ok_or_else(unauthorized)?;
 
     // A pending session is good for nothing but the second factor; a full one is not for that.
     if (need == Need::Pending) == mfa_ok {
@@ -220,7 +222,8 @@ async fn authenticate(parts: &Parts, st: &AppState, need: Need) -> Result<Curren
     let (global, scoped) = load_permissions(&st.pool, id).await?;
     let user = CurrentUser { id, username, global, scoped, session_id, via_token: false, mfa_enrolled: totp_enabled, token_hash: hash };
 
-    let must_have_mfa = match st.auth.mfa {
+    // Single-sign-on users authenticate (and do MFA) at their identity provider.
+    let must_have_mfa = !is_sso && match st.auth.mfa {
         MfaPolicy::Optional => false,
         MfaPolicy::Admins => !user.global.is_empty(),
         MfaPolicy::All => true,
@@ -470,6 +473,16 @@ pub async fn login(State(st): State<AppState>, ClientIp(ip): ClientIp, headers: 
         return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid credentials".into()));
     }
     let (user_id, mfa) = row.map(|r| (r.0, r.3)).expect("checked above");
+    // With SSO in charge, only break-glass administrators (users with a global role) keep a local password.
+    if st.auth.local_login == crate::api::LocalLogin::Admins {
+        let admin: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM user_roles WHERE user_id = $1 AND tenant_id IS NULL)").bind(user_id).fetch_one(&st.pool).await?;
+        if !admin {
+            record_attempt(&st.pool, &body.username, &ip, false).await?;
+            audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &body.username, action: "auth.login", target: None, outcome: "denied", details: json!({ "ip": ip, "reason": "local login is limited to administrators" }) }).await?;
+            tx.commit().await?;
+            return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid credentials".into()));
+        }
+    }
     // With MFA the password alone only opens a short pending session; the attempt counts as
     // successful only after the second factor.
     if !mfa {
@@ -657,7 +670,7 @@ async fn assign(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, user_id: Uuid, a
 }
 
 async fn set_assignments(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, user_id: Uuid, assignments: &[Assignment]) -> ApiResult<()> {
-    sqlx::query("DELETE FROM user_roles WHERE user_id = $1").bind(user_id).execute(&mut **tx).await?;
+    sqlx::query("DELETE FROM user_roles WHERE user_id = $1 AND source = 'manual'").bind(user_id).execute(&mut **tx).await?;
     for a in assignments {
         assign(tx, user_id, a).await?;
     }
@@ -899,7 +912,7 @@ pub async fn set_tenant_assignments(
             return Err(ApiError(StatusCode::FORBIDDEN, format!("cannot grant '{p}': you do not hold it in this tenant")));
         }
     }
-    sqlx::query("DELETE FROM user_roles WHERE user_id = $1 AND tenant_id = $2").bind(uid).bind(tid).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM user_roles WHERE user_id = $1 AND tenant_id = $2 AND source = 'manual'").bind(uid).bind(tid).execute(&mut *tx).await?;
     for role in &body.roles {
         assign(&mut tx, uid, &Assignment { role: role.clone(), tenant: Some(tenant.clone()) }).await?;
     }
@@ -1155,4 +1168,36 @@ pub async fn revoke_token(State(st): State<AppState>, Authn(user): Authn, Path(i
     audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &user.username, action: "token.revoke", target: Some(&name), outcome: "ok", details: json!({}) }).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Open a full session for a user who authenticated elsewhere (single sign-on). Returns the
+/// bearer token, its expiry and the CSRF token when a cookie session is wanted.
+pub(crate) async fn open_session(st: &AppState, user_id: Uuid, ip: &str, user_agent: Option<String>, cookie: bool) -> ApiResult<LoginResponse> {
+    let token = random_token();
+    let csrf = cookie.then(random_token);
+    let expires_at: i64 = sqlx::query_scalar(
+        "INSERT INTO sessions (token_hash, user_id, expires_at, csrf_hash, mfa_ok, ip, user_agent) \
+         VALUES ($1, $2, now() + make_interval(hours => $3), $4, true, $5, $6) RETURNING (EXTRACT(EPOCH FROM expires_at))::bigint",
+    )
+    .bind(token_hash(&token))
+    .bind(user_id)
+    .bind(SESSION_HOURS as i32)
+    .bind(csrf.as_deref().map(token_hash))
+    .bind(ip)
+    .bind(user_agent)
+    .fetch_one(&st.pool)
+    .await?;
+    Ok(LoginResponse { token, expires_at, mfa_required: false, csrf_token: csrf })
+}
+
+pub(crate) fn set_session_cookie(st: &AppState, resp: &mut axum::response::Response, token: &str) {
+    resp.headers_mut().insert(header::SET_COOKIE, cookie_header(st, token, SESSION_HOURS * 3600));
+}
+
+pub(crate) fn hash_token(token: &str) -> Vec<u8> {
+    token_hash(token)
+}
+
+pub(crate) fn new_token() -> String {
+    random_token()
 }

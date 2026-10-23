@@ -190,6 +190,13 @@ async fn main() -> anyhow::Result<()> {
             "all" => delbert_core::api::MfaPolicy::All,
             other => anyhow::bail!("DELBERT_MFA_REQUIRED must be none, admins or all, not '{other}'"),
         },
+        public_url: var("DELBERT_PUBLIC_URL"),
+        ui_url: var("DELBERT_UI_URL"),
+        local_login: match var("DELBERT_LOCAL_LOGIN").as_deref().unwrap_or("all") {
+            "all" => delbert_core::api::LocalLogin::All,
+            "admins" => delbert_core::api::LocalLogin::Admins,
+            other => anyhow::bail!("DELBERT_LOCAL_LOGIN must be all or admins, not '{other}'"),
+        },
     } };
     if state.bus.is_some() {
         tokio::spawn(delbert_core::bus::serve(state.clone()));

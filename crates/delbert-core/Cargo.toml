@@ -34,6 +34,7 @@ sqlx.workspace = true
 thiserror.workspace = true
 bytes = "1"
 hmac = "0.12"
+openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
 toml = "0.9"
 sha1 = "0.10"
 data-encoding = "2"
@@ -46,5 +47,6 @@ age.workspace = true
 x509-parser = "0.18"
 http-body-util = "0.1"
 tempfile.workspace = true
+p256 = { version = "0.13", features = ["ecdsa"] }
 rand_core.workspace = true
 tower = { version = "0.5", features = ["util"] }

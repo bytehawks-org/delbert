@@ -8,6 +8,9 @@
 ### Authentication hardening
 - Migration `0013`. Cookie sessions with CSRF (double-submit token stored hashed), idle timeout, listable/revocable sessions; TOTP MFA with sealed secret, replay protection and recovery codes, optional or mandatory (`DELBERT_MFA_REQUIRED`); login throttling per (user, address), address and user; admin reset of MFA/sessions. Tests in `tests/auth.rs`. See [API.md](API.md).
 
+### Single sign-on (OIDC)
+- Migration `0015`; providers, group mappings, authorization code + PKCE through `openidconnect` 4 (rustls, no OpenSSL), one-time code exchange, no account takeover by name, `DELBERT_LOCAL_LOGIN=admins` for break-glass. Tested with a mock provider (`tests/sso.rs`: PKCE, nonce, replay, mapping, local-name clash) and end to end against Keycloak 26.4 in Podman.
+
 ### Configuration file and content sources
 - Core configuration file (TOML) layered under the environment, strict keys, `--check-config` (`config.rs`, example in `deploy/`). Proxy to follow.
 - Design of repository-backed content (`CONTENT.md`): `directory` and `git` sources (local Forgejo/Gitea component or a public remote), snapshot validation, diffs, versions, ownership.

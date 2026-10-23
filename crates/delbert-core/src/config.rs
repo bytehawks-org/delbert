@@ -16,6 +16,8 @@ pub const KEYS: &[(&str, &str, bool)] = &[
     ("server.api_docs", "DELBERT_API_DOCS", false),
     ("server.trust_forwarded", "DELBERT_TRUST_FORWARDED", false),
     ("server.cookie_insecure", "DELBERT_COOKIE_INSECURE", false),
+    ("server.public_url", "DELBERT_PUBLIC_URL", false),
+    ("server.ui_url", "DELBERT_UI_URL", false),
     ("database.url", "DATABASE_URL", true),
     ("database.migrate_url", "DATABASE_MIGRATE_URL", true),
     ("bootstrap.admin_password", "DELBERT_BOOTSTRAP_ADMIN_PASSWORD", true),
@@ -41,6 +43,7 @@ pub const KEYS: &[(&str, &str, bool)] = &[
     ("policy.conflict_strategy", "DELBERT_CONFLICT_STRATEGY", false),
     ("policy.approval_default", "DELBERT_APPROVAL_DEFAULT", false),
     ("auth.mfa_required", "DELBERT_MFA_REQUIRED", false),
+    ("auth.local_login", "DELBERT_LOCAL_LOGIN", false),
     ("artifacts.store", "DELBERT_ARTIFACT_STORE", false),
     ("artifacts.dir", "DELBERT_ARTIFACT_DIR", false),
     ("artifacts.s3_endpoint", "DELBERT_S3_ENDPOINT", false),
@@ -109,6 +112,7 @@ impl Config {
         };
         one_of("DELBERT_MFA_REQUIRED", &["none", "admins", "all"], &mut out);
         one_of("DELBERT_ARTIFACT_STORE", &["local", "s3"], &mut out);
+        one_of("DELBERT_LOCAL_LOGIN", &["all", "admins"], &mut out);
         if self.get("DATABASE_URL").is_none() {
             out.push("database.url (DATABASE_URL) is required".into());
         }

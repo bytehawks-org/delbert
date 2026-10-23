@@ -60,6 +60,19 @@ pub struct AuthConfig {
     pub trust_forwarded: bool,
     /// Who must have a second factor.
     pub mfa: MfaPolicy,
+    /// Public base URL of the Core (`https://delbert.example.com`): single sign-on redirect URIs.
+    pub public_url: Option<String>,
+    /// Where the browser lands after single sign-on, with `?code=` to exchange for a session.
+    pub ui_url: Option<String>,
+    /// Who may still use a local password.
+    pub local_login: LocalLogin,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocalLogin {
+    All,
+    /// Only users with a global role (break-glass administrators); everybody else signs in via SSO.
+    Admins,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,7 +87,7 @@ pub enum MfaPolicy {
 
 impl Default for AuthConfig {
     fn default() -> Self {
-        AuthConfig { cookie_secure: true, trust_forwarded: false, mfa: MfaPolicy::Optional }
+        AuthConfig { cookie_secure: true, trust_forwarded: false, mfa: MfaPolicy::Optional, public_url: None, ui_url: None, local_login: LocalLogin::All }
     }
 }
 
@@ -126,6 +139,13 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/auth/logout", post(auth::logout))
         .route("/v1/auth/mfa", post(auth::complete_mfa))
+        .route("/v1/auth/sso/providers", get(crate::sso::public_providers))
+        .route("/v1/auth/sso/exchange", post(crate::sso::exchange))
+        .route("/v1/auth/sso/{provider}/login", get(crate::sso::start))
+        .route("/v1/auth/sso/{provider}/callback", get(crate::sso::callback))
+        .route("/v1/sso/providers", get(crate::sso::list_providers).post(crate::sso::create_provider))
+        .route("/v1/sso/providers/{name}", get(crate::sso::get_provider).put(crate::sso::update_provider).delete(crate::sso::delete_provider))
+        .route("/v1/sso/providers/{name}/test", post(crate::sso::test_provider))
         .route("/v1/me/mfa/enroll", post(auth::mfa_enroll))
         .route("/v1/me/mfa/confirm", post(auth::mfa_confirm))
         .route("/v1/me/mfa/disable", post(auth::mfa_disable))

@@ -95,6 +95,10 @@ Findings from this run, fixed: the NATS clients took 91 s to notice a dead link 
 
 Not covered: proxy certificate renewal, several proxies sharing agents, a proxy restart under load.
 
+## SSO against Keycloak
+
+`tests/sso.rs` uses a mock OIDC provider. The real thing was checked with Keycloak 26.4 (`start-dev`) next to a Core on the compose network: realm `delbert`, confidential client `delbert` with redirect URI `http://core:8080/v1/auth/sso/keycloak/callback`, a protocol mapper `oidc-group-membership-mapper` (claim `groups`, full path off), group `ops`, user `alice` in it (all with `kcadm.sh`). In Delbert: `POST /v1/sso/providers` with issuer `http://keycloak:8080/realms/delbert` and the mapping `ops → operator@acme` (needs `DELBERT_COOKIE_INSECURE=true` for the plain-HTTP issuer), then a scripted browser: `GET .../login`, follow to the Keycloak form, post the credentials, follow the callback and `POST /v1/auth/sso/exchange`. Remove the containers you started with `podman rm -f`, never `prune`.
+
 ## Artifact store against Garage (S3)
 
 The S3 backend is exercised with a single-node Garage (v2.1.0) on the compose network. Throwaway setup; remove only what you created (`podman rm -f`, `podman volume rm`, never `prune`):

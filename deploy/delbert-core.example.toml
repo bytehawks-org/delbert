@@ -9,6 +9,8 @@ tls_cert_file = "/etc/delbert/core.pem"
 tls_key_file = "/etc/delbert/core.key"
 # api_docs = false              # hide Swagger UI and /openapi.json in production
 # trust_forwarded = true        # only behind a trusted reverse proxy
+# public_url = "https://delbert.example.com"   # needed for SSO redirect URIs
+# ui_url = "https://delbert.example.com/"      # where the browser lands after SSO
 
 [database]
 # Runtime role (cannot rewrite the audit trail) and, separately, the schema owner for migrations.
@@ -39,6 +41,7 @@ approval_default = false          # true: new tenants require policy approval
 
 [auth]
 mfa_required = "admins"           # none | admins | all
+# local_login = "admins"          # with SSO in charge: only break-glass administrators keep a password
 
 [artifacts]
 store = "local"                   # local | s3

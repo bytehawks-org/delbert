@@ -35,6 +35,8 @@ impl Modify for BearerAuth {
         api::create_policy, api::list_policies, api::get_policy, api::delete_policy,
         crate::approval::get_settings, crate::approval::put_settings, crate::approval::list_versions, crate::approval::get_version,
         crate::approval::submit, crate::approval::approve, crate::approval::reject, crate::approval::activate, crate::approval::rollback,
+        crate::sso::public_providers, crate::sso::start, crate::sso::callback, crate::sso::exchange,
+        crate::sso::list_providers, crate::sso::get_provider, crate::sso::create_provider, crate::sso::update_provider, crate::sso::delete_provider, crate::sso::test_provider,
         api::audit_verify, crate::audit_api::list, crate::audit_api::export,
         crate::secrets::put_secret, crate::secrets::list_secrets, crate::secrets::delete_secret,
         crate::artifacts::put_artifact, crate::artifacts::list_artifacts, crate::artifacts::agent_download,
@@ -45,7 +47,7 @@ impl Modify for BearerAuth {
     modifiers(&BearerAuth),
     tags(
         (name = "auth"), (name = "users"), (name = "roles"), (name = "tenants"),
-        (name = "agents"), (name = "enrollment"), (name = "proxies"), (name = "secrets"), (name = "artifacts"), (name = "policies"), (name = "audit"), (name = "system")
+        (name = "agents"), (name = "enrollment"), (name = "proxies"), (name = "secrets"), (name = "artifacts"), (name = "policies"), (name = "audit"), (name = "sso"), (name = "system")
     )
 )]
 pub struct ApiDoc;

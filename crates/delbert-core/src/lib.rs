@@ -14,6 +14,7 @@ pub mod openapi;
 pub mod proxies;
 pub mod totp;
 pub mod secrets;
+pub mod sso;
 pub mod bus;
 pub mod bus_auth;
 pub mod config;

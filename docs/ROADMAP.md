@@ -75,7 +75,9 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Auth hardening: cookie sessions + CSRF, TOTP MFA, login throttling (migration `0013`) | complete | 2026-10-23 |
 | Auth: scoped API tokens (migration `0014`) | complete | 2026-10-23 |
 | Auth: service accounts (users of kind `service` without password) | to-do | 2026-10-23 |
-| Auth: SSO via OIDC (Keycloak, Microsoft Entra ID, ...): authorization code + PKCE, group/claim to (role, scope) mapping, break-glass local account; LDAP/AD later | to-do | 2026-10-23 |
+| Auth: SSO via OIDC (authorization code + PKCE, group to (role, scope) mapping, break-glass; verified with Keycloak) | complete | 2026-10-23 |
+| Auth: SSO with Microsoft Entra ID verified against a real tenant; groups overage; SAML; LDAP/AD | to-do | 2026-10-23 |
+| SSO: assignments show their source (manual / sso:<provider>) in the API and the UI | to-do | 2026-10-23 |
 | Auth: captcha (Turnstile) after repeated failures, WebAuthn, password breach check | to-do | 2026-10-23 |
 | Configuration file for the Core (TOML, env override, strict keys, `--check-config`) | complete | 2026-10-23 |
 | Configuration file for the Proxy (clap reads only the environment; needs a shared loader) | to-do | 2026-10-23 |
