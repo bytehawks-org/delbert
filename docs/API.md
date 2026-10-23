@@ -14,6 +14,7 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 | `DELBERT_NATS_ISSUER_SEED_FILE`, `NATS_AUTH_USER`, `NATS_AUTH_PASSWORD` | Enable the NATS authorization callout (seed from `delbert-pki nats-issuer`; the Core's callout service connects with this static user) |
 | `DELBERT_NATS_ACCOUNT`, `DELBERT_NATS_SESSION_SECS` | NATS account the clients are placed in (default `APP`) and how long a connection may live before it must be authorized again (default 900) |
 | `DELBERT_PUBLIC_NATS_URL` | NATS URL handed to agents at enrollment |
+| `DELBERT_APPROVAL_DEFAULT` | `true` = new tenants require policy approval (default `false`) |
 | `DATABASE_URL` | PostgreSQL connection of the runtime role (member of `delbert_app`, see Database) (required) |
 | `DATABASE_MIGRATE_URL` | Schema owner connection used only to run migrations; defaults to `DATABASE_URL` |
 | `DELBERT_BOOTSTRAP_ADMIN_PASSWORD` | Creates user `admin` (role `admin`) when the database has no users; at least 12 characters |
