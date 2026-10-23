@@ -57,6 +57,18 @@ impl Client {
         (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
     }
 
+    /// Raw response body as text (for non-JSON endpoints).
+    pub async fn text(&self, method: &str, uri: &str) -> (StatusCode, String) {
+        let mut req = Request::builder().method(method).uri(uri);
+        if let Some(t) = &self.token {
+            req = req.header(header::AUTHORIZATION, format!("Bearer {t}"));
+        }
+        let resp = self.app.clone().oneshot(req.body(Body::empty()).unwrap()).await.unwrap();
+        let status = resp.status();
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        (status, String::from_utf8_lossy(&bytes).into_owned())
+    }
+
     pub async fn login(&self, username: &str, password: &str) -> (StatusCode, Value) {
         Client { token: None, ..self.clone() }.call("POST", "/v1/auth/login", Some(json!({ "username": username, "password": password }))).await
     }

@@ -7,6 +7,7 @@ pub mod api;
 pub mod approval;
 pub mod artifacts;
 pub mod audit;
+pub mod audit_api;
 pub mod auth;
 pub mod openapi;
 pub mod proxies;

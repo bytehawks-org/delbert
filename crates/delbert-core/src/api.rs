@@ -132,6 +132,8 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/reject", post(approval::reject))
         .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/activate", post(approval::activate))
         .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/rollback", post(approval::rollback))
+        .route("/v1/audit", get(crate::audit_api::list))
+        .route("/v1/audit/export", get(crate::audit_api::export))
         .route("/v1/audit/verify", get(audit_verify));
     if state.docs {
         app = app.merge(crate::openapi::docs());

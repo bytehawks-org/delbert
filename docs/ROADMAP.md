@@ -68,3 +68,4 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Frontend M0 skeleton (Next.js BFF, generated client, login, i18n, Playwright smoke) | to-do | 2026-10-23 |
 | Frontend M1-M4 (read-only, operations, governance, hardening) | to-do | 2026-10-23 |
 | `git init`, CI pipeline (tests, clippy, image build) | to-do | 2026-10-23 |
+| Audit browse and export API (`GET /v1/audit`, `/v1/audit/export`) | complete | 2026-10-23 |

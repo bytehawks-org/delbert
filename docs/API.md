@@ -62,6 +62,8 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 | `POST .../versions/{v}/submit`, `.../activate` | `policies:write` | Put a draft up for review / make an approved version live |
 | `POST .../versions/{v}/approve`, `.../reject`, `.../rollback` | `policies:approve` | Review (the author and the submitter cannot, nobody is exempt; reject needs a `comment`) / go back to a previously approved older version |
 | `GET /v1/tenants/{t}/agents/{a}/effective` | `agents:preview` | Compile the policies targeting the agent, resolve conflicts, sign: `{token, version, conflicts}` |
+| `GET /v1/audit` | `audit:read` (scoped) | Browse the trail, newest first. Filters `tenant`, `actor`, `action` (`policy.*` = prefix), `target`, `outcome`, `from`, `to` (unix seconds); keyset paging with `limit` (max 1000) and `before` = the `next` of the previous page. A tenant-scoped grant sees only its tenants' events |
+| `GET /v1/audit/export` | `audit:export` (scoped) | Same filters, NDJSON oldest first, with `occurred_at_micros`, `prev_hash` and `hash` to recompute the chain offline / feed a SIEM. The export records itself (`audit.export`) |
 | `GET /v1/audit/verify` | `audit:verify` (global) | Recompute the audit hash chain: `{events, first_bad}` |
 
 Errors are `{"error": "..."}` with 401, 403, 404, 409 (duplicate or in use), 422 (invalid input) or 503.

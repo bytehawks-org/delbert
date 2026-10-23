@@ -34,7 +34,7 @@ impl Modify for BearerAuth {
         api::create_policy, api::list_policies, api::get_policy, api::delete_policy,
         crate::approval::get_settings, crate::approval::put_settings, crate::approval::list_versions, crate::approval::get_version,
         crate::approval::submit, crate::approval::approve, crate::approval::reject, crate::approval::activate, crate::approval::rollback,
-        api::audit_verify,
+        api::audit_verify, crate::audit_api::list, crate::audit_api::export,
         crate::secrets::put_secret, crate::secrets::list_secrets, crate::secrets::delete_secret,
         crate::artifacts::put_artifact, crate::artifacts::list_artifacts, crate::artifacts::agent_download,
         crate::proxies::create_proxy, crate::proxies::list_proxies, crate::proxies::delete_proxy, crate::proxies::enroll_proxy,

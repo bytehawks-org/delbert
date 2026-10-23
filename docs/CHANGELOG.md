@@ -5,6 +5,10 @@
 ### Design
 - Added `RBAC.md` (tenant-scoped roles, `resource:action` permissions, built-in roles, optional per-tenant four-eyes approval with an active-version pointer, cookie sessions, MFA, throttling, API tokens, audit browsing), `FRONTEND.md` (Next.js + Tailwind with a backend-for-frontend, generated client, screens, milestones) and `STATUS.md` (state, how to run, decisions, limits, working agreements for the next session).
 
+### Audit API
+- `GET /v1/audit` (filters, keyset pagination, tenant scoping) and `GET /v1/audit/export` (NDJSON with hashes, self-audited). Tests in `tests/audit_api.rs`.
+- New crate `delbert-fs`: the crash-safe write helper is now shared; proxy queue/allow-list/caches, agent identity files, artifact staging and the PKI CLI use it too. Private keys are no longer briefly readable (created 0600 instead of chmod after write).
+
 ### Hardening
 - `unsafe_code = "forbid"` workspace-wide (there was no `unsafe` already; now enforced by the compiler).
 - Crash-safe file replacement for `file`/`copy`/`template`/`line_in_file` and the agent state/cache: the temporary file used a fixed, predictable name, was created with default permissions (secret content readable before `chmod`) and was never fsynced. Now `fsutil::replace_file`: unique name created exclusively with mode 0600, `fchown` then `fchmod`, `fsync`, atomic `rename`, directory `fsync`, stale temporaries swept.

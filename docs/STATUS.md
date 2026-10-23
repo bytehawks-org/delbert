@@ -13,8 +13,9 @@ Snapshot for whoever continues the work (written 2026-10-23). Design lives in [A
 | `delbert-core` | REST API (Axum, OpenAPI/Swagger), PostgreSQL via SQLx, NATS bus, callout | users/RBAC v1, tenants, agents, policies, compiler + conflicts, signing, secrets, artifacts, enrollment, proxies, audit hash chain |
 | `delbert-agent` | engine + daemon + CLI | local `check/apply`, signed `check-signed/apply-signed`, `enroll`, `run` |
 | `delbert-proxy` | branch-office relay | see [PROXY.md](PROXY.md) |
+| `delbert-fs` | crash-safe file replacement shared by agent, proxy and PKI CLI | `unsafe` is forbidden workspace-wide |
 
-81 automated tests (unit, PostgreSQL integration, NATS). End-to-end scenarios in containers are recorded in [TESTING.md](TESTING.md). Nothing is deployed anywhere; there is no git repository yet (`git init` is the first thing to do).
+81 automated tests (unit, PostgreSQL integration, NATS). End-to-end scenarios in containers are recorded in [TESTING.md](TESTING.md). Nothing is deployed anywhere; the repository is `bytehawks-org/delbert` on GitHub (`main`).
 
 ## Run it
 
