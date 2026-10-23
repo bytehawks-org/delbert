@@ -193,7 +193,7 @@ Restore: 1) recreate PostgreSQL and restore the dump, 2) restore the key files a
 
 ## Upgrades
 
-Back up first. Start the new Core image: it applies the pending migrations on start (forward only; there is no automatic downgrade). While the project is below 1.0 read [CHANGELOG.md](CHANGELOG.md) before each upgrade: some changes are breaking (for example migration `0012` moved artifact content out of the database). Upgrade the Core before the proxies and agents; agents are tolerant of newer Cores, and a new agent binary can be rolled out through your usual package or configuration tooling.
+Back up first. Start the new Core image: it applies the pending migrations on start (forward only; there is no automatic downgrade). While the project is below 1.0 read [CHANGELOG.md](CHANGELOG.md) before each upgrade: some changes are breaking (for example migration `0012` moved artifact content out of the database). Upgrade the Core first, then proxies and agents (wire compatibility between versions is not guaranteed yet: the CHANGELOG says when it breaks); a new agent binary can be rolled out through your usual package or configuration tooling.
 
 ## Troubleshooting
 
