@@ -57,9 +57,16 @@ fn unauthorized() -> ApiError {
 /// The proxy's id if `proof` shows that proxy `site` made `body`. Also records that it was seen.
 async fn proxy_proven(state: &AppState, site: &str, kind: &str, body: &Value, proof: Option<&Proof>) -> Option<Uuid> {
     let proof = proof?;
-    let row: Option<(Uuid, Option<Vec<u8>>)> = sqlx::query_as("SELECT id, public_key FROM proxies WHERE name = $1").bind(site).fetch_optional(&state.pool).await.ok()?;
-    let (id, Some(key)) = row? else { return None };
-    authn::check(&key, kind, "proxy", site, body, proof, now()).ok()?;
+    let row: Option<(Uuid, Option<Vec<u8>>, Option<Vec<u8>>)> = sqlx::query_as("SELECT id, public_key, previous_public_key FROM proxies WHERE name = $1").bind(site).fetch_optional(&state.pool).await.ok()?;
+    let (id, Some(key), previous) = row? else { return None };
+    // The current key, or the previous one while a renewal is being confirmed.
+    if authn::check(&key, kind, "proxy", site, body, proof, now()).is_ok() {
+        if previous.is_some() {
+            let _ = sqlx::query("UPDATE proxies SET previous_public_key = NULL WHERE id = $1").bind(id).execute(&state.pool).await;
+        }
+    } else {
+        authn::check(previous.as_deref()?, kind, "proxy", site, body, proof, now()).ok()?;
+    }
     let _ = sqlx::query("UPDATE proxies SET last_seen_at = now() WHERE id = $1").bind(id).execute(&state.pool).await;
     Some(id)
 }
@@ -206,6 +213,35 @@ pub async fn enroll_proxy(State(st): State<AppState>, Json(req): Json<ProxyEnrol
     tx.commit().await?;
     let signing_keys = st.signer.iter().map(|s| format!("{} {}", s.kid(), s.public_key_b64())).collect();
     Ok(Json(ProxyEnrollResponse { cert_pem: signed.cert_pem, ca_pem: ca.cert_pem().to_owned(), signing_keys, nats_url: st.public_nats_url.clone(), dns_names }))
+}
+
+// --- certificate renewal -------------------------------------------------------------------------------
+
+#[derive(Serialize, ToSchema)]
+pub struct ProxyRenewResponse {
+    pub cert_pem: String,
+    pub ca_pem: String,
+}
+
+/// A proxy renews its certificate with a NEW key: the request carries a CSR and is signed with the
+/// current key. The previous key stays valid until the new one has been used.
+#[utoipa::path(post, path = "/v1/proxies/{site}/renew", tag = "proxies", params(("site" = String, Path), ("Authorization" = String, Header, description = "Delbert-Proxy <base64 {site, proof}>")),
+    responses((status = 200, body = ProxyRenewResponse), (status = 401), (status = 422)))]
+pub async fn renew_proxy(State(st): State<AppState>, Path(site): Path<String>, headers: HeaderMap, Json(body): Json<Value>) -> ApiResult<Json<ProxyRenewResponse>> {
+    let ca = st.pki.as_ref().ok_or_else(|| ApiError(StatusCode::SERVICE_UNAVAILABLE, "no CA configured".into()))?;
+    let (header_site, proof) = proxy_header(&headers).ok_or_else(unauthorized)?;
+    if header_site != site {
+        return Err(unauthorized());
+    }
+    let id = proxy_proven(&st, &site, "proxy-renew", &body, Some(&proof)).await.ok_or_else(unauthorized)?;
+    let csr = body["csr_pem"].as_str().ok_or_else(|| ApiError(StatusCode::UNPROCESSABLE_ENTITY, "csr_pem is required".into()))?;
+    let dns_names: Vec<String> = sqlx::query_scalar("SELECT dns_names FROM proxies WHERE id = $1").bind(id).fetch_one(&st.pool).await?;
+    let signed = ca.sign_proxy_csr(csr, &site, &dns_names, st.agent_cert_days).map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("invalid CSR: {e}")))?;
+    let mut tx = st.pool.begin().await?;
+    sqlx::query("UPDATE proxies SET previous_public_key = public_key, public_key = $2 WHERE id = $1").bind(id).bind(&signed.public_key).execute(&mut *tx).await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &format!("proxy:{site}"), action: "proxy.renew", target: Some(&site), outcome: "ok", details: json!({}) }).await?;
+    tx.commit().await?;
+    Ok(Json(ProxyRenewResponse { cert_pem: signed.cert_pem, ca_pem: ca.cert_pem().to_owned() }))
 }
 
 // --- agents enrolling through a proxy ---------------------------------------------------------------

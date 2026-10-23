@@ -48,8 +48,9 @@ pub async fn decide(pool: &PgPool, cert_pem: &str) -> Decision {
             Some(site) => {
                 // The certificate must carry the key enrolled for this proxy.
                 let key = delbert_pki::public_key_from_pem(cert_pem).ok_or(DENIED)?;
-                let enrolled: Option<Option<Vec<u8>>> = sqlx::query_scalar("SELECT public_key FROM proxies WHERE name = $1").bind(site).fetch_optional(pool).await.map_err(db_error)?;
-                if enrolled.flatten().as_deref() == Some(key.as_slice()) { Ok((format!("proxy:{site}"), proxy_hub_permissions(site))) } else { Err(DENIED) }
+                let row: Option<(Option<Vec<u8>>, Option<Vec<u8>>)> = sqlx::query_as("SELECT public_key, previous_public_key FROM proxies WHERE name = $1").bind(site).fetch_optional(pool).await.map_err(db_error)?;
+                let (current, previous) = row.ok_or(DENIED)?;
+                if current.as_deref() == Some(key.as_slice()) || previous.as_deref() == Some(key.as_slice()) { Ok((format!("proxy:{site}"), proxy_hub_permissions(site))) } else { Err(DENIED) }
             }
             None => Err(DENIED),
         },

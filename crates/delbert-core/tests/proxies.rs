@@ -228,3 +228,40 @@ async fn relay_allow_list_reports_and_artifacts_over_nats(pool: PgPool) {
     assert_eq!(fetch(&rival, "branch", "acme", &real).await.0, StatusCode::UNAUTHORIZED, "proof from another proxy");
     assert_eq!(fetch(&branch, "rival", "acme", &real).await.0, StatusCode::UNAUTHORIZED, "path names another proxy");
 }
+
+#[sqlx::test]
+async fn proxy_renews_its_certificate_with_a_new_key(pool: PgPool) {
+    let admin = admin_client(state(pool.clone(), vec![Strategy::Error], None)).await;
+    admin.call("POST", "/v1/tenants", Some(json!({ "name": "acme" }))).await;
+    let old = enroll_proxy(&admin, "branch").await;
+    let anon = Client { token: None, ..admin.clone() };
+    let renew = |site: &str, header: String, body: Value| {
+        let anon = anon.clone();
+        let uri = format!("/v1/proxies/{site}/renew");
+        async move { admin_raw_json(&anon, "POST", &uri, vec![("authorization", header)], &body).await }
+    };
+
+    // Authenticated with the current key, for this proxy only, and bound to the request kind.
+    let (new_key, csr) = delbert_pki::new_identity("branch").unwrap();
+    let body = json!({ "csr_pem": csr });
+    assert_eq!(renew("branch", "Delbert-Proxy bogus".into(), body.clone()).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(renew("branch", old.header("proxy-artifact", &body), body.clone()).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(renew("other", old.header("proxy-renew", &body), body.clone()).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(renew("branch", old.header("proxy-renew", &json!({ "csr_pem": "garbage" })), json!({ "csr_pem": "garbage" })).await.0, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, renewed) = renew("branch", old.header("proxy-renew", &body), body.clone()).await;
+    assert_eq!(s, StatusCode::OK, "{renewed}");
+    let new_cert = renewed["cert_pem"].as_str().unwrap().to_owned();
+    assert_eq!(delbert_pki::identity_from_pem(&new_cert).unwrap(), delbert_pki::CertIdentity::Component { name: "proxy:branch".into() });
+
+    // Both certificates work for NATS until the new key has been used; then only the new one.
+    assert!(bus_auth::decide(&pool, &old.cert_pem).await.is_ok());
+    assert!(bus_auth::decide(&pool, &new_cert).await.is_ok());
+    let new = common::EnrolledProxy { site: "branch".into(), key_pem: new_key, cert_pem: new_cert.clone() };
+    let probe = format!("/v1/proxy/branch/artifacts/acme/x?sha256={}", "00".repeat(32));
+    let (s, _) = admin_raw_json(&anon, "GET", &probe, vec![("authorization", new.header("proxy-artifact", &Value::String(format!("acme:x:{}", "00".repeat(32)))))], &Value::Null).await;
+    assert_eq!(s, StatusCode::NOT_FOUND, "authenticated with the new key (the artifact does not exist)");
+    assert!(bus_auth::decide(&pool, &old.cert_pem).await.is_err(), "the old key is retired once the new one is seen");
+    assert!(bus_auth::decide(&pool, &new_cert).await.is_ok());
+    let (_, trail) = admin.call("GET", "/v1/audit?action=proxy.renew", None).await;
+    assert_eq!(trail["events"].as_array().unwrap().len(), 1);
+}

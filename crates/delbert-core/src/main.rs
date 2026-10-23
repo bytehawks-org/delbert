@@ -146,7 +146,13 @@ async fn main() -> anyhow::Result<()> {
         Some(path) => {
             let text = fs::read_to_string(&path).with_context(|| format!("reading {path}"))?;
             let key = <age::x25519::Identity as std::str::FromStr>::from_str(text.trim()).map_err(|e| anyhow::anyhow!("invalid secrets key: {e}"))?;
-            Some(Arc::new(key))
+            // Keys of a rotation in progress: still readable, no longer used for sealing.
+            let mut old = Vec::new();
+            for p in var("DELBERT_SECRETS_OLD_KEY_FILES").iter().flat_map(|v| v.split(',')).map(str::trim).filter(|p| !p.is_empty()) {
+                let t = fs::read_to_string(p).with_context(|| format!("reading {p}"))?;
+                old.push(<age::x25519::Identity as std::str::FromStr>::from_str(t.trim()).map_err(|e| anyhow::anyhow!("invalid old secrets key {p}: {e}"))?);
+            }
+            Some(Arc::new(delbert_core::secrets::SecretsKeys::new(key, old)))
         }
         None => {
             tracing::warn!("DELBERT_SECRETS_KEY_FILE not set: the secret store is disabled");

@@ -37,6 +37,7 @@ pub const KEYS: &[(&str, &str, bool)] = &[
     ("pki.ca_key_file", "DELBERT_CA_KEY_FILE", false),
     ("pki.agent_cert_days", "DELBERT_AGENT_CERT_DAYS", false),
     ("pki.secrets_key_file", "DELBERT_SECRETS_KEY_FILE", false),
+    ("pki.secrets_old_key_files", "DELBERT_SECRETS_OLD_KEY_FILES", false),
     ("policy.signing_key_file", "DELBERT_SIGNING_KEY_FILE", false),
     ("policy.signing_kid", "DELBERT_SIGNING_KID", false),
     ("policy.publish_keys", "DELBERT_SIGNING_PUBLISH_KEYS", false),
@@ -104,7 +105,11 @@ impl Config {
         let mut out = Vec::new();
         for (path, env, _) in KEYS {
             let Some(v) = self.get(env) else { continue };
-            if path.ends_with("_file") && !Path::new(&v).is_file() {
+            if path.ends_with("_files") {
+                for f in v.split(',').map(str::trim).filter(|f| !f.is_empty()).filter(|f| !Path::new(f).is_file()) {
+                    out.push(format!("{path} ({env}): file '{f}' not found"));
+                }
+            } else if path.ends_with("_file") && !Path::new(&v).is_file() {
                 out.push(format!("{path} ({env}): file '{v}' not found"));
             }
             if (path.ends_with("_secs") || path.ends_with("_days")) && v.parse::<u64>().is_err() {

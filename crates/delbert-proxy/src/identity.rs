@@ -55,6 +55,61 @@ impl Identity {
     }
 }
 
+/// Renew the certificate with a NEW key. The Core authenticates the request with the current key;
+/// the new files are written aside and moved into place (certificate last), so an interruption
+/// can be completed by [`recover`]. The caller must restart the proxy so that every connection
+/// and the HTTPS listener use the new certificate.
+pub async fn renew(id: &Identity) -> Result<()> {
+    let ca_pem = fs::read_to_string(id.path("ca.pem")).context("reading ca.pem")?;
+    let (key_pem, csr_pem) = delbert_pki::new_identity(&id.meta.site)?;
+    let body = json!({ "csr_pem": csr_pem });
+    let header = crate::hub::ProofMaker::new(id)?.header("proxy-renew", &body)?;
+    let client = reqwest::Client::builder().tls_certs_only([reqwest::Certificate::from_pem(ca_pem.as_bytes()).context("invalid CA file")?]).build()?;
+    let resp = client
+        .post(format!("{}/v1/proxies/{}/renew", id.meta.core_url, id.meta.site))
+        .header("authorization", header)
+        .json(&body)
+        .send()
+        .await
+        .context("cannot reach the Core")?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        bail!("renewal refused ({status}): {}", resp.text().await.unwrap_or_default());
+    }
+    #[derive(Deserialize)]
+    struct Renewed {
+        cert_pem: String,
+    }
+    let renewed: Renewed = resp.json().await.context("unexpected renewal response")?;
+    write_private(&id.path("key.pem.new"), &key_pem)?;
+    delbert_fs::write_public(&id.path("cert.pem.new"), renewed.cert_pem.as_bytes())?;
+    recover(&id.dir)
+}
+
+/// Finish a renewal that was interrupted between the two renames.
+pub fn recover(dir: &Path) -> Result<()> {
+    let (key_new, cert_new) = (dir.join("key.pem.new"), dir.join("cert.pem.new"));
+    if key_new.exists() && cert_new.exists() {
+        fs::rename(&key_new, dir.join("key.pem"))?;
+    }
+    if cert_new.exists() {
+        fs::rename(&cert_new, dir.join("cert.pem"))?;
+    }
+    let _ = fs::remove_file(&key_new); // a lone stale key is useless without its certificate
+    Ok(())
+}
+
+/// Should the certificate be renewed now? When less than a third of its lifetime is left (or
+/// `renew_before_secs`), and never within an hour of it being issued, so a threshold above the
+/// lifetime cannot cause a renewal loop.
+pub fn renewal_due(cert_pem: &str, now: i64, renew_before_secs: Option<i64>) -> bool {
+    let Ok((not_before, not_after)) = delbert_pki::cert_validity(cert_pem) else { return false };
+    if now - not_before < 3600 {
+        return false;
+    }
+    (not_after - now) < renew_before_secs.unwrap_or((not_after - not_before) / 3)
+}
+
 fn write_private(path: &Path, data: &str) -> Result<()> {
     Ok(delbert_fs::write_private(path, data.as_bytes())?)
 }
@@ -109,4 +164,45 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
     let meta = Meta { site: args.site, core_url: args.core_url.trim_end_matches('/').to_owned(), hub_nats_url: resp.nats_url };
     delbert_fs::write_public(&dir.join("meta.json"), serde_json::to_string_pretty(&meta)?.as_bytes())?; // last: marks the identity as complete
     Identity::load(dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_interrupted_renewal_is_completed_and_a_lone_key_is_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        fs::write(p.join("key.pem"), "old-key").unwrap();
+        fs::write(p.join("cert.pem"), "old-cert").unwrap();
+        // Crash after both files were written aside: both move into place.
+        fs::write(p.join("key.pem.new"), "new-key").unwrap();
+        fs::write(p.join("cert.pem.new"), "new-cert").unwrap();
+        recover(p).unwrap();
+        assert_eq!((fs::read_to_string(p.join("key.pem")).unwrap(), fs::read_to_string(p.join("cert.pem")).unwrap()), ("new-key".into(), "new-cert".into()));
+        // Crash after the key moved but before the certificate did: the certificate follows.
+        fs::write(p.join("cert.pem.new"), "newer-cert").unwrap();
+        recover(p).unwrap();
+        assert_eq!(fs::read_to_string(p.join("cert.pem")).unwrap(), "newer-cert");
+        // Crash before the certificate was written: the stale key is removed, the old pair stays.
+        fs::write(p.join("key.pem.new"), "orphan").unwrap();
+        recover(p).unwrap();
+        assert!(!p.join("key.pem.new").exists());
+        assert_eq!(fs::read_to_string(p.join("key.pem")).unwrap(), "new-key");
+    }
+
+    #[test]
+    fn renewal_is_due_late_in_the_life_and_never_right_after_issuing() {
+        let ca = delbert_pki::Ca::create("Test CA", 30).unwrap();
+        let (_, csr) = delbert_pki::new_identity("branch").unwrap();
+        let cert = ca.sign_proxy_csr(&csr, "branch", &["branch.example.com".into()], 30).unwrap().cert_pem;
+        let (not_before, not_after) = delbert_pki::cert_validity(&cert).unwrap();
+        let life = not_after - not_before;
+        assert!(!renewal_due(&cert, not_before + 600, None), "young certificate");
+        assert!(!renewal_due(&cert, not_before + life / 2, None), "more than a third left");
+        assert!(renewal_due(&cert, not_before + life * 3 / 4, None), "less than a third left");
+        assert!(!renewal_due(&cert, not_before + 600, Some(life * 10)), "a huge threshold must not renew right after issuing");
+        assert!(renewal_due(&cert, not_before + 7200, Some(life * 10)));
+    }
 }

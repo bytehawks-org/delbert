@@ -37,7 +37,7 @@ pub struct AppState {
     /// Serve `/openapi.json` and `/swagger-ui`.
     pub docs: bool,
     /// Core key that seals tenant secrets at rest; `None` disables the secret store.
-    pub secrets_key: Option<Arc<age::x25519::Identity>>,
+    pub secrets_key: Option<Arc<crate::secrets::SecretsKeys>>,
     /// Internal CA for enrollment; `None` disables enrollment.
     pub pki: Option<Arc<delbert_pki::Ca>>,
     /// Validity of agent certificates, in days.
@@ -194,9 +194,12 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/enroll", post(crate::enroll::enroll))
         .route("/v1/proxies", get(crate::proxies::list_proxies).post(crate::proxies::create_proxy))
         .route("/v1/proxies/enroll", post(crate::proxies::enroll_proxy))
+        .route("/v1/proxies/{site}/renew", post(crate::proxies::renew_proxy))
         .route("/v1/proxies/{name}", axum::routing::delete(crate::proxies::delete_proxy))
         .route("/v1/proxy/enroll-agent", post(crate::proxies::proxy_enroll_agent))
         .route("/v1/proxy/{site}/artifacts/{tenant}/{name}", get(crate::proxies::proxy_artifact))
+        .route("/v1/secrets/key", get(crate::secrets::key_status))
+        .route("/v1/secrets/reseal", post(crate::secrets::reseal))
         .route("/v1/tenants/{tenant}/secrets", get(crate::secrets::list_secrets))
         .route("/v1/tenants/{tenant}/secrets/{name}", put(crate::secrets::put_secret).delete(crate::secrets::delete_secret))
         .route("/v1/tenants/{tenant}/artifacts", get(crate::artifacts::list_artifacts))

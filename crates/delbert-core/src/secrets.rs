@@ -31,19 +31,105 @@ fn unavailable() -> ApiError {
     ApiError(StatusCode::SERVICE_UNAVAILABLE, "secret store not configured (DELBERT_SECRETS_KEY_FILE)".into())
 }
 
-/// Encrypt for storage with the Core key.
-pub fn seal(core_key: &age::x25519::Identity, value: &[u8]) -> Result<Vec<u8>, ApiError> {
-    age::encrypt(&core_key.to_public(), value).map_err(|e| {
+/// The Core's age keys: new data is sealed with `current`; anything sealed with an `old` key
+/// stays readable until `POST /v1/secrets/reseal` moved it (rotation, docs/ROTATION.md).
+pub struct SecretsKeys {
+    pub current: age::x25519::Identity,
+    pub old: Vec<age::x25519::Identity>,
+}
+
+impl SecretsKeys {
+    pub fn new(current: age::x25519::Identity, old: Vec<age::x25519::Identity>) -> Self {
+        SecretsKeys { current, old }
+    }
+
+    /// Decrypt with the current key only: is this item already on the current key?
+    fn opens_with_current(&self, ciphertext: &[u8]) -> bool {
+        age::decrypt(&self.current, ciphertext).is_ok()
+    }
+}
+
+/// Encrypt for storage with the Core's current key.
+pub fn seal(keys: &SecretsKeys, value: &[u8]) -> Result<Vec<u8>, ApiError> {
+    age::encrypt(&keys.current.to_public(), value).map_err(|e| {
         tracing::error!("cannot seal secret: {e}");
         ApiError(StatusCode::INTERNAL_SERVER_ERROR, "internal error".into())
     })
 }
 
-pub fn open(core_key: &age::x25519::Identity, ciphertext: &[u8]) -> Result<Vec<u8>, ApiError> {
-    age::decrypt(core_key, ciphertext).map_err(|e| {
-        tracing::error!("cannot open secret: {e}");
-        ApiError(StatusCode::INTERNAL_SERVER_ERROR, "internal error".into())
-    })
+pub fn open(keys: &SecretsKeys, ciphertext: &[u8]) -> Result<Vec<u8>, ApiError> {
+    std::iter::once(&keys.current)
+        .chain(keys.old.iter())
+        .find_map(|k| age::decrypt(k, ciphertext).ok())
+        .ok_or_else(|| {
+            tracing::error!("cannot open a sealed value with any configured secrets key");
+            ApiError(StatusCode::INTERNAL_SERVER_ERROR, "internal error".into())
+        })
+}
+
+/// Everything the Core seals: (table, key column, sealed column).
+const SEALED: [(&str, &str, &str); 4] = [
+    ("secrets", "tenant_id::text || '/' || name", "ciphertext"),
+    ("users", "id::text", "totp_secret"),
+    ("sso_providers", "id::text", "client_secret"),
+    ("content_sources", "id::text", "auth_token"),
+];
+
+#[derive(Serialize, ToSchema)]
+pub struct SecretsKeyStatus {
+    /// Age recipient (public key) new data is sealed to.
+    pub current_recipient: String,
+    pub old_keys: usize,
+    /// Sealed values per kind, and how many still need an old key.
+    pub items: Vec<SealedCount>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SealedCount {
+    pub kind: String,
+    pub total: i64,
+    pub on_old_key: i64,
+}
+
+async fn sealed_rows(st: &AppState, table: &str, key: &str, col: &str) -> ApiResult<Vec<(String, Vec<u8>)>> {
+    Ok(sqlx::query_as(&format!("SELECT {key}, {col} FROM {table} WHERE {col} IS NOT NULL")).fetch_all(&st.pool).await?)
+}
+
+#[utoipa::path(get, path = "/v1/secrets/key", tag = "secrets", security(("bearer" = [])), responses((status = 200, body = SecretsKeyStatus), (status = 503)))]
+pub async fn key_status(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<SecretsKeyStatus>> {
+    user.require_global("keys:read")?;
+    let keys = st.secrets_key.as_ref().ok_or_else(unavailable)?;
+    let mut items = Vec::new();
+    for (table, key, col) in SEALED {
+        let rows = sealed_rows(&st, table, key, col).await?;
+        items.push(SealedCount { kind: table.to_owned(), total: rows.len() as i64, on_old_key: rows.iter().filter(|(_, c)| !keys.opens_with_current(c)).count() as i64 });
+    }
+    Ok(Json(SecretsKeyStatus { current_recipient: keys.current.to_public().to_string(), old_keys: keys.old.len(), items }))
+}
+
+#[utoipa::path(post, path = "/v1/secrets/reseal", tag = "secrets", security(("bearer" = [])),
+    description = "Re-encrypts every sealed value (tenant secrets, TOTP secrets, SSO client secrets, git tokens) with the current key. Afterwards the old key can be removed from the configuration.",
+    responses((status = 200, body = SecretsKeyStatus), (status = 503)))]
+pub async fn reseal(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<SecretsKeyStatus>> {
+    user.require_global("keys:write")?;
+    let keys = st.secrets_key.as_ref().ok_or_else(unavailable)?;
+    let mut moved = 0usize;
+    for (table, key, col) in SEALED {
+        let mut tx = st.pool.begin().await?;
+        for (id, ciphertext) in sqlx::query_as::<_, (String, Vec<u8>)>(&format!("SELECT {key}, {col} FROM {table} WHERE {col} IS NOT NULL FOR UPDATE")).fetch_all(&mut *tx).await? {
+            if keys.opens_with_current(&ciphertext) {
+                continue;
+            }
+            let fresh = seal(keys, &open(keys, &ciphertext)?)?;
+            sqlx::query(&format!("UPDATE {table} SET {col} = $2 WHERE ({key}) = $1")).bind(&id).bind(fresh).execute(&mut *tx).await?;
+            moved += 1;
+        }
+        tx.commit().await?;
+    }
+    let mut tx = st.pool.begin().await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &user.username, action: "secrets.reseal", target: None, outcome: "ok", details: json!({ "resealed": moved }) }).await?;
+    tx.commit().await?;
+    key_status(State(st), Authn(user)).await
 }
 
 /// Encrypt a value to an agent's age recipient.

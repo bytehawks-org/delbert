@@ -74,6 +74,12 @@ struct RunArgs {
     /// How long a connection to the site's NATS lives before being authorized again.
     #[arg(long, env = "DELBERT_LOCAL_SESSION_SECS", default_value_t = 900)]
     session_secs: i64,
+    /// Renew the certificate when less than this many seconds remain (default: a third of its lifetime).
+    #[arg(long, env = "DELBERT_RENEW_BEFORE_SECS")]
+    renew_before_secs: Option<i64>,
+    /// Seconds between checks whether the certificate is due for renewal.
+    #[arg(long, env = "DELBERT_RENEW_CHECK_SECS", default_value_t = 3600)]
+    renew_check_secs: u64,
 }
 
 #[derive(Subcommand)]
@@ -89,6 +95,7 @@ fn tls_files(id: &Identity) -> (PathBuf, PathBuf, PathBuf) {
 }
 
 async fn run(a: RunArgs) -> Result<()> {
+    identity::recover(&a.identity_dir)?; // finish an interrupted renewal first
     let id = Identity::load(&a.identity_dir)?;
     fs::create_dir_all(&a.state_dir)?;
     let own_key = delbert_pki::public_key_from_pem(&id.cert_pem()?).context("unreadable proxy certificate")?;
@@ -143,6 +150,29 @@ async fn run(a: RunArgs) -> Result<()> {
     let handle = axum_server::Handle::<std::net::SocketAddr>::new();
     let h = handle.clone();
     let relay_task = tokio::spawn(relay.run(Duration::from_secs(a.sync_secs), Duration::from_secs(a.flush_secs)));
+    // Certificate renewal. A new key means new connections everywhere, so after installing it the
+    // proxy stops cleanly and its supervisor (systemd, the container runtime, Kubernetes) restarts it;
+    // the site's NATS server, which shares the certificate files, is restarted or reloaded with it.
+    let (renew_id, renew_handle) = (id.clone(), handle.clone());
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(a.renew_check_secs));
+        loop {
+            tick.tick().await;
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+            let due = renew_id.cert_pem().is_ok_and(|c| identity::renewal_due(&c, now, a.renew_before_secs));
+            if !due {
+                continue;
+            }
+            match identity::renew(&renew_id).await {
+                Ok(()) => {
+                    tracing::info!("certificate renewed with a new key; restarting to use it");
+                    renew_handle.graceful_shutdown(Some(Duration::from_secs(10)));
+                    return;
+                }
+                Err(e) => tracing::warn!("certificate renewal failed (will retry): {e:#}"),
+            }
+        }
+    });
     tokio::spawn(async move {
         use tokio::signal::unix::{SignalKind, signal};
         let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
