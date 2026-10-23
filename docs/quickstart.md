@@ -11,6 +11,7 @@ git clone https://github.com/bytehawks-org/delbert.git && cd delbert
 podman build --target core  -t localhost/delbert-core  .
 podman build --target agent -t localhost/delbert-agent .
 podman build --target tools -t localhost/delbert-tools .
+podman build --target web   -t localhost/delbert-web   .
 ```
 
 The first build compiles the Rust workspace and takes several minutes.
@@ -36,11 +37,11 @@ chmod a+r dev/pki/* dev/k1.key                                               # d
 
 ```sh
 export E2E_NATS_ISSUER_PUBLIC=$(cat dev/pki/nats-issuer.pub)
-podman compose -f compose.e2e.yaml up -d --no-build postgres nats core
+podman compose -f compose.e2e.yaml up -d --no-build postgres nats core web
 curl --cacert dev/pki/ca.pem https://localhost:8080/healthz        # {"status":"ok"}
 ```
 
-The Core created its database schema, the first administrator (`admin`, password `e2e-admin-password`) and listens on HTTPS. The API documentation is at <https://localhost:8080/swagger-ui/> (your browser will not trust the throw-away CA; the `curl` commands below do, through `--cacert`).
+The Core created its database schema, the first administrator (`admin`, password `e2e-admin-password`) and listens on HTTPS. The web UI is at <http://localhost:3000> (sign in as `admin`; it shows your roles and what you can reach, the rest of the screens arrive in later milestones). The API documentation is at <https://localhost:8080/swagger-ui/> (your browser will not trust the throw-away CA; the `curl` commands below do, through `--cacert`).
 
 ## 4. Log in and create a tenant, an artifact and a policy
 

@@ -24,6 +24,7 @@ How to run Delbert for real: the control plane (Core, PostgreSQL, NATS), agents 
 | `delbert-agent` | on every managed host | Outbound connections only |
 | `delbert-proxy` + a NATS | optional | One per branch office whose hosts must not reach the Core ([PROXY.md](PROXY.md)) |
 | `git` | optional | Only in the Core image/host, for git content sources ([CONTENT.md](CONTENT.md)) |
+| `delbert-web` | recommended | The administration UI (Next.js). Talks to the Core server-side; needs `WEB_SESSION_SECRET` |
 | OIDC provider | optional | Keycloak, Microsoft Entra ID, ... for single sign-on |
 
 The Core and the proxy never run commands on managed systems; only agents act, on their own host.
@@ -35,6 +36,7 @@ git clone https://github.com/bytehawks-org/delbert.git && cd delbert
 podman build --target core  -t <registry>/delbert-core:<tag>  .
 podman build --target agent -t <registry>/delbert-agent:<tag> .
 podman build --target proxy -t <registry>/delbert-proxy:<tag> .
+podman build --target web   -t <registry>/delbert-web:<tag>   .     # administration UI
 podman build --target tools -t <registry>/delbert-tools:<tag> .     # delbert-pki, delbert-sign
 podman push <registry>/delbert-core:<tag>                             # ...and the others you need
 ```
@@ -165,6 +167,10 @@ The `package` verb supports apt, dnf, zypper and apk; `service` drives systemd. 
 
 Install the agent on the nodes' hosts as above. The in-cluster Operator for cluster objects is planned, not available. Windows hosts are not supported yet.
 
+### The web UI
+
+`deploy/kubernetes/web.yaml` runs `delbert-web` behind an Ingress (browser TLS ends there; the Core API keeps its own certificate). It needs a `delbert-web-env` secret with `WEB_SESSION_SECRET` (`openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`), the Delbert CA mounted for Node (`NODE_EXTRA_CA_CERTS`), `DELBERT_CORE_URL` (in-cluster) and `WEB_CORE_PUBLIC_URL` (how browsers reach the Core, needed for single sign-on). For single sign-on also set the Core's `DELBERT_UI_URL` to `https://<ui host>/auth/callback` and `DELBERT_PUBLIC_URL`. Settings: [web/README.md](../web/README.md). Only the first milestone is built (login, MFA, SSO, dashboard skeleton): [FRONTEND.md](FRONTEND.md).
+
 ## 8. A branch-office proxy (optional)
 
 For sites whose hosts must not reach the Core. The proxy has its own NATS at the site and is the only component that talks to the Core. Full description and steps: [PROXY.md](PROXY.md) (`POST /v1/proxies` for a one-time key, `delbert-proxy enroll`, the site NATS from [`deploy/dev/nats-site.conf`](../deploy/dev/nats-site.conf), `delbert-proxy run`; agents then enroll against the proxy's URL).
@@ -207,4 +213,4 @@ Back up first. Start the new Core image: it applies the pending migrations on st
 
 - No published images, packages or Helm chart; the agent binary is dynamically linked against the glibc of the build image (Debian 13), so older hosts may need a build on an older base.
 - Kubernetes manifests not yet run on a cluster; no PodDisruptionBudget, NetworkPolicy or HA of NATS and the Core (see [ROADMAP.md](ROADMAP.md)).
-- The web UI, the Kubernetes Operator, the Windows agent, per-action audit events from agents and the `command` resource are planned.
+- The rest of the web UI (M1 onwards), the Kubernetes Operator, the Windows agent, per-action audit events from agents and the `command` resource are planned.

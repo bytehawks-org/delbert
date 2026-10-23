@@ -14,6 +14,7 @@ Snapshot for whoever continues the work (updated 2026-10-23). Design lives in [A
 | `delbert-core` | REST API, PostgreSQL via SQLx (migrations 0001-0016), NATS bus + callout | RBAC v2 (tenant-scoped), approval workflow, sessions/CSRF/MFA/throttling, API tokens, OIDC SSO, content sources (directory/git), artifacts in local dir or S3, audit browse/export, config file |
 | `delbert-agent` | engine + daemon + CLI | enrollment, renewal with key rotation, trust updates |
 | `delbert-proxy` | branch-office relay | see [PROXY.md](PROXY.md) |
+| `web/` (Next.js) | administration UI, milestone M0 | backend-for-frontend, see [web/README.md](../web/README.md) |
 
 About 130 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
 
@@ -44,13 +45,13 @@ Optional environment for the real-system tests: `S3_TEST_*` (Garage), `GIT_TEST_
 
 ## Known limits
 
-See [ROADMAP.md](ROADMAP.md). The ones that matter most: no web UI yet ([FRONTEND.md](FRONTEND.md) is a design); no Kubernetes Operator; no Windows agent; `service` only tested with a fake runner; no per-action audit events from agents; no CRL/OCSP; CA, NATS-issuer and secrets-key rotation not implemented ([ROTATION.md](ROTATION.md)); the Kubernetes manifests were never run on a cluster; no published images/packages; the proxy has no configuration file and its certificate does not renew.
+See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI only at milestone M0 (login, dashboard skeleton; [FRONTEND.md](FRONTEND.md)); no Kubernetes Operator; no Windows agent; `service` only tested with a fake runner; no per-action audit events from agents; no CRL/OCSP; proxy renewal not run live in a branch scenario ([ROTATION.md](ROTATION.md)); the Kubernetes manifests were never run on a cluster; no published images/packages; the proxy has no configuration file and its certificate does not renew.
 
 ## Next steps
 
-1. Frontend M0 ([FRONTEND.md](FRONTEND.md)) on top of the finished API.
+1. Frontend M1 onwards ([FRONTEND.md](FRONTEND.md)): read-only views (tenants, agents, policies, proxies, audit), then operations and governance. M0 is in `web/`.
 2. Per-action audit events from agents (also through the proxy); Kubernetes Operator; Windows agent study.
-3. Remaining rotations (CA, NATS issuer, secrets key, proxy certificate); proxy config file; SSH remotes and signed commits for content sources; Entra ID check against a real tenant.
+3. Proxy config file and live branch check of proxy renewal; SSH remotes and signed commits for content sources; Entra ID check against a real tenant.
 
 ## Working agreements
 
