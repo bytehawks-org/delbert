@@ -23,6 +23,8 @@ This file extends and integrates the user-scoped CLAUDE.md file.
 # Requirements
 
 - Keep It Simple (KISS) code philosophy
+- `unsafe_code = "forbid"` for the whole workspace (`[workspace.lints]`); only a strictly necessary FFI wrapper for Linux/Windows syscalls may opt out, in its own crate, with a justification
+- Files managed on endpoints are replaced crash-safely: exclusive temp file in the same directory, owner/mode, fsync, atomic rename, directory fsync (`fsutil::replace_file`)
 - Simple Backup and Restore procedure
 - Comprehensive inline documentation
 - Every element must have an administrative control with CRUD operations and all needed to administer it

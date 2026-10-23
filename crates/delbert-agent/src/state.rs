@@ -23,9 +23,7 @@ impl State {
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
-        let tmp = path.with_extension("tmp");
-        fs::write(&tmp, serde_json::to_vec_pretty(self)?)?;
-        fs::rename(&tmp, path).with_context(|| format!("writing {}", path.display()))
+        crate::fsutil::replace_file(path, &serde_json::to_vec_pretty(self)?, 0o600, None, None)
     }
 }
 

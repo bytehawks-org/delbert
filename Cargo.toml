@@ -2,6 +2,10 @@
 resolver = "3"
 members = ["crates/delbert-policy", "crates/delbert-core", "crates/delbert-agent", "crates/delbert-wire", "crates/delbert-pki", "crates/delbert-natsauth", "crates/delbert-proxy"]
 
+[workspace.lints.rust]
+# No unsafe code anywhere; a crate that truly needs an FFI wrapper must opt out explicitly and say why.
+unsafe_code = "forbid"
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"

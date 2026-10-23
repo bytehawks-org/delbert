@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow.workspace = true
 async-nats.workspace = true
@@ -19,6 +22,7 @@ delbert-pki = { path = "../delbert-pki" }
 delbert-policy = { path = "../delbert-policy" }
 delbert-wire = { path = "../delbert-wire" }
 minijinja.workspace = true
+rand_core.workspace = true
 regex.workspace = true
 reqwest.workspace = true
 rustls.workspace = true

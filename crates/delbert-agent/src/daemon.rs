@@ -55,10 +55,7 @@ fn sha_hex(bytes: &[u8]) -> String {
 }
 
 fn write_atomic(path: &std::path::Path, data: &[u8]) -> Result<()> {
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, data)?;
-    fs::rename(&tmp, path)?;
-    Ok(())
+    crate::fsutil::replace_file(path, data, 0o600, None, None)
 }
 
 /// JSON sent to the Core after every cycle.

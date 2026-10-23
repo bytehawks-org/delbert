@@ -155,7 +155,7 @@ impl Verifier {
         if policy.tenant != expect.tenant || policy.agent != expect.agent {
             return Err(VerifyError::WrongTarget(policy.tenant, policy.agent));
         }
-        if expect.now + SKEW_SECS < policy.issued_at || expect.now >= policy.expires_at {
+        if policy.expires_at <= policy.issued_at || expect.now + SKEW_SECS < policy.issued_at || expect.now >= policy.expires_at {
             return Err(VerifyError::Time);
         }
         // Same version again is fine (periodic pull); older is a rollback.

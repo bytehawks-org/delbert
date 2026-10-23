@@ -5,6 +5,11 @@
 ### Design
 - Added `RBAC.md` (tenant-scoped roles, `resource:action` permissions, built-in roles, optional per-tenant four-eyes approval with an active-version pointer, cookie sessions, MFA, throttling, API tokens, audit browsing), `FRONTEND.md` (Next.js + Tailwind with a backend-for-frontend, generated client, screens, milestones) and `STATUS.md` (state, how to run, decisions, limits, working agreements for the next session).
 
+### Hardening
+- `unsafe_code = "forbid"` workspace-wide (there was no `unsafe` already; now enforced by the compiler).
+- Crash-safe file replacement for `file`/`copy`/`template`/`line_in_file` and the agent state/cache: the temporary file used a fixed, predictable name, was created with default permissions (secret content readable before `chmod`) and was never fsynced. Now `fsutil::replace_file`: unique name created exclusively with mode 0600, `fchown` then `fchmod`, `fsync`, atomic `rename`, directory `fsync`, stale temporaries swept.
+- Signed policy verification also rejects `expires_at <= issued_at`. Verified unchanged: the signed payload is the JCS-serialized effective policy (never raw YAML); signature, target, expiry/validity window and anti-rollback (version lower than the last applied) are checked before `Ok` is returned.
+
 ### RBAC v2 (part 1)
 - Migration `0010`: role `scope`, `user_roles.tenant_id`, new `resource:action` permissions (custom v1 roles are mapped), built-in roles `platform-admin` (was `admin`), `tenant-admin`, `operator`, `approver`, `auditor`, `viewer`.
 - Authorization is tenant-aware: `CurrentUser::tenant()` resolves the tenant and checks the permission in scope (404 when the caller has no role there); global-only permissions never come from a tenant-scoped assignment; `GET /v1/tenants` lists only reachable tenants.
