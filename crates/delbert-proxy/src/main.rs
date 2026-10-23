@@ -140,7 +140,7 @@ async fn run(a: RunArgs) -> Result<()> {
     let web = Arc::new(Web {
         core_url: id.meta.core_url.clone(),
         site: id.meta.site.clone(),
-        http: reqwest::Client::builder().tls_certs_only([reqwest::Certificate::from_pem(&ca_pem)?]).timeout(Duration::from_secs(120)).build()?,
+        http: reqwest::Client::builder().tls_certs_only(reqwest::Certificate::from_pem_bundle(&ca_pem)?).timeout(Duration::from_secs(120)).build()?,
         proofs: ProofMaker::new(&id)?,
         allow,
         public_nats_url: a.public_nats_url.clone(),

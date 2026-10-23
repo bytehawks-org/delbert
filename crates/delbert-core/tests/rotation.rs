@@ -19,7 +19,7 @@ async fn announces_keys_and_reports_which_agents_know_them(pool: PgPool) {
     let next = TrustedKey { kid: "k2".into(), public_key: B64.encode([2u8; 32]) };
     let mut st = state(pool.clone(), vec![Strategy::Error], None);
     st.published_keys = vec![next.clone()];
-    st.trust = Some(TrustUpdate { add: vec![next.clone()], remove: vec!["k0".into()] });
+    st.trust = Some(TrustUpdate { add: vec![next.clone()], remove: vec!["k0".into()] , ..Default::default() });
     let admin = admin_client(st).await;
     admin.call("POST", "/v1/tenants", Some(json!({ "name": "acme" }))).await;
     for a in ["a1", "a2", "a3"] {
@@ -88,4 +88,42 @@ async fn secrets_key_rotation_reseals_everything(pool: PgPool) {
     assert_eq!(left(&k), 0);
     assert_eq!(k["items"][0]["total"], 1);
     // Every sealed value now opens with the new key alone (the status counts only that as "moved").
+}
+
+#[sqlx::test]
+async fn ca_rotation_is_announced_and_readiness_is_reported(pool: PgPool) {
+    use delbert_pki::bundle::fingerprints;
+    let ca2 = delbert_pki::Ca::create("Second CA", 30).unwrap();
+    let mut st = state(pool.clone(), vec![Strategy::Error], None);
+    let fp1 = fingerprints(st.pki.as_ref().unwrap().cert_pem()).remove(0);
+    let fp2 = fingerprints(ca2.cert_pem()).remove(0);
+    st.ca_rotation = delbert_core::api::CaRotation { extra_cas: vec![ca2.cert_pem().trim().to_owned()], retire: vec!["ab".repeat(32)], renew_issued_before: Some(1_900_000_000) };
+    st.trust = Some(TrustUpdate { ca_add: st.ca_rotation.extra_cas.clone(), ca_remove: st.ca_rotation.retire.clone(), renew_issued_before: st.ca_rotation.renew_issued_before, ..Default::default() });
+    let admin = admin_client(st).await;
+    admin.call("POST", "/v1/tenants", Some(json!({ "name": "acme" }))).await;
+    for a in ["a1", "a2"] {
+        admin.call("POST", "/v1/tenants/acme/agents", Some(json!({ "name": a }))).await;
+    }
+
+    // Policies carry the announcement; new components get both CAs (the active one first).
+    let (_, eff) = admin.call("GET", "/v1/tenants/acme/agents/a1/effective", None).await;
+    let p = payload(eff["token"].as_str().unwrap());
+    assert_eq!(p["trust"]["ca_add"][0].as_str().unwrap().trim(), ca2.cert_pem().trim());
+    assert_eq!((p["trust"]["ca_remove"][0].clone(), p["trust"]["renew_issued_before"].clone()), (json!("ab".repeat(32)), json!(1_900_000_000)));
+    let enrolled = common::enroll_agent(&admin, "acme", "a3").await;
+    let _ = enrolled;
+
+    // Agents report which CAs they trust and which one issued their certificate.
+    let report = |trusted: Value, issuer: &str| json!({ "version": 1, "at": 1, "compliant": true, "resources": [], "trusted_cas": trusted, "cert_issuer": issuer });
+    for (agent, r) in [("a1", report(json!([fp1, fp2]), &fp2)), ("a2", report(json!([fp1]), &fp1))] {
+        sqlx::query("INSERT INTO agent_reports (agent_id, version, compliant, report) SELECT a.id, 1, true, $2 FROM agents a WHERE a.name = $1").bind(agent).bind(r).execute(&pool).await.unwrap();
+    }
+    let (s, st) = admin.call("GET", "/v1/pki/ca", None).await;
+    assert_eq!(s, S::OK, "{st}");
+    assert_eq!(st["active"], json!(fp1));
+    assert_eq!(st["announced"], json!([fp2]));
+    let by = |fp: &str| st["readiness"].as_array().unwrap().iter().find(|r| r["fingerprint"] == fp).unwrap().clone();
+    assert_eq!((by(&fp2)["trusted_by"].clone(), by(&fp2)["issued_certificates"].clone()), (json!(1), json!(1)));
+    assert_eq!((by(&fp1)["trusted_by"].clone(), by(&fp1)["issued_certificates"].clone()), (json!(2), json!(1)));
+    assert!(by(&fp2)["missing"].as_array().unwrap().iter().any(|m| m == "acme/a2"));
 }

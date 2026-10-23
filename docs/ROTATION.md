@@ -1,15 +1,15 @@
 # Delbert - Key and certificate rotation
 
-What rotates, how, and what is still manual. Verified end to end for the policy signing key (below); the other items are listed with their state.
+What rotates, how, and what is still manual. Every procedure below was run end to end on 2026-10-23 with a Core, NATS and an agent in containers ([TESTING.md](TESTING.md)), except where marked.
 
 | Secret | Rotation | State |
 |--------|----------|-------|
-| Agent certificate and key | automatic: agents renew before expiry with a **new key**; the previous key stays valid until the new one is seen; at least 1 h between renewals | done ([TESTING.md](TESTING.md)) |
-| **Policy signing key** (Ed25519) | in-band, with overlap, no touching of agents (this page) | done |
-| Proxy certificate | re-enroll with a new one-time key | manual; renewal like agents is on the [ROADMAP](ROADMAP.md) |
-| Internal CA | issue a new CA, distribute both CAs, re-issue certificates, retire the old CA | not implemented |
-| NATS authorization-callout issuer | two issuers accepted during a switch | not implemented |
-| Secrets key (age) of the Core | re-seal all secrets with the new key, then retire the old | not implemented |
+| Agent certificate and key | automatic: agents renew before expiry with a **new key**; the previous key stays valid until the new one is seen; at least 1 h between renewals | done |
+| **Policy signing key** (Ed25519) | in-band, with overlap, no touching of agents ([below](#rotating-the-policy-signing-key)) | done |
+| **Internal CA** | in-band bundle with overlap, forced renewal of certificates, readiness API ([below](#rotating-the-internal-ca)) | done |
+| **Proxy certificate** | automatic renewal with a new key, like agents; the proxy restarts to use it ([below](#proxy-certificate)) | done (Core side and unit tests; not run in a live branch scenario) |
+| **Secrets key** (age) of the Core | old keys stay readable, one call re-seals everything ([below](#secrets-key)) | done |
+| **NATS authorization-callout issuer** | switch NATS and the Core together ([below](#nats-callout-issuer)) | done (short interruption) |
 | Enrollment keys, API tokens, sessions | expiring by design; revoke any time | done |
 | Database password | external (PostgreSQL role); restart the Core | manual |
 
@@ -43,3 +43,28 @@ Verified on 2026-10-23 with a Core and an agent in containers: announce `k2` (th
 ## Compromise of the signing key
 
 Rotation does not help against an attacker who already holds the private key and can reach your agents' network path: they can sign policies for any agent until it forgets the key. Treat it as an incident: switch and retire as above (the retirement is itself signed by the new key), shorten `DELBERT_POLICY_TTL_SECS` while it runs, and review the audit trail. An `external` signing mode (the key outside the Core, e.g. in an HSM) is on the roadmap.
+
+## Rotating the internal CA
+
+Agents, proxies and NATS trust a **bundle** of CA certificates; the Core issues from one of them. A signed policy can announce CAs to add, CA fingerprints (SHA-256, hex) to forget, and a moment before which certificates must be replaced, so no host is touched by hand. The agent only adds certificates that are valid self-signed CA certificates and never ends with an empty bundle.
+
+Settings of the Core (environment or `[pki]`): `DELBERT_CA_CERT_FILE`/`DELBERT_CA_KEY_FILE` (the CA that issues), `DELBERT_CA_EXTRA_FILES` (other CA certificates to announce and hand to new components), `DELBERT_CA_RETIRE` (fingerprints to forget; the Core refuses to start if this lists its active CA), `DELBERT_CERT_RENEW_ISSUED_BEFORE` (Unix seconds). Agents report the CAs they trust and the one that issued their certificate; `GET /v1/pki/ca` (global `keys:read`) shows, per CA, how many agents trust it, how many certificates it issued and who is missing.
+
+1. **Create CA2** (`delbert-pki --dir <new dir> init`) and issue new server certificates from it for NATS and the Core, and the Core's NATS client certificate (`issue-server`, `issue-client`).
+2. **Announce.** Add `ca2.pem` to `DELBERT_CA_EXTRA_FILES`, give NATS a `ca_file` that contains **both** CAs and the Core a NATS CA file with both, restart. Agents learn CA2 at their next pull. Wait until `/v1/pki/ca` shows every agent trusting CA2.
+3. **Switch.** Point `DELBERT_CA_CERT_FILE`/`KEY_FILE` to CA2, move CA1 to `DELBERT_CA_EXTRA_FILES`, install the CA2-issued server certificates (Core API, NATS, the Core's NATS client), set `DELBERT_CERT_RENEW_ISSUED_BEFORE` to now, restart. Agents renew their certificates (new key, from CA2) and reconnect; the status shows `issued_certificates` moving to CA2. Proxies renew on their own schedule or when restarted after `renew` is due (below); renew them before step 4.
+4. **Retire.** When no certificate issued by CA1 is in use: `DELBERT_CA_RETIRE=<fingerprint of CA1>`, empty `DELBERT_CA_EXTRA_FILES`, NATS `ca_file` with CA2 only, restart. Agents drop CA1.
+
+Do not retire a CA while server certificates (Core, NATS) are still issued by it, or while agents still hold certificates from it: they would lock themselves out. An agent that stays offline through steps 2-4 must be enrolled again. Verified live: announce (agent bundle 1 → 2 CAs), switch (agent certificate renewed from CA2 and reconnected, next policy applied), retire (bundle 2 → 1, next policy applied), and the refusal to retire the active CA.
+
+## Proxy certificate
+
+The proxy renews its certificate before it expires (less than a third of the lifetime left, or `--renew-before-secs`, never within an hour of issuing; checked every `DELBERT_RENEW_CHECK_SECS`, default 3600) by sending a CSR with a **new key**, signed with the current key, to `POST /v1/proxies/{site}/renew`. The Core keeps the previous key valid until the new one is used (for the NATS callout and the signed requests). Because the proxy's NATS clients, HTTPS listener and the site's NATS server all use the certificate files, the proxy writes them atomically and then **stops cleanly**; run it under a supervisor that restarts it (systemd `Restart=always`, a container restart policy, a Kubernetes pod) and restart or reload the site's NATS server with it. The renewal response carries the Core's current CA bundle, so a CA rotation reaches proxies at their next renewal.
+
+## Secrets key
+
+Tenant secrets, TOTP secrets, SSO client secrets and git tokens are sealed with the Core's age key. To rotate: create a new key (`delbert-pki secrets-key` in a new directory), set `DELBERT_SECRETS_KEY_FILE` to it and `DELBERT_SECRETS_OLD_KEY_FILES` to the previous one(s), restart (everything stays readable; new data uses the new key), then `POST /v1/secrets/reseal` (global `keys:write`) re-seals every value, and `GET /v1/secrets/key` reports how many still need an old key. When that is zero for every kind, remove the old key from the configuration and destroy it. Keep the old key in your backups until the next backup cycle has captured the re-sealed data.
+
+## NATS callout issuer
+
+NATS accepts one authorization-callout issuer, so the switch is a short interruption (seconds): generate a new issuer (`delbert-pki nats-issuer` in a new directory), then restart NATS with the new public key (`NATS_ISSUER_PUBLIC`) and the Core with the new seed (`DELBERT_NATS_ISSUER_SEED_FILE`) together. Connected agents drop and reconnect, and are authorized again by the Core with the new issuer. Verified live: the agent reconnected within 4 seconds and the next policy arrived. A proxy's site NATS has its own issuer, rotated the same way with `delbert-proxy` (re-enroll the issuer by regenerating `local-issuer.*` and reloading the site NATS).

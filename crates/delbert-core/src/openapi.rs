@@ -39,7 +39,7 @@ impl Modify for BearerAuth {
         crate::sso::list_providers, crate::sso::get_provider, crate::sso::create_provider, crate::sso::update_provider, crate::sso::delete_provider, crate::sso::test_provider,
         crate::content::list_sources, crate::content::get_source, crate::content::create_source, crate::content::update_source, crate::content::delete_source,
         crate::content::sync_now, crate::content::list_snapshots, crate::content::get_snapshot,
-        crate::signing::status,
+        crate::signing::status, crate::signing::ca_status,
         api::audit_verify, crate::audit_api::list, crate::audit_api::export,
         crate::secrets::key_status, crate::secrets::reseal, crate::secrets::put_secret, crate::secrets::list_secrets, crate::secrets::delete_secret,
         crate::artifacts::put_artifact, crate::artifacts::list_artifacts, crate::artifacts::agent_download,

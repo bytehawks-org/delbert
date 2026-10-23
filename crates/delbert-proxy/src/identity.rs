@@ -64,7 +64,7 @@ pub async fn renew(id: &Identity) -> Result<()> {
     let (key_pem, csr_pem) = delbert_pki::new_identity(&id.meta.site)?;
     let body = json!({ "csr_pem": csr_pem });
     let header = crate::hub::ProofMaker::new(id)?.header("proxy-renew", &body)?;
-    let client = reqwest::Client::builder().tls_certs_only([reqwest::Certificate::from_pem(ca_pem.as_bytes()).context("invalid CA file")?]).build()?;
+    let client = reqwest::Client::builder().tls_certs_only(reqwest::Certificate::from_pem_bundle(ca_pem.as_bytes()).context("invalid CA file")?).build()?;
     let resp = client
         .post(format!("{}/v1/proxies/{}/renew", id.meta.core_url, id.meta.site))
         .header("authorization", header)
@@ -79,10 +79,19 @@ pub async fn renew(id: &Identity) -> Result<()> {
     #[derive(Deserialize)]
     struct Renewed {
         cert_pem: String,
+        ca_pem: String,
     }
     let renewed: Renewed = resp.json().await.context("unexpected renewal response")?;
+    // The Core's bundle follows its CA rotation (a CA announced, a retired one dropped). The channel
+    // was verified with the CAs we have, and the result must still contain at least one of them.
+    let known = delbert_pki::bundle::fingerprints(&ca_pem);
+    let announced = delbert_pki::bundle::fingerprints(&renewed.ca_pem);
+    let bundle = announced.iter().any(|f| known.contains(f)).then_some(renewed.ca_pem.as_str());
     write_private(&id.path("key.pem.new"), &key_pem)?;
     delbert_fs::write_public(&id.path("cert.pem.new"), renewed.cert_pem.as_bytes())?;
+    if let Some(next) = bundle {
+        delbert_fs::write_public(&id.path("ca.pem"), next.as_bytes())?;
+    }
     recover(&id.dir)
 }
 
@@ -135,7 +144,7 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
     }
     let ca_pem = fs::read_to_string(&args.ca_file).with_context(|| format!("reading {}", args.ca_file.display()))?;
     let (key_pem, csr_pem) = delbert_pki::new_identity(&args.site)?;
-    let client = reqwest::Client::builder().tls_certs_only([reqwest::Certificate::from_pem(ca_pem.as_bytes()).context("invalid CA file")?]).build()?;
+    let client = reqwest::Client::builder().tls_certs_only(reqwest::Certificate::from_pem_bundle(ca_pem.as_bytes()).context("invalid CA file")?).build()?;
     let resp = client
         .post(format!("{}/v1/proxies/enroll", args.core_url.trim_end_matches('/')))
         .json(&json!({ "name": args.site, "psk": args.psk, "csr_pem": csr_pem }))
@@ -147,7 +156,8 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
         bail!("enrollment refused ({status}): {}", resp.text().await.unwrap_or_default());
     }
     let resp: EnrollResponse = resp.json().await.context("unexpected enrollment response")?;
-    if resp.ca_pem.trim() != ca_pem.trim() {
+    let announced = delbert_pki::bundle::fingerprints(&resp.ca_pem);
+    if delbert_pki::bundle::fingerprints(&ca_pem).iter().any(|f| !announced.contains(f)) {
         bail!("the Core returned a different CA than the one provided: refusing");
     }
 
@@ -156,7 +166,7 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
     fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
     write_private(&dir.join("key.pem"), &key_pem)?;
     delbert_fs::write_public(&dir.join("cert.pem"), resp.cert_pem.as_bytes())?;
-    delbert_fs::write_public(&dir.join("ca.pem"), ca_pem.as_bytes())?;
+    delbert_fs::write_public(&dir.join("ca.pem"), resp.ca_pem.as_bytes())?;
     // The site's NATS server delegates authorization to this proxy, with its own issuer key.
     let issuer = nkeys::KeyPair::new_account();
     write_private(&dir.join("local-issuer.seed"), &issuer.seed().map_err(|e| anyhow::anyhow!("{e}"))?)?;

@@ -25,6 +25,15 @@ pub struct TrustUpdate {
     pub add: Vec<TrustedKey>,
     #[serde(default)]
     pub remove: Vec<String>,
+    /// CA certificates (PEM) to trust besides the current ones (CA rotation, docs/ROTATION.md).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ca_add: Vec<String>,
+    /// SHA-256 fingerprints (hex) of CA certificates to forget.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ca_remove: Vec<String>,
+    /// Renew the agent's certificate if it was issued before this Unix time (moves it to a new CA).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renew_issued_before: Option<i64>,
 }
 
 fn kid_ok(kid: &str) -> bool {
@@ -98,13 +107,13 @@ mod tests {
     #[test]
     fn add_remove_and_idempotence() {
         let text = format!("# keys\n{}", file(&[key("k1", 1)]));
-        let upd = TrustUpdate { add: vec![key("k2", 2)], remove: vec![] };
+        let upd = TrustUpdate { add: vec![key("k2", 2)], remove: vec![] , ..Default::default() };
         let next = apply(&text, &upd, "k1").unwrap().unwrap();
         assert_eq!(kids(&next), ["k1", "k2"]);
         assert!(next.starts_with("# keys"));
         assert_eq!(apply(&next, &upd, "k1").unwrap(), None, "applying twice changes nothing");
         // k2 signs and retires k1.
-        let next = apply(&next, &TrustUpdate { add: vec![], remove: vec!["k1".into()] }, "k2").unwrap().unwrap();
+        let next = apply(&next, &TrustUpdate { add: vec![], remove: vec!["k1".into()] , ..Default::default() }, "k2").unwrap().unwrap();
         assert_eq!(kids(&next), ["k2"]);
     }
 
@@ -112,11 +121,11 @@ mod tests {
     fn unsafe_updates_are_refused() {
         let text = file(&[key("k1", 1), key("k2", 2)]);
         // A known id with another key, a malformed key, a bad id.
-        assert!(apply(&text, &TrustUpdate { add: vec![key("k1", 9)], remove: vec![] }, "k1").unwrap_err().contains("different key"));
-        assert!(apply(&text, &TrustUpdate { add: vec![TrustedKey { kid: "k3".into(), public_key: "AAAA".into() }], remove: vec![] }, "k1").is_err());
-        assert!(apply(&text, &TrustUpdate { add: vec![key("k 3", 3)], remove: vec![] }, "k1").is_err());
+        assert!(apply(&text, &TrustUpdate { add: vec![key("k1", 9)], remove: vec![] , ..Default::default() }, "k1").unwrap_err().contains("different key"));
+        assert!(apply(&text, &TrustUpdate { add: vec![TrustedKey { kid: "k3".into(), public_key: "AAAA".into() }], remove: vec![] , ..Default::default() }, "k1").is_err());
+        assert!(apply(&text, &TrustUpdate { add: vec![key("k 3", 3)], remove: vec![] , ..Default::default() }, "k1").is_err());
         // The signer is never removed by its own policy, and the last key is never removed.
-        assert_eq!(apply(&text, &TrustUpdate { add: vec![], remove: vec!["k1".into()] }, "k1").unwrap(), None);
-        assert!(apply(&file(&[key("k1", 1)]), &TrustUpdate { add: vec![], remove: vec!["k1".into()] }, "k2").unwrap_err().contains("no trusted key"));
+        assert_eq!(apply(&text, &TrustUpdate { add: vec![], remove: vec!["k1".into()] , ..Default::default() }, "k1").unwrap(), None);
+        assert!(apply(&file(&[key("k1", 1)]), &TrustUpdate { add: vec![], remove: vec!["k1".into()] , ..Default::default() }, "k2").unwrap_err().contains("no trusted key"));
     }
 }

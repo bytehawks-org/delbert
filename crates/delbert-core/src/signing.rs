@@ -73,3 +73,53 @@ pub async fn status(State(st): State<AppState>, Authn(user): Authn) -> ApiResult
         readiness,
     }))
 }
+
+#[derive(Serialize, ToSchema)]
+pub struct CaReadiness {
+    /// SHA-256 fingerprint of the CA certificate.
+    pub fingerprint: String,
+    /// Agents (fresh reports) that trust it.
+    pub trusted_by: i64,
+    /// Agents whose own certificate was issued by it.
+    pub issued_certificates: i64,
+    /// Agents that do not trust it yet, up to 50 (`tenant/agent`).
+    pub missing: Vec<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CaStatus {
+    pub active: Option<String>,
+    pub announced: Vec<String>,
+    pub retiring: Vec<String>,
+    pub renew_issued_before: Option<i64>,
+    pub agents_reporting: i64,
+    pub agents_total: i64,
+    pub readiness: Vec<CaReadiness>,
+}
+
+#[utoipa::path(get, path = "/v1/pki/ca", tag = "system", security(("bearer" = [])), responses((status = 200, body = CaStatus), (status = 403)))]
+pub async fn ca_status(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<CaStatus>> {
+    user.require_global("keys:read")?;
+    let fps = |pem: &str| delbert_pki::bundle::fingerprints(pem);
+    let active: Option<String> = st.pki.as_ref().and_then(|c| fps(c.cert_pem()).into_iter().next());
+    let announced: Vec<String> = st.ca_rotation.extra_cas.iter().flat_map(|p| fps(p)).collect();
+    let (agents_total,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM agents").fetch_one(&st.pool).await?;
+    let (agents_reporting,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM agent_reports WHERE received_at > now() - make_interval(days => $1)").bind(FRESH_DAYS).fetch_one(&st.pool).await?;
+    let mut all: Vec<String> = active.iter().cloned().chain(announced.iter().cloned()).collect();
+    all.dedup();
+    let mut readiness = Vec::new();
+    for fp in all {
+        let trusted_by: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_reports WHERE received_at > now() - make_interval(days => $2) AND report->'trusted_cas' ? $1").bind(&fp).bind(FRESH_DAYS).fetch_one(&st.pool).await?;
+        let issued_certificates: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_reports WHERE received_at > now() - make_interval(days => $2) AND report->>'cert_issuer' = $1").bind(&fp).bind(FRESH_DAYS).fetch_one(&st.pool).await?;
+        let missing: Vec<String> = sqlx::query_scalar(
+            "SELECT t.name || '/' || a.name FROM agents a JOIN tenants t ON t.id = a.tenant_id LEFT JOIN agent_reports r ON r.agent_id = a.id \
+             WHERE r.agent_id IS NULL OR r.received_at <= now() - make_interval(days => $2) OR NOT COALESCE(r.report->'trusted_cas' ? $1, false) ORDER BY 1 LIMIT 50",
+        )
+        .bind(&fp)
+        .bind(FRESH_DAYS)
+        .fetch_all(&st.pool)
+        .await?;
+        readiness.push(CaReadiness { fingerprint: fp, trusted_by, issued_certificates, missing });
+    }
+    Ok(Json(CaStatus { active, announced, retiring: st.ca_rotation.retire.clone(), renew_issued_before: st.ca_rotation.renew_issued_before, agents_reporting, agents_total, readiness }))
+}

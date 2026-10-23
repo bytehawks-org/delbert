@@ -10,6 +10,7 @@
 //! same operations can be implemented on top of OpenSSL behind this API.
 
 pub mod authn;
+pub mod bundle;
 
 use rcgen::{
     BasicConstraints, CertificateParams, CertificateSigningRequestParams, DnType, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair, KeyUsagePurpose,

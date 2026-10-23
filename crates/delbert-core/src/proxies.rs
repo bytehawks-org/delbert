@@ -212,7 +212,7 @@ pub async fn enroll_proxy(State(st): State<AppState>, Json(req): Json<ProxyEnrol
     audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &format!("proxy-enrollment:{}", req.name), action: "proxy.enroll", target: Some(&req.name), outcome: "ok", details: json!({}) }).await?;
     tx.commit().await?;
     let signing_keys = st.signer.iter().map(|s| format!("{} {}", s.kid(), s.public_key_b64())).collect();
-    Ok(Json(ProxyEnrollResponse { cert_pem: signed.cert_pem, ca_pem: ca.cert_pem().to_owned(), signing_keys, nats_url: st.public_nats_url.clone(), dns_names }))
+    Ok(Json(ProxyEnrollResponse { cert_pem: signed.cert_pem, ca_pem: st.ca_bundle().unwrap_or_default(), signing_keys, nats_url: st.public_nats_url.clone(), dns_names }))
 }
 
 // --- certificate renewal -------------------------------------------------------------------------------
@@ -241,7 +241,7 @@ pub async fn renew_proxy(State(st): State<AppState>, Path(site): Path<String>, h
     sqlx::query("UPDATE proxies SET previous_public_key = public_key, public_key = $2 WHERE id = $1").bind(id).bind(&signed.public_key).execute(&mut *tx).await?;
     audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &format!("proxy:{site}"), action: "proxy.renew", target: Some(&site), outcome: "ok", details: json!({}) }).await?;
     tx.commit().await?;
-    Ok(Json(ProxyRenewResponse { cert_pem: signed.cert_pem, ca_pem: ca.cert_pem().to_owned() }))
+    Ok(Json(ProxyRenewResponse { cert_pem: signed.cert_pem, ca_pem: st.ca_bundle().unwrap_or_default() }))
 }
 
 // --- agents enrolling through a proxy ---------------------------------------------------------------

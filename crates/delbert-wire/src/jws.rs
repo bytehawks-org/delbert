@@ -290,7 +290,7 @@ mod tests {
 
         // Step 1: k1 signs a policy announcing k2; the agent verifies it and learns k2.
         let mut announce = policy();
-        announce.trust = Some(TrustUpdate { add: vec![TrustedKey { kid: "k2".into(), public_key: pubkey(&k2) }], remove: vec![] });
+        announce.trust = Some(TrustUpdate { add: vec![TrustedKey { kid: "k2".into(), public_key: pubkey(&k2) }], remove: vec![] , ..Default::default() });
         let token = s1.sign(&announce).unwrap();
         let verified = check(&file, &token).unwrap();
         file = trust::apply(&file, verified.trust.as_ref().unwrap(), &token_kid(&token).unwrap()).unwrap().unwrap();
@@ -299,7 +299,7 @@ mod tests {
         // Step 2: policies signed by k2 are now accepted; step 3: k2 retires k1.
         assert!(check(&file, &plain).is_ok());
         let mut retire = policy();
-        retire.trust = Some(TrustUpdate { add: vec![], remove: vec!["k1".into()] });
+        retire.trust = Some(TrustUpdate { add: vec![], remove: vec!["k1".into()] , ..Default::default() });
         let token = s2.sign(&retire).unwrap();
         let verified = check(&file, &token).unwrap();
         file = trust::apply(&file, verified.trust.as_ref().unwrap(), &token_kid(&token).unwrap()).unwrap().unwrap();

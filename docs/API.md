@@ -36,6 +36,8 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 | `DELBERT_BIND` | Listen address, default `0.0.0.0:8080` |
 | `DELBERT_SIGNING_KEY_FILE`, `DELBERT_SIGNING_KID` | Policy Signing Key (base64 seed from `delbert-sign keygen`) and its key id; without them no policy can be issued |
 | `DELBERT_SIGNING_PUBLISH_KEYS`, `DELBERT_SIGNING_RETIRE_KEYS` | Signing-key rotation: `kid=publickey,...` announced to agents, `kid,...` agents forget ([ROTATION.md](ROTATION.md)) |
+| `DELBERT_CA_EXTRA_FILES`, `DELBERT_CA_RETIRE`, `DELBERT_CERT_RENEW_ISSUED_BEFORE` | Internal CA rotation: other CAs to announce, fingerprints to forget, renew certificates issued before (Unix seconds) ([ROTATION.md](ROTATION.md)) |
+| `DELBERT_SECRETS_OLD_KEY_FILES` | Previous secrets keys, comma separated, readable while re-sealing |
 | `DELBERT_POLICY_TTL_SECS` | Validity of issued policies, default 86400 |
 | `DELBERT_CONFLICT_STRATEGY` | Comma-separated chain, `priority`, `error` (default `error`); `error` is always the implicit last resort |
 | `DELBERT_API_DOCS` | `false` disables Swagger UI and `/openapi.json` |
@@ -94,6 +96,9 @@ Policies, artifacts and tenant settings can come from a repository instead of th
 | `POST /v1/content/sources/{name}/sync` | `content:sync` | Sync now: `{revision, status (unchanged/applied/rejected/failed), changes[] with diffs, errors}` |
 | `GET .../{name}/snapshots`, `GET .../snapshots/{id}` | `content:read` | History: every applied/rejected snapshot with its changes and diffs |
 | `GET /v1/signing/keys` | `keys:read` (global) | Active / published / retiring signing keys and which agents know each |
+| `GET /v1/pki/ca` | `keys:read` (global) | CA rotation: active, announced and retiring CAs; agents trusting each and certificates issued by each |
+| `GET /v1/secrets/key`, `POST /v1/secrets/reseal` | `keys:read` / `keys:write` (global) | Secrets-key status and re-sealing of every sealed value |
+| `POST /v1/proxies/{site}/renew` | the proxy's proof | Proxy certificate renewal with a new key |
 | `GET /v1/audit` | `audit:read` (scoped) | Browse the trail, newest first. Filters `tenant`, `actor`, `action` (`policy.*` = prefix), `target`, `outcome`, `from`, `to` (unix seconds); keyset paging with `limit` (max 1000) and `before` = the `next` of the previous page. A tenant-scoped grant sees only its tenants' events |
 | `GET /v1/audit/export` | `audit:export` (scoped) | Same filters, NDJSON oldest first, with `occurred_at_micros`, `prev_hash` and `hash` to recompute the chain offline / feed a SIEM. The export records itself (`audit.export`) |
 | `GET /v1/audit/verify` | `audit:verify` (global) | Recompute the audit hash chain: `{events, first_bad}` |

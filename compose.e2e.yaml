@@ -27,6 +27,10 @@ services:
     volumes:
       - ./deploy/dev/nats-callout.conf:/etc/nats/nats.conf:ro,Z
       - ./dev/pki:/certs:ro,Z
+      # CA rotation (docs/ROTATION.md): which CA file(s) NATS trusts, and which server certificate it presents.
+      - ./dev/pki/${E2E_NATS_CA:-ca.pem}:/certs/ca.pem:ro,Z
+      - ./dev/pki/nats${E2E_LEAF:-}.pem:/certs/nats.pem:ro,Z
+      - ./dev/pki/nats${E2E_LEAF:-}.key:/certs/nats.key:ro,Z
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
       interval: 3s
@@ -50,19 +54,22 @@ services:
       DELBERT_SIGNING_RETIRE_KEYS: ${E2E_RETIRE_KEYS:-}
       DELBERT_CONFLICT_STRATEGY: error
       DELBERT_SECRETS_KEY_FILE: /pki/secrets.key
-      DELBERT_CA_CERT_FILE: /pki/ca.pem
-      DELBERT_CA_KEY_FILE: /pki/ca.key
-      DELBERT_TLS_CERT_FILE: /pki/core.pem
-      DELBERT_TLS_KEY_FILE: /pki/core.key
+      DELBERT_CA_CERT_FILE: /pki/${E2E_CA:-ca}.pem
+      DELBERT_CA_KEY_FILE: /pki/${E2E_CA:-ca}.key
+      DELBERT_CA_EXTRA_FILES: ${E2E_CA_EXTRA:-}
+      DELBERT_CA_RETIRE: ${E2E_CA_RETIRE:-}
+      DELBERT_CERT_RENEW_ISSUED_BEFORE: ${E2E_RENEW_BEFORE:-}
+      DELBERT_TLS_CERT_FILE: /pki/core${E2E_LEAF:-}.pem
+      DELBERT_TLS_KEY_FILE: /pki/core${E2E_LEAF:-}.key
       NATS_URL: tls://nats:4222
-      NATS_CA_FILE: /pki/ca.pem
-      NATS_CLIENT_CERT_FILE: /pki/core-nats.pem
-      NATS_CLIENT_KEY_FILE: /pki/core-nats.key
+      NATS_CA_FILE: /pki/${E2E_NATS_CA:-ca.pem}
+      NATS_CLIENT_CERT_FILE: /pki/core-nats${E2E_LEAF:-}.pem
+      NATS_CLIENT_KEY_FILE: /pki/core-nats${E2E_LEAF:-}.key
       DELBERT_PUBLIC_NATS_URL: tls://nats:4222
       # Authorization callout: the Core decides per connection what NATS clients may do.
       NATS_AUTH_USER: auth
       NATS_AUTH_PASSWORD: e2e-callout-auth-password
-      DELBERT_NATS_ISSUER_SEED_FILE: /pki/nats-issuer.seed
+      DELBERT_NATS_ISSUER_SEED_FILE: /pki/${E2E_ISSUER:-nats-issuer}.seed
       DELBERT_NATS_ACCOUNT: APP
       DELBERT_NATS_SESSION_SECS: "60"      # short on purpose: revocation is visible within a minute
       DELBERT_AGENT_CERT_DAYS: "1"

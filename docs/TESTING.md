@@ -63,6 +63,8 @@ Findings from these runs, fixed: the real NATS server puts the client certificat
 
 Signing-key rotation, run on 2026-10-23 with the same stack (`E2E_SIGNING_KID`, `E2E_PUBLISH_KEYS`, `E2E_RETIRE_KEYS` select the stage; key files in `dev/` must be readable by the Core's user, `chmod 644`): announce `k2` while signing with `k1` -> the agent's `trusted-keys.txt` gains `k2` and `GET /v1/signing/keys` shows both keys known; sign with `k2` -> the next policy applies; retire `k1` -> the agent drops it; retiring the active key stops the Core at startup. See [ROTATION.md](ROTATION.md).
 
+CA rotation and NATS issuer switch, run on 2026-10-23 with the same stack (`E2E_CA`, `E2E_CA_EXTRA`, `E2E_CA_RETIRE`, `E2E_RENEW_BEFORE`, `E2E_LEAF`, `E2E_NATS_CA`, `E2E_ISSUER` select the stage; a second CA and its server certificates were created with `delbert-pki` in another directory and copied next to the first one with a `2` suffix): announce CA2 -> the agent's `ca.pem` holds two certificates and the status shows both trusted; switch to CA2 with `E2E_RENEW_BEFORE=now` -> the agent renewed (new key, issued by CA2), reconnected, applied the next policy; retire CA1 -> bundle back to one certificate, next policy applied; a Core that retires its active CA refuses to start; new NATS issuer (NATS and Core restarted together) -> the agent reconnected in 4 s. See [ROTATION.md](ROTATION.md).
+
 Probe: `cargo run -p delbert-agent --example probe -- <identity dir> tls://nats:4222 <other agent>` (copy an agent's `identity/` directory out of its container first).
 
 Not covered: `service` on a real systemd host (unit tests with a fake runner only), Windows, Kubernetes, the `external` signing mode in a deployed flow.

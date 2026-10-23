@@ -173,7 +173,7 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
     let enc_public = enc.to_public().to_string();
 
     let client = reqwest::Client::builder()
-        .tls_certs_only([reqwest::Certificate::from_pem(ca_pem.as_bytes()).context("invalid CA file")?])
+        .tls_certs_only(reqwest::Certificate::from_pem_bundle(ca_pem.as_bytes()).context("invalid CA file")?)
         .build()?;
     let resp = client
         .post(format!("{}/v1/enroll", args.core_url.trim_end_matches('/')))
@@ -187,7 +187,9 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
         bail!("enrollment refused ({status}): {body}");
     }
     let resp: EnrollResponse = resp.json().await.context("unexpected enrollment response")?;
-    if resp.ca_pem.trim() != ca_pem.trim() {
+    // The Core may announce more CAs (a rotation in progress) but must include every one we were given.
+    let announced = delbert_pki::bundle::fingerprints(&resp.ca_pem);
+    if delbert_pki::bundle::fingerprints(&ca_pem).iter().any(|f| !announced.contains(f)) {
         bail!("the Core returned a different CA than the one provided: refusing");
     }
 
@@ -197,7 +199,7 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
     write_private(&dir.join("key.pem"), &key_pem)?;
     write_private(&dir.join("enc.key"), enc.to_string().expose_secret())?;
     delbert_fs::write_public(&dir.join("cert.pem"), resp.cert_pem.as_bytes())?;
-    delbert_fs::write_public(&dir.join("ca.pem"), ca_pem.as_bytes())?;
+    delbert_fs::write_public(&dir.join("ca.pem"), resp.ca_pem.as_bytes())?;
     delbert_fs::write_public(&dir.join("trusted-keys.txt"), (resp.signing_keys.join("\n") + "\n").as_bytes())?;
     let meta = Meta { tenant: resp.tenant, agent: resp.agent, nats_url: resp.nats_url, core_url: Some(args.core_url.trim_end_matches('/').to_owned()) };
     delbert_fs::write_public(&dir.join("meta.json"), serde_json::to_string_pretty(&meta)?.as_bytes())?; // last: marks the identity as complete

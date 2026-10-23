@@ -214,7 +214,7 @@ pub async fn do_enroll(st: &AppState, req: EnrollRequest, proxy_id: Option<Uuid>
     }
 
     let signing_keys = trusted_key_lines(&st);
-    Ok(EnrollResponse { tenant, agent: req.agent_name, cert_pem: signed.cert_pem, ca_pem: ca.cert_pem().to_owned(), signing_keys, nats_url: st.public_nats_url.clone() })
+    Ok(EnrollResponse { tenant, agent: req.agent_name, cert_pem: signed.cert_pem, ca_pem: st.ca_bundle().unwrap_or_default(), signing_keys, nats_url: st.public_nats_url.clone() })
 }
 
 /// `<kid> <public key>` lines handed to a new agent: the active signing key and the published ones.

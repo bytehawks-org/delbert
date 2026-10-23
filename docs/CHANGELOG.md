@@ -8,6 +8,13 @@
 ### Authentication hardening
 - Migration `0013`. Cookie sessions with CSRF (double-submit token stored hashed), idle timeout, listable/revocable sessions; TOTP MFA with sealed secret, replay protection and recovery codes, optional or mandatory (`DELBERT_MFA_REQUIRED`); login throttling per (user, address), address and user; admin reset of MFA/sessions. Tests in `tests/auth.rs`. See [API.md](API.md).
 
+### Rotations (CA, secrets key, proxy certificate, NATS issuer)
+- Internal CA rotation with overlap: CA bundles (`delbert-pki::bundle`), in-band announcement (`ca_add`, `ca_remove`, `renew_issued_before` in the signed trust update), agents report trusted CAs and their certificate's issuer, `GET /v1/pki/ca`; enrollment and renewal hand out the bundle. Verified live (announce, switch with forced renewal, retire).
+- Secrets-key rotation: `SecretsKeys` (current + old), `GET /v1/secrets/key`, `POST /v1/secrets/reseal` over tenant secrets, TOTP, SSO and git tokens (migration-free).
+- Proxy certificate renewal with a new key: `POST /v1/proxies/{site}/renew`, migration `0017` (previous key), callout and proofs accept the previous key; the proxy renews itself, installs atomically and restarts.
+- NATS issuer switch procedure verified live. New permission `keys:write`. `compose.e2e.yaml` takes the CA, leaf certificates, NATS CA file and issuer from `E2E_*` variables.
+- Agent and proxy enrollment accept a CA bundle from the Core as long as it contains every CA they were given.
+
 ### Guides and deployment files
 - `docs/quickstart.md` (verified from scratch: keys, stack, tenant, artifact, policy, enrollment, convergence, change, drift, audit) and `docs/install.md` (components, keys, PostgreSQL, NATS, Core configuration, Kubernetes/K3s, Podman, agents with systemd, proxy, integrations, backup/restore, upgrades, troubleshooting, known limits).
 - `deploy/kubernetes/` (kustomization: namespace, NATS StatefulSet, Core Deployment; not run on a cluster yet), `deploy/systemd/` (agent unit and environment example), `examples/quickstart.yaml`, Containerfile targets `tools` (delbert-pki, delbert-sign) and the existing images documented.

@@ -203,8 +203,30 @@ async fn main() -> anyhow::Result<()> {
     if let Some(s) = &signer {
         anyhow::ensure!(!retired.iter().any(|k| k == s.kid()), "DELBERT_SIGNING_RETIRE_KEYS lists the active signing key '{}'", s.kid());
     }
-    let trust = (!published_keys.is_empty() || !retired.is_empty()).then(|| delbert_wire::TrustUpdate { add: published_keys.clone(), remove: retired });
-    let state = AppState { pool, signer, trust, published_keys, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, content: delbert_core::api::ContentConfig {
+    // CA rotation: other CAs to trust, fingerprints to forget, and a cut-off for certificate renewal.
+    let mut extra_cas = Vec::new();
+    for p in var("DELBERT_CA_EXTRA_FILES").iter().flat_map(|v| v.split(',')).map(str::trim).filter(|p| !p.is_empty()) {
+        let pem = fs::read_to_string(p).with_context(|| format!("reading {p}"))?;
+        anyhow::ensure!(delbert_pki::bundle::is_ca_certificate(&pem), "{p} is not a single, self-signed CA certificate");
+        extra_cas.push(pem.trim().to_owned());
+    }
+    let ca_retire: Vec<String> = var("DELBERT_CA_RETIRE").map(|v| v.split(',').map(|f| f.trim().to_ascii_lowercase()).filter(|f| !f.is_empty()).collect()).unwrap_or_default();
+    let renew_issued_before: Option<i64> = var("DELBERT_CERT_RENEW_ISSUED_BEFORE").map(|v| v.parse()).transpose().context("DELBERT_CERT_RENEW_ISSUED_BEFORE must be Unix seconds")?;
+    if let Some(ca) = &pki {
+        let active = delbert_pki::bundle::fingerprints(ca.cert_pem());
+        anyhow::ensure!(!ca_retire.iter().any(|f| active.contains(f)), "DELBERT_CA_RETIRE lists the active CA");
+    }
+    let ca_rotation = delbert_core::api::CaRotation { extra_cas, retire: ca_retire, renew_issued_before };
+    let announcing_keys = !published_keys.is_empty() || !retired.is_empty();
+    let announcing_cas = !ca_rotation.extra_cas.is_empty() || !ca_rotation.retire.is_empty() || ca_rotation.renew_issued_before.is_some();
+    let trust = (announcing_keys || announcing_cas).then(|| delbert_wire::TrustUpdate {
+        add: published_keys.clone(),
+        remove: retired,
+        ca_add: ca_rotation.extra_cas.clone(),
+        ca_remove: ca_rotation.retire.clone(),
+        renew_issued_before: ca_rotation.renew_issued_before,
+    });
+    let state = AppState { pool, signer, trust, ca_rotation, published_keys, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, content: delbert_core::api::ContentConfig {
         dir: var("DELBERT_CONTENT_DIR").unwrap_or_else(|| "./data/content".into()).into(),
         allow_tenant_git: var("DELBERT_CONTENT_ALLOW_TENANT_GIT").as_deref() == Some("true"),
         allow_file: var("DELBERT_CONTENT_ALLOW_FILE").as_deref() == Some("true"),

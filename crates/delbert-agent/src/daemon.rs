@@ -91,6 +91,8 @@ pub fn report_json(report: Option<&Report>, version: Option<u64>, error: Option<
 }
 
 struct Agent<'a> {
+    /// Set from the signed policy: replace certificates issued before this Unix time (0 = no request).
+    renew_issued_before: std::sync::atomic::AtomicI64,
     cfg: &'a DaemonConfig,
     client: async_nats::Client,
     key_pem: String,
@@ -132,7 +134,30 @@ impl Agent<'_> {
                 Err(e) => tracing::error!("ignoring the key update of the policy: {e}"),
             }
         }
+        // CA rotation (docs/ROTATION.md): learn or forget CAs, and replace old certificates.
+        if let Some(update) = &policy.trust {
+            if !update.ca_add.is_empty() || !update.ca_remove.is_empty() {
+                let path = self.cfg.identity.path("ca.pem");
+                let bundle = fs::read_to_string(&path).context("reading ca.pem")?;
+                match delbert_pki::bundle::apply(&bundle, &update.ca_add, &update.ca_remove) {
+                    Ok(Some(next)) => {
+                        delbert_fs::write_public(&path, next.as_bytes()).context("updating ca.pem")?;
+                        tracing::info!("trusted CAs are now: {}", delbert_pki::bundle::fingerprints(&next).iter().map(|f| &f[..12]).collect::<Vec<_>>().join(", "));
+                    }
+                    Ok(None) => {}
+                    Err(e) => tracing::error!("ignoring the CA update of the policy: {e}"),
+                }
+            }
+            self.renew_issued_before.store(update.renew_issued_before.unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
+        }
         Ok(policy)
+    }
+
+    /// Fingerprints of the CAs this agent trusts, and of the one that issued its own certificate.
+    fn ca_report(&self) -> (Vec<String>, Option<String>) {
+        let bundle = fs::read_to_string(self.cfg.identity.path("ca.pem")).unwrap_or_default();
+        let cert = fs::read_to_string(self.cfg.identity.path("cert.pem")).unwrap_or_default();
+        (delbert_pki::bundle::fingerprints(&bundle), delbert_pki::bundle::issuer_of(&cert, &bundle))
     }
 
     /// Key ids currently trusted, for the report.
@@ -218,7 +243,7 @@ impl Agent<'_> {
         let (tenant, agent) = (&id.meta.tenant, &id.meta.agent);
         let proof = delbert_pki::authn::prove(&self.key_pem, "artifact", tenant, agent, &Value::String(format!("{name}:{sha256}")), now())?;
         let ca = fs::read(id.path("ca.pem"))?;
-        let client = reqwest::Client::builder().tls_certs_only([reqwest::Certificate::from_pem(&ca)?]).timeout(Duration::from_secs(120)).build()?;
+        let client = reqwest::Client::builder().tls_certs_only(reqwest::Certificate::from_pem_bundle(&ca)?).timeout(Duration::from_secs(120)).build()?;
         let resp = client
             .get(format!("{base}/v1/agent/{tenant}/{agent}/artifacts/{name}?sha256={sha256}")) // hex: no escaping needed
             .header("Authorization", format!("Delbert-Agent {}", B64.encode(serde_json::to_vec(&proof)?)))
@@ -301,6 +326,10 @@ impl Agent<'_> {
             }
         };
 
+        let mut payload = payload;
+        let (trusted_cas, cert_issuer) = self.ca_report();
+        payload["trusted_cas"] = json!(trusted_cas);
+        payload["cert_issuer"] = json!(cert_issuer);
         let meta = &self.cfg.identity.meta;
         let subject = format!("delbert.report.{}.{}", meta.tenant, meta.agent);
         match delbert_pki::authn::prove(&self.key_pem, "report", &meta.tenant, &meta.agent, &payload, now()) {
@@ -353,7 +382,7 @@ async fn session(cfg: &DaemonConfig, last_renewal: &mut Option<std::time::Instan
     tracing::info!("agent {}/{} connected, interval {:?}", id.meta.tenant, id.meta.agent, cfg.interval);
 
     let key_pem = id.key_pem()?;
-    let agent = Agent { cfg, client, key_pem };
+    let agent = Agent { cfg, client, key_pem, renew_issued_before: std::sync::atomic::AtomicI64::new(0) };
     // Right after start the proxy or the Core may not be answering yet: without a policy, retry soon.
     const RETRY_WITHOUT_POLICY: Duration = Duration::from_secs(5);
     loop {
@@ -361,7 +390,10 @@ async fn session(cfg: &DaemonConfig, last_renewal: &mut Option<std::time::Instan
 
         let cert = fs::read_to_string(id.path("cert.pem")).unwrap_or_default();
         let gap_ok = last_renewal.is_none_or(|t| t.elapsed() >= MIN_RENEWAL_GAP);
-        if gap_ok && crate::identity::renewal_due(&cert, now(), cfg.renew_before_secs) {
+        // The Core can ask for certificates issued before a moment to be replaced (a CA rotation).
+        let cutoff = agent.renew_issued_before.load(std::sync::atomic::Ordering::Relaxed);
+        let too_old = cutoff > 0 && delbert_pki::cert_validity(&cert).is_ok_and(|(not_before, _)| not_before < cutoff);
+        if gap_ok && (too_old || crate::identity::renewal_due(&cert, now(), cfg.renew_before_secs)) {
             match agent.renew().await {
                 Ok(()) => {
                     *last_renewal = Some(std::time::Instant::now());

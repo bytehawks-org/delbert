@@ -47,6 +47,9 @@ pub struct AppState {
     /// Where artifact content lives (local directory or S3-compatible).
     pub blobs: crate::blobs::Blobs,
     pub auth: AuthConfig,
+    /// CA rotation (docs/ROTATION.md): other CA certificates (PEM) agents and proxies must trust,
+    /// fingerprints they must forget, and "renew certificates issued before" (Unix seconds).
+    pub ca_rotation: CaRotation,
     /// Signing-key rotation to announce to agents in every policy (docs/ROTATION.md).
     pub trust: Option<delbert_wire::TrustUpdate>,
     /// Keys agents should know at enrollment besides the active one.
@@ -54,6 +57,21 @@ pub struct AppState {
     pub content: ContentConfig,
     /// Whether new tenants require policy approval (`DELBERT_APPROVAL_DEFAULT`).
     pub approval_default: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct CaRotation {
+    pub extra_cas: Vec<String>,
+    pub retire: Vec<String>,
+    pub renew_issued_before: Option<i64>,
+}
+
+impl AppState {
+    /// PEM bundle handed to enrolling components: the active CA first, then the announced ones.
+    pub fn ca_bundle(&self) -> Option<String> {
+        let ca = self.pki.as_ref()?;
+        Some(std::iter::once(ca.cert_pem()).chain(self.ca_rotation.extra_cas.iter().map(String::as_str)).map(|p| format!("{}\n", p.trim())).collect())
+    }
 }
 
 /// Where content sources live and what they may reach.
@@ -225,6 +243,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/activate", post(approval::activate))
         .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/rollback", post(approval::rollback))
         .route("/v1/signing/keys", get(crate::signing::status))
+        .route("/v1/pki/ca", get(crate::signing::ca_status))
         .route("/v1/audit", get(crate::audit_api::list))
         .route("/v1/audit/export", get(crate::audit_api::export))
         .route("/v1/audit/verify", get(audit_verify));
