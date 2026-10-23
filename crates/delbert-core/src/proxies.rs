@@ -117,7 +117,7 @@ fn valid_dns(name: &str) -> bool {
 #[utoipa::path(post, path = "/v1/proxies", tag = "proxies", security(("bearer" = [])), request_body = NewProxy,
     responses((status = 201, body = ProxyCreated), (status = 409), (status = 422)))]
 pub async fn create_proxy(State(st): State<AppState>, Authn(user): Authn, Json(body): Json<NewProxy>) -> ApiResult<(StatusCode, Json<ProxyCreated>)> {
-    user.require("proxies:write")?;
+    user.require_global("proxies:write")?;
     check_token(&body.name, "proxy")?;
     if body.dns_names.is_empty() || !body.dns_names.iter().all(|d| valid_dns(d)) {
         return Err(ApiError(StatusCode::UNPROCESSABLE_ENTITY, "dns_names must list at least one valid DNS name".into()));
@@ -144,7 +144,7 @@ pub async fn create_proxy(State(st): State<AppState>, Authn(user): Authn, Json(b
 
 #[utoipa::path(get, path = "/v1/proxies", tag = "proxies", security(("bearer" = [])), responses((status = 200, body = Vec<ProxyOut>)))]
 pub async fn list_proxies(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<Vec<ProxyOut>>> {
-    user.require("read")?;
+    user.require_global("proxies:read")?;
     let rows: Vec<(String, Vec<String>, bool, i64, Option<i64>)> = sqlx::query_as(
         "SELECT p.name, p.dns_names, p.public_key IS NOT NULL, (SELECT COUNT(*) FROM agents a WHERE a.proxy_id = p.id), (EXTRACT(EPOCH FROM p.last_seen_at))::bigint FROM proxies p ORDER BY p.name",
     )
@@ -156,7 +156,7 @@ pub async fn list_proxies(State(st): State<AppState>, Authn(user): Authn) -> Api
 #[utoipa::path(delete, path = "/v1/proxies/{name}", tag = "proxies", security(("bearer" = [])),
     params(("name" = String, Path)), responses((status = 204), (status = 404), (status = 409, description = "Agents are still assigned to it")))]
 pub async fn delete_proxy(State(st): State<AppState>, Authn(user): Authn, Path(name): Path<String>) -> ApiResult<StatusCode> {
-    user.require("proxies:write")?;
+    user.require_global("proxies:write")?;
     let mut tx = st.pool.begin().await?;
     let n = sqlx::query("DELETE FROM proxies WHERE name = $1").bind(&name).execute(&mut *tx).await?.rows_affected(); // FK -> 409 while agents are assigned
     if n == 0 {

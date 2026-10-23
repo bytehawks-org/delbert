@@ -27,9 +27,11 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 ## Authentication and RBAC
 
 - `POST /v1/auth/login` with `{username, password}` returns a session token valid 8 hours (Argon2id passwords; only the SHA-256 of the token is stored). `POST /v1/auth/logout` revokes it; changing a password or deactivating a user revokes their sessions.
-- A role is a list of permissions: `*`, `read`, `tenants:write`, `agents:write`, `policies:write`, `secrets:write`, `proxies:write`, `effective:issue`, `audit:read`, `users:admin`. Built-in roles: `admin` (`*`), `operator` (`read`, `agents:write`, `policies:write`, `effective:issue`), `auditor` (`read`, `audit:read`). Custom roles can be created, changed and deleted (not while assigned); built-ins are immutable.
-- The last active holder of `*` cannot be deleted, deactivated or demoted.
-- Not done yet: SSO (OIDC/SAML), LDAP/AD, MFA, login throttling, per-tenant role scoping ([ROADMAP.md](ROADMAP.md)).
+- A role is a list of `resource:action` permissions (`*` = everything, `resource:*` = every action on a resource) and has a **scope**: `global`, `tenant` or `any`. A user holds roles through **assignments** `{role, tenant?}`: global, or for one tenant. A tenant-scoped assignment grants its permissions only inside that tenant and never the global-only ones (`tenants:create|delete`, `proxies:*`, `users:*`, `roles:read|write`, `audit:verify`). A tenant the caller has no role in answers 404, not 403. Full model: [RBAC.md](RBAC.md).
+- Permissions: `tenants:{read,create,delete,settings}`, `agents:{read,write,enroll,preview}`, `policies:{read,write,approve}`, `secrets:{read,write}`, `artifacts:{read,write}`, `proxies:{read,write}`, `users:{read,write}`, `roles:{read,write,assign}`, `audit:{read,export,verify}`, `tokens:manage`. Built-in roles (immutable): `platform-admin` (`*`, global), `tenant-admin`, `operator`, `approver` (tenant), `auditor`, `viewer` (any). Custom roles can be created, changed and deleted (not while assigned).
+- Delegation: a holder of `roles:assign` in a tenant (the `tenant-admin`) manages assignments of that tenant only, and can only grant permissions they hold there.
+- The last active holder of a global `*` cannot be deleted, deactivated or demoted.
+- Not done yet: approval workflow, SSO (OIDC/SAML), LDAP/AD, MFA, login throttling, API tokens ([ROADMAP.md](ROADMAP.md)).
 
 ## Endpoints
 
@@ -37,23 +39,24 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 |-----------------|------------|---------|
 | `GET /healthz` | public | Liveness and database reachability |
 | `POST /v1/auth/login`, `POST /v1/auth/logout`, `GET /v1/me` | public / any session | Session handling |
-| `GET/POST /v1/users`, `PUT/DELETE /v1/users/{username}` | `users:admin` | Users (password, active, roles) |
-| `GET/POST /v1/roles`, `PUT/DELETE /v1/roles/{name}` | `users:admin` | Roles |
-| `POST /v1/tenants`, `GET /v1/tenants` | `tenants:write` / `read` | Tenants |
-| `POST/GET /v1/tenants/{t}/agents` | `agents:write` / `read` | Create / list agents (`name`, `groups`; list includes the last report) |
+| `GET/POST /v1/users`, `PUT/DELETE /v1/users/{username}` | `users:read` / `users:write` | Users (password, active, `assignments`) |
+| `GET/POST /v1/roles`, `PUT/DELETE /v1/roles/{name}` | `roles:read` (or `roles:assign` in a tenant) / `roles:write` | Roles (`permissions`, `scope`) |
+| `GET /v1/tenants/{t}/assignments`, `PUT .../assignments/{username}` | `roles:assign` in the tenant | Delegated administration: who holds which role in the tenant; set a user's roles there |
+| `POST /v1/tenants`, `GET /v1/tenants` | `tenants:create` (global) / `tenants:read` | Tenants (the list is limited to reachable tenants) |
+| `POST/GET /v1/tenants/{t}/agents` | `agents:write` / `agents:read` | Create / list agents (`name`, `groups`; list includes the last report) |
 | `PUT/DELETE /v1/tenants/{t}/agents/{a}` | `agents:write` | Change groups / delete |
-| `POST/GET /v1/tenants/{t}/enrollment-keys`, `DELETE .../{id}` | `agents:write` / `read` | Enrollment keys: expiring, limited uses, revocable; the key is shown once |
-| `POST/GET /v1/proxies`, `DELETE /v1/proxies/{name}` | `proxies:write` / `read` | Branch-office proxies ([PROXY.md](PROXY.md)): create (one-time key), list (agents, last seen), delete (refused while agents are assigned) |
+| `POST/GET /v1/tenants/{t}/enrollment-keys`, `DELETE .../{id}` | `agents:enroll` | Enrollment keys: expiring, limited uses, revocable; the key is shown once |
+| `POST/GET /v1/proxies`, `DELETE /v1/proxies/{name}` | `proxies:write` / `proxies:read` (global) | Branch-office proxies ([PROXY.md](PROXY.md)): create (one-time key), list (agents, last seen), delete (refused while agents are assigned) |
 | `POST /v1/proxies/enroll` | the proxy\'s one-time key | Proxy enrollment: CSR in, certificate (client and server) out |
 | `POST /v1/proxy/enroll-agent`, `GET /v1/proxy/{site}/artifacts/{tenant}/{name}` | proxy proof | Used by a proxy for its agents: enrollment relay, artifact fetch |
 | `POST /v1/enroll` | the enrollment key | Agent enrollment: CSR + age public key in, certificate + CA + signing keys out |
-| `PUT/GET /v1/tenants/{t}/secrets[/{name}]`, `DELETE` | `secrets:write` / `read` | Tenant secrets: write-only, the list shows names only |
-| `PUT /v1/tenants/{t}/artifacts/{name}`, `GET .../artifacts` | `policies:write` / `read` | Immutable artifact versions (16 MiB at most); same content is a no-op |
+| `PUT/GET /v1/tenants/{t}/secrets[/{name}]`, `DELETE` | `secrets:write` / `secrets:read` | Tenant secrets: write-only, the list shows names only |
+| `PUT /v1/tenants/{t}/artifacts/{name}`, `GET .../artifacts` | `artifacts:write` / `artifacts:read` | Immutable artifact versions (16 MiB at most); same content is a no-op |
 | `GET /v1/agent/{t}/{a}/artifacts/{name}?sha256=` | agent proof | Download by hash, authenticated with `Authorization: Delbert-Agent <base64 proof>` |
-| `POST/GET /v1/tenants/{t}/policies` | `policies:write` / `read` | Upload a policy YAML (`{"yaml": "..."}`, new immutable version) / list |
-| `GET/DELETE /v1/tenants/{t}/policies/{name}` | `read` / `policies:write` | Latest version / deactivate (soft delete, history kept) |
-| `GET /v1/tenants/{t}/agents/{a}/effective` | `effective:issue` | Compile the policies targeting the agent, resolve conflicts, sign: `{token, version, conflicts}` |
-| `GET /v1/audit/verify` | `audit:read` | Recompute the audit hash chain: `{events, first_bad}` |
+| `POST/GET /v1/tenants/{t}/policies` | `policies:write` / `policies:read` | Upload a policy YAML (`{"yaml": "..."}`, new immutable version) / list |
+| `GET/DELETE /v1/tenants/{t}/policies/{name}` | `policies:read` / `policies:write` | Latest version / deactivate (soft delete, history kept) |
+| `GET /v1/tenants/{t}/agents/{a}/effective` | `agents:preview` | Compile the policies targeting the agent, resolve conflicts, sign: `{token, version, conflicts}` |
+| `GET /v1/audit/verify` | `audit:verify` (global) | Recompute the audit hash chain: `{events, first_bad}` |
 
 Errors are `{"error": "..."}` with 401, 403, 404, 409 (duplicate or in use), 422 (invalid input) or 503.
 

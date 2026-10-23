@@ -29,7 +29,7 @@ async fn proxy_lifecycle_enrollment_and_agents_through_a_proxy(pool: PgPool) {
     // Validation and permissions.
     assert_eq!(admin.call("POST", "/v1/proxies", Some(json!({ "name": "a.b", "dns_names": ["x"] }))).await.0, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(admin.call("POST", "/v1/proxies", Some(json!({ "name": "branch", "dns_names": [] }))).await.0, StatusCode::UNPROCESSABLE_ENTITY);
-    admin.call("POST", "/v1/users", Some(json!({ "username": "olivia", "password": "a-long-enough-password", "roles": ["operator"] }))).await;
+    admin.call("POST", "/v1/users", Some(json!({ "username": "olivia", "password": "a-long-enough-password", "assignments": [{ "role": "viewer" }] }))).await;
     let operator = admin.as_user("olivia", "a-long-enough-password").await;
     assert_eq!(operator.call("POST", "/v1/proxies", Some(json!({ "name": "branch", "dns_names": ["x"] }))).await.0, StatusCode::FORBIDDEN);
 

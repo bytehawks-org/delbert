@@ -5,6 +5,11 @@
 ### Design
 - Added `RBAC.md` (tenant-scoped roles, `resource:action` permissions, built-in roles, optional per-tenant four-eyes approval with an active-version pointer, cookie sessions, MFA, throttling, API tokens, audit browsing), `FRONTEND.md` (Next.js + Tailwind with a backend-for-frontend, generated client, screens, milestones) and `STATUS.md` (state, how to run, decisions, limits, working agreements for the next session).
 
+### RBAC v2 (part 1)
+- Migration `0010`: role `scope`, `user_roles.tenant_id`, new `resource:action` permissions (custom v1 roles are mapped), built-in roles `platform-admin` (was `admin`), `tenant-admin`, `operator`, `approver`, `auditor`, `viewer`.
+- Authorization is tenant-aware: `CurrentUser::tenant()` resolves the tenant and checks the permission in scope (404 when the caller has no role there); global-only permissions never come from a tenant-scoped assignment; `GET /v1/tenants` lists only reachable tenants.
+- Users carry `assignments` (`role`, optional `tenant`) instead of `roles`; `/v1/me` shows assignments and per-tenant permissions; delegated `GET/PUT /v1/tenants/{t}/assignments`, limited to what the delegate holds. Breaking change of the API (unreleased project). Tests: scope matrix and delegation (`tests/rbac.rs`). See [API.md](API.md), [RBAC.md](RBAC.md).
+
 ### Code
 - Cargo workspace (Rust edition 2024) with `delbert-policy`, `delbert-core`, `delbert-agent`.
 - `delbert-policy`: typed YAML model (`file`, `copy`, `line_in_file`, `package`, `service`), JSON Schema, validation (duplicate ids, single verb, dependencies, handlers, cycles, paths, modes) with 6 tests.

@@ -1,6 +1,6 @@
 # Delbert - RBAC v2 and authentication
 
-Design for the next iteration of access control, driven by the web frontend ([FRONTEND.md](FRONTEND.md)). Status: **design**, not implemented. What exists today is described in [API.md](API.md) ("Authentication and RBAC").
+Design for the next iteration of access control, driven by the web frontend ([FRONTEND.md](FRONTEND.md)). Status: **tenant-scoped roles and permissions implemented** (migration `0010`, [API.md](API.md)); approval workflow, authentication hardening and tokens are still design. What exists today is described in [API.md](API.md) ("Authentication and RBAC").
 
 ## Where we are (v1)
 
@@ -52,6 +52,7 @@ Roles carry a `scope` (`global` or `tenant`): a role meant for tenants cannot be
 | `audit:read` | browse the audit trail (scoped to the tenant for tenant grants) | |
 | `audit:export` | export it | |
 | `audit:verify` | recompute the hash chain | yes |
+| `roles:assign` | assign roles inside a tenant, limited to permissions the assigner holds there (delegated administration) | |
 | `tokens:manage` | create API tokens for oneself (always limited to own permissions) | |
 
 `*` remains the wildcard of the built-in platform administrator. v1 permissions map onto these in the migration (`read` → all `*:read`, `policies:write` → `policies:write` + `policies:approve` for existing installations so that nothing breaks, `effective:issue` → `agents:preview`, `users:admin` → `users:*` + `roles:*`).

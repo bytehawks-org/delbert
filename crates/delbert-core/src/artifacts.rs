@@ -42,12 +42,11 @@ pub struct ArtifactOut {
     params(("tenant" = String, Path), ("name" = String, Path)),
     responses((status = 201, description = "New version", body = ArtifactOut), (status = 200, description = "Same content as the latest version", body = ArtifactOut), (status = 413), (status = 422)))]
 pub async fn put_artifact(State(st): State<AppState>, Authn(user): Authn, Path((tenant, name)): Path<(String, String)>, body: Bytes) -> ApiResult<(StatusCode, Json<ArtifactOut>)> {
-    user.require("policies:write")?;
     check_name(&name, "artifact")?;
     if body.len() > MAX_ARTIFACT_BYTES {
         return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE, "artifact too large (16 MiB at most)".into()));
     }
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "artifacts:write").await?;
     let sha: Vec<u8> = Sha256::digest(&body).to_vec();
 
     let mut tx = st.pool.begin().await?;
@@ -79,8 +78,7 @@ pub async fn put_artifact(State(st): State<AppState>, Authn(user): Authn, Path((
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/artifacts", tag = "artifacts", security(("bearer" = [])),
     params(("tenant" = String, Path)), responses((status = 200, description = "Latest version of each artifact", body = Vec<ArtifactOut>), (status = 404)))]
 pub async fn list_artifacts(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>) -> ApiResult<Json<Vec<ArtifactOut>>> {
-    user.require("read")?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "artifacts:read").await?;
     Ok(Json(latest(&st, tid).await?.into_iter().map(|(name, version, size, sha256)| ArtifactOut { name, version, size, sha256 }).collect()))
 }
 

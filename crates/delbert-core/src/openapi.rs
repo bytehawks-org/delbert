@@ -28,6 +28,7 @@ impl Modify for BearerAuth {
         api::healthz, auth::login, auth::logout, auth::me,
         auth::list_users, auth::create_user, auth::update_user, auth::delete_user,
         auth::list_roles, auth::create_role, auth::update_role, auth::delete_role,
+        auth::list_tenant_assignments, auth::set_tenant_assignments,
         api::create_tenant, api::list_tenants,
         api::create_agent, api::list_agents, api::update_agent, api::delete_agent, api::effective,
         api::create_policy, api::list_policies, api::get_policy, api::delete_policy,

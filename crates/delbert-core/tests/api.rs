@@ -79,13 +79,16 @@ async fn rbac_roles_users_and_safeguards(pool: PgPool) {
     // Built-in roles exist; unknown permissions and duplicate users are refused.
     let (_, roles) = admin.call("GET", "/v1/roles", None).await;
     let names: Vec<&str> = roles.as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec!["admin", "auditor", "operator"]);
+    assert_eq!(names, vec!["approver", "auditor", "operator", "platform-admin", "tenant-admin", "viewer"]);
     assert_eq!(admin.call("POST", "/v1/roles", Some(json!({ "name": "x-role", "permissions": ["fly"] }))).await.0, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(admin.call("PUT", "/v1/roles/admin", Some(json!({ "permissions": ["read"] }))).await.0, StatusCode::CONFLICT);
+    assert_eq!(admin.call("PUT", "/v1/roles/platform-admin", Some(json!({ "permissions": ["agents:read"] }))).await.0, StatusCode::CONFLICT);
 
     // Users: weak passwords and unknown roles are rejected.
-    let new = |name: &str, role: &str| json!({ "username": name, "password": "a-long-enough-password", "roles": [role] });
-    assert_eq!(admin.call("POST", "/v1/users", Some(json!({ "username": "weak", "password": "short", "roles": [] }))).await.0, StatusCode::UNPROCESSABLE_ENTITY);
+    let new = |name: &str, role: &str| {
+        let tenant = (role == "operator").then_some("acme");
+        json!({ "username": name, "password": "a-long-enough-password", "assignments": [{ "role": role, "tenant": tenant }] })
+    };
+    assert_eq!(admin.call("POST", "/v1/users", Some(json!({ "username": "weak", "password": "short", "assignments": [] }))).await.0, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(admin.call("POST", "/v1/users", Some(new("ghost-role", "nope"))).await.0, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(admin.call("POST", "/v1/users", Some(new("olivia", "operator"))).await.0, StatusCode::CREATED);
     assert_eq!(admin.call("POST", "/v1/users", Some(new("olivia", "operator"))).await.0, StatusCode::CONFLICT);
@@ -107,13 +110,13 @@ async fn rbac_roles_users_and_safeguards(pool: PgPool) {
     assert_eq!(auditor.call("GET", "/v1/tenants/acme/agents/agent-1/effective", None).await.0, StatusCode::FORBIDDEN);
 
     // Custom role: policies only, no agents.
-    assert_eq!(admin.call("POST", "/v1/roles", Some(json!({ "name": "policy-editor", "permissions": ["read", "policies:write"] }))).await.0, StatusCode::CREATED);
-    assert_eq!(admin.call("PUT", "/v1/users/alice", Some(json!({ "roles": ["policy-editor"] }))).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(admin.call("POST", "/v1/roles", Some(json!({ "name": "policy-editor", "permissions": ["tenants:read", "policies:read", "policies:write"] }))).await.0, StatusCode::CREATED);
+    assert_eq!(admin.call("PUT", "/v1/users/alice", Some(json!({ "assignments": [{ "role": "policy-editor" }] }))).await.0, StatusCode::NO_CONTENT);
     assert_eq!(auditor.call("POST", "/v1/tenants/acme/policies", Some(policy("q", "", OTHER))).await.0, StatusCode::CREATED);
     assert_eq!(auditor.call("POST", "/v1/tenants/acme/agents", Some(json!({ "name": "a2" }))).await.0, StatusCode::FORBIDDEN);
     // A role in use cannot be deleted; built-ins neither.
     assert_eq!(admin.call("DELETE", "/v1/roles/policy-editor", None).await.0, StatusCode::CONFLICT);
-    assert_eq!(admin.call("DELETE", "/v1/roles/admin", None).await.0, StatusCode::CONFLICT);
+    assert_eq!(admin.call("DELETE", "/v1/roles/platform-admin", None).await.0, StatusCode::CONFLICT);
 
     // Deactivating a user kills its access; a new password kills its sessions.
     assert_eq!(admin.call("PUT", "/v1/users/olivia", Some(json!({ "active": false }))).await.0, StatusCode::NO_CONTENT);
@@ -126,7 +129,7 @@ async fn rbac_roles_users_and_safeguards(pool: PgPool) {
     // The last administrator cannot be removed, deactivated or demoted.
     assert_eq!(admin.call("DELETE", "/v1/users/admin", None).await.0, StatusCode::CONFLICT);
     assert_eq!(admin.call("PUT", "/v1/users/admin", Some(json!({ "active": false }))).await.0, StatusCode::CONFLICT);
-    assert_eq!(admin.call("PUT", "/v1/users/admin", Some(json!({ "roles": [] }))).await.0, StatusCode::CONFLICT);
+    assert_eq!(admin.call("PUT", "/v1/users/admin", Some(json!({ "assignments": [] }))).await.0, StatusCode::CONFLICT);
     assert_eq!(admin.call("GET", "/v1/me", None).await.0, StatusCode::OK);
 
     // Authentication and administration events are in the audit trail.

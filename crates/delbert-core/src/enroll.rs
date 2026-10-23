@@ -21,7 +21,7 @@ use sqlx::types::Uuid;
 use utoipa::ToSchema;
 
 use crate::{
-    api::{ApiError, ApiResult, AppState, check_name, check_token, tenant_id},
+    api::{ApiError, ApiResult, AppState, check_name, check_token},
     audit::{self, NewEvent},
     auth::Authn,
 };
@@ -68,13 +68,12 @@ pub struct EnrollmentKeyOut {
 #[utoipa::path(post, path = "/v1/tenants/{tenant}/enrollment-keys", tag = "enrollment", security(("bearer" = [])), request_body = NewEnrollmentKey,
     params(("tenant" = String, Path)), responses((status = 201, body = EnrollmentKeyCreated), (status = 404), (status = 422)))]
 pub async fn create_key(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>, Json(body): Json<NewEnrollmentKey>) -> ApiResult<(StatusCode, Json<EnrollmentKeyCreated>)> {
-    user.require("agents:write")?;
     let (ttl, max_uses) = (body.ttl_hours.unwrap_or(DEFAULT_TTL_HOURS), body.max_uses.unwrap_or(1));
     if !(1..=MAX_TTL_HOURS).contains(&ttl) || !(1..=10_000).contains(&max_uses) {
         return Err(ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("ttl_hours must be 1-{MAX_TTL_HOURS} and max_uses 1-10000")));
     }
     body.groups.iter().try_for_each(|g| check_name(g, "group"))?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "agents:enroll").await?;
 
     let mut raw = [0u8; 32];
     OsRng.fill_bytes(&mut raw);
@@ -101,8 +100,7 @@ pub async fn create_key(State(st): State<AppState>, Authn(user): Authn, Path(ten
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/enrollment-keys", tag = "enrollment", security(("bearer" = [])),
     params(("tenant" = String, Path)), responses((status = 200, body = Vec<EnrollmentKeyOut>), (status = 404)))]
 pub async fn list_keys(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>) -> ApiResult<Json<Vec<EnrollmentKeyOut>>> {
-    user.require("read")?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "agents:enroll").await?;
     let rows: Vec<(Uuid, i32, i32, i64, bool, Vec<String>)> = sqlx::query_as(
         "SELECT id, uses, max_uses, (EXTRACT(EPOCH FROM expires_at))::bigint, revoked, groups FROM enrollment_keys WHERE tenant_id = $1 ORDER BY created_at DESC",
     )
@@ -115,8 +113,7 @@ pub async fn list_keys(State(st): State<AppState>, Authn(user): Authn, Path(tena
 #[utoipa::path(delete, path = "/v1/tenants/{tenant}/enrollment-keys/{id}", tag = "enrollment", security(("bearer" = [])),
     params(("tenant" = String, Path), ("id" = String, Path)), responses((status = 204), (status = 404)))]
 pub async fn revoke_key(State(st): State<AppState>, Authn(user): Authn, Path((tenant, id)): Path<(String, String)>) -> ApiResult<StatusCode> {
-    user.require("agents:write")?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "agents:enroll").await?;
     let id: Uuid = id.parse().map_err(|_| ApiError(StatusCode::NOT_FOUND, "enrollment key not found".into()))?;
     let mut tx = st.pool.begin().await?;
     let n = sqlx::query("UPDATE enrollment_keys SET revoked = true WHERE id = $1 AND tenant_id = $2").bind(id).bind(tid).execute(&mut *tx).await?.rows_affected();

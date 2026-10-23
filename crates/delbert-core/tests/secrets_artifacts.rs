@@ -36,7 +36,7 @@ async fn secrets_are_write_only_and_encrypted_for_the_target_agent(pool: PgPool)
     let a2 = enroll_agent(&admin, "acme", "agent-2").await;
 
     // Only holders of secrets:write set them; nobody reads them back.
-    admin.call("POST", "/v1/users", Some(json!({ "username": "olivia", "password": "a-long-enough-password", "roles": ["operator"] }))).await;
+    admin.call("POST", "/v1/users", Some(json!({ "username": "olivia", "password": "a-long-enough-password", "assignments": [{ "role": "operator", "tenant": "acme" }] }))).await;
     let operator = admin.as_user("olivia", "a-long-enough-password").await;
     assert_eq!(operator.call("PUT", "/v1/tenants/acme/secrets/db", Some(json!({ "value": "x" }))).await.0, StatusCode::FORBIDDEN);
     assert_eq!(admin.call("PUT", "/v1/tenants/acme/secrets/db", Some(json!({ "value": "hunter2" }))).await.0, StatusCode::NO_CONTENT);

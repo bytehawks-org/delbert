@@ -97,6 +97,8 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/users/{username}", put(auth::update_user).delete(auth::delete_user))
         .route("/v1/roles", get(auth::list_roles).post(auth::create_role))
         .route("/v1/roles/{name}", put(auth::update_role).delete(auth::delete_role))
+        .route("/v1/tenants/{tenant}/assignments", get(auth::list_tenant_assignments))
+        .route("/v1/tenants/{tenant}/assignments/{username}", put(auth::set_tenant_assignments))
         .route("/v1/enroll", post(crate::enroll::enroll))
         .route("/v1/proxies", get(crate::proxies::list_proxies).post(crate::proxies::create_proxy))
         .route("/v1/proxies/enroll", post(crate::proxies::enroll_proxy))
@@ -220,7 +222,7 @@ pub struct TenantOut {
 #[utoipa::path(post, path = "/v1/tenants", tag = "tenants", security(("bearer" = [])), request_body = NewTenant,
     responses((status = 201, body = TenantOut), (status = 409, description = "Already exists"), (status = 422)))]
 pub async fn create_tenant(State(st): State<AppState>, Authn(user): Authn, Json(body): Json<NewTenant>) -> ApiResult<(StatusCode, Json<TenantOut>)> {
-    user.require("tenants:write")?;
+    user.require_global("tenants:create")?;
     check_token(&body.name, "tenant")?;
     let mut tx = st.pool.begin().await?;
     let id: Uuid = sqlx::query_scalar("INSERT INTO tenants (name) VALUES ($1) RETURNING id").bind(&body.name).fetch_one(&mut *tx).await?;
@@ -231,8 +233,11 @@ pub async fn create_tenant(State(st): State<AppState>, Authn(user): Authn, Json(
 
 #[utoipa::path(get, path = "/v1/tenants", tag = "tenants", security(("bearer" = [])), responses((status = 200, body = Vec<TenantOut>)))]
 pub async fn list_tenants(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<Vec<TenantOut>>> {
-    user.require("read")?;
-    let rows: Vec<(Uuid, String)> = sqlx::query_as("SELECT id, name FROM tenants ORDER BY name").fetch_all(&st.pool).await?;
+    // Only the tenants the caller can reach (all of them for a global grant).
+    let rows: Vec<(Uuid, String)> = match user.tenants_with("tenants:read") {
+        None => sqlx::query_as("SELECT id, name FROM tenants ORDER BY name").fetch_all(&st.pool).await?,
+        Some(ids) => sqlx::query_as("SELECT id, name FROM tenants WHERE id = ANY($1) ORDER BY name").bind(ids).fetch_all(&st.pool).await?,
+    };
     Ok(Json(rows.into_iter().map(|(id, name)| TenantOut { id: id.to_string(), name }).collect()))
 }
 
@@ -268,10 +273,9 @@ pub struct AgentOut {
 #[utoipa::path(post, path = "/v1/tenants/{tenant}/agents", tag = "agents", security(("bearer" = [])), request_body = NewAgent,
     params(("tenant" = String, Path)), responses((status = 201, body = AgentOut), (status = 404), (status = 409), (status = 422)))]
 pub async fn create_agent(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>, Json(body): Json<NewAgent>) -> ApiResult<(StatusCode, Json<AgentOut>)> {
-    user.require("agents:write")?;
     check_token(&body.name, "agent")?;
     body.groups.iter().try_for_each(|g| check_name(g, "group"))?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "agents:write").await?;
     let mut tx = st.pool.begin().await?;
     sqlx::query("INSERT INTO agents (tenant_id, name, groups) VALUES ($1, $2, $3)").bind(tid).bind(&body.name).bind(&body.groups).execute(&mut *tx).await?;
     audit::append(&mut tx, &NewEvent { tenant_id: Some(tid), actor: &user.username, action: "agent.create", target: Some(&body.name), outcome: "ok", details: json!({ "groups": body.groups }) }).await?;
@@ -283,8 +287,7 @@ pub async fn create_agent(State(st): State<AppState>, Authn(user): Authn, Path(t
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/agents", tag = "agents", security(("bearer" = [])),
     params(("tenant" = String, Path)), responses((status = 200, body = Vec<AgentOut>), (status = 404)))]
 pub async fn list_agents(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>) -> ApiResult<Json<Vec<AgentOut>>> {
-    user.require("read")?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "agents:read").await?;
     let rows: Vec<(String, Vec<String>, i64, Option<i64>, Option<bool>, Option<i64>, Option<String>)> = sqlx::query_as(
         "SELECT a.name, a.groups, a.effective_version, r.version, r.compliant, (EXTRACT(EPOCH FROM r.received_at))::bigint, p.name \
          FROM agents a LEFT JOIN agent_reports r ON r.agent_id = a.id LEFT JOIN proxies p ON p.id = a.proxy_id WHERE a.tenant_id = $1 ORDER BY a.name",
@@ -302,9 +305,8 @@ pub async fn list_agents(State(st): State<AppState>, Authn(user): Authn, Path(te
 #[utoipa::path(put, path = "/v1/tenants/{tenant}/agents/{agent}", tag = "agents", security(("bearer" = [])), request_body = AgentUpdate,
     params(("tenant" = String, Path), ("agent" = String, Path)), responses((status = 204), (status = 404), (status = 422)))]
 pub async fn update_agent(State(st): State<AppState>, Authn(user): Authn, Path((tenant, agent)): Path<(String, String)>, Json(body): Json<AgentUpdate>) -> ApiResult<StatusCode> {
-    user.require("agents:write")?;
     body.groups.iter().try_for_each(|g| check_name(g, "group"))?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "agents:write").await?;
     let mut tx = st.pool.begin().await?;
     let n = sqlx::query("UPDATE agents SET groups = $3 WHERE tenant_id = $1 AND name = $2").bind(tid).bind(&agent).bind(&body.groups).execute(&mut *tx).await?.rows_affected();
     if n == 0 {
@@ -319,8 +321,7 @@ pub async fn update_agent(State(st): State<AppState>, Authn(user): Authn, Path((
 #[utoipa::path(delete, path = "/v1/tenants/{tenant}/agents/{agent}", tag = "agents", security(("bearer" = [])),
     params(("tenant" = String, Path), ("agent" = String, Path)), responses((status = 204), (status = 404)))]
 pub async fn delete_agent(State(st): State<AppState>, Authn(user): Authn, Path((tenant, agent)): Path<(String, String)>) -> ApiResult<StatusCode> {
-    user.require("agents:write")?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "agents:write").await?;
     let site: Option<String> = sqlx::query_scalar("SELECT p.name FROM agents a JOIN proxies p ON p.id = a.proxy_id WHERE a.tenant_id = $1 AND a.name = $2").bind(tid).bind(&agent).fetch_optional(&st.pool).await?;
     let mut tx = st.pool.begin().await?;
     let n = sqlx::query("DELETE FROM agents WHERE tenant_id = $1 AND name = $2").bind(tid).bind(&agent).execute(&mut *tx).await?.rows_affected();
@@ -367,8 +368,7 @@ pub struct PolicyOut {
 #[utoipa::path(post, path = "/v1/tenants/{tenant}/policies", tag = "policies", security(("bearer" = [])), request_body = NewPolicy,
     params(("tenant" = String, Path)), responses((status = 201, body = PolicyVersionOut), (status = 404), (status = 422, description = "Invalid policy")))]
 pub async fn create_policy(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>, Json(body): Json<NewPolicy>) -> ApiResult<(StatusCode, Json<PolicyVersionOut>)> {
-    user.require("policies:write")?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "policies:write").await?;
     let policy = delbert_policy::from_yaml(&body.yaml).map_err(|e| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
     if policy.metadata.tenant != tenant {
         return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "metadata.tenant does not match the URL"));
@@ -406,8 +406,7 @@ pub async fn create_policy(State(st): State<AppState>, Authn(user): Authn, Path(
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/policies", tag = "policies", security(("bearer" = [])),
     params(("tenant" = String, Path)), responses((status = 200, body = Vec<PolicySummary>), (status = 404)))]
 pub async fn list_policies(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>) -> ApiResult<Json<Vec<PolicySummary>>> {
-    user.require("read")?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "policies:read").await?;
     let rows: Vec<(String, bool, Option<i64>)> = sqlx::query_as(
         "SELECT p.name, p.active, (SELECT MAX(version) FROM policy_versions v WHERE v.policy_id = p.id) FROM policies p WHERE p.tenant_id = $1 ORDER BY p.name",
     )
@@ -420,8 +419,7 @@ pub async fn list_policies(State(st): State<AppState>, Authn(user): Authn, Path(
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/policies/{name}", tag = "policies", security(("bearer" = [])),
     params(("tenant" = String, Path), ("name" = String, Path)), responses((status = 200, body = PolicyOut), (status = 404)))]
 pub async fn get_policy(State(st): State<AppState>, Authn(user): Authn, Path((tenant, name)): Path<(String, String)>) -> ApiResult<Json<PolicyOut>> {
-    user.require("read")?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "policies:read").await?;
     let row: Option<(bool, i64, String)> = sqlx::query_as(
         "SELECT p.active, v.version, v.yaml FROM policies p JOIN policy_versions v ON v.policy_id = p.id \
          WHERE p.tenant_id = $1 AND p.name = $2 ORDER BY v.version DESC LIMIT 1",
@@ -437,8 +435,7 @@ pub async fn get_policy(State(st): State<AppState>, Authn(user): Authn, Path((te
 #[utoipa::path(delete, path = "/v1/tenants/{tenant}/policies/{name}", tag = "policies", security(("bearer" = [])),
     params(("tenant" = String, Path), ("name" = String, Path)), responses((status = 204), (status = 404)))]
 pub async fn delete_policy(State(st): State<AppState>, Authn(user): Authn, Path((tenant, name)): Path<(String, String)>) -> ApiResult<StatusCode> {
-    user.require("policies:write")?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "policies:write").await?;
     let mut tx = st.pool.begin().await?;
     let n = sqlx::query("UPDATE policies SET active = false WHERE tenant_id = $1 AND name = $2 AND active").bind(tid).bind(&name).execute(&mut *tx).await?.rows_affected();
     if n == 0 {
@@ -464,7 +461,7 @@ pub struct Issued {
     params(("tenant" = String, Path), ("agent" = String, Path)),
     responses((status = 200, body = Issued), (status = 404), (status = 503, description = "Signing key not configured")))]
 pub async fn effective(State(st): State<AppState>, Authn(user): Authn, Path((tenant, agent)): Path<(String, String)>) -> ApiResult<Json<Issued>> {
-    user.require("effective:issue")?;
+    user.tenant(&st.pool, &tenant, "agents:preview").await?;
     Ok(Json(issue(&st, tenant, agent, &user.username).await?))
 }
 
@@ -575,6 +572,6 @@ pub async fn issue(st: &AppState, tenant: String, agent: String, actor: &str) ->
 
 #[utoipa::path(get, path = "/v1/audit/verify", tag = "audit", security(("bearer" = [])), responses((status = 200, body = audit::Verification)))]
 pub async fn audit_verify(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<audit::Verification>> {
-    user.require("audit:read")?;
+    user.require_global("audit:verify")?;
     Ok(Json(audit::verify(&st.pool).await?))
 }

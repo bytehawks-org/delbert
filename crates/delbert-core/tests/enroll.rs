@@ -73,7 +73,7 @@ async fn enrollment_keys_limits_and_certificates(pool: PgPool) {
     assert_eq!(anon.call("POST", "/v1/enroll", Some(request(&k4["key"], "agent-7"))).await.0, StatusCode::OK);
 
     // Only administrators of agents create keys; the audit chain covers all of it.
-    admin.call("POST", "/v1/users", Some(json!({ "username": "alice", "password": "a-long-enough-password", "roles": ["auditor"] }))).await;
+    admin.call("POST", "/v1/users", Some(json!({ "username": "alice", "password": "a-long-enough-password", "assignments": [{ "role": "auditor" }] }))).await;
     let auditor = admin.as_user("alice", "a-long-enough-password").await;
     assert_eq!(auditor.call("POST", "/v1/tenants/acme/enrollment-keys", Some(json!({}))).await.0, StatusCode::FORBIDDEN);
     let (_, v) = admin.call("GET", "/v1/audit/verify", None).await;

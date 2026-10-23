@@ -20,7 +20,7 @@ use sqlx::types::Uuid;
 use utoipa::ToSchema;
 
 use crate::{
-    api::{ApiError, ApiResult, AppState, check_name, tenant_id},
+    api::{ApiError, ApiResult, AppState, check_name},
     audit::{self, NewEvent},
     auth::Authn,
 };
@@ -71,13 +71,12 @@ pub struct SecretOut {
 #[utoipa::path(put, path = "/v1/tenants/{tenant}/secrets/{name}", tag = "secrets", security(("bearer" = [])), request_body = SecretBody,
     params(("tenant" = String, Path), ("name" = String, Path)), responses((status = 204), (status = 404), (status = 422), (status = 503)))]
 pub async fn put_secret(State(st): State<AppState>, Authn(user): Authn, Path((tenant, name)): Path<(String, String)>, Json(body): Json<SecretBody>) -> ApiResult<StatusCode> {
-    user.require("secrets:write")?;
     check_name(&name, "secret")?;
     if body.value.len() > MAX_SECRET_BYTES {
         return Err(ApiError(StatusCode::UNPROCESSABLE_ENTITY, "secret too large (64 KiB at most)".into()));
     }
     let key = st.secrets_key.as_ref().ok_or_else(unavailable)?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "secrets:write").await?;
     let ciphertext = seal(key, body.value.as_bytes())?;
     let mut tx = st.pool.begin().await?;
     sqlx::query(
@@ -100,8 +99,7 @@ pub async fn put_secret(State(st): State<AppState>, Authn(user): Authn, Path((te
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/secrets", tag = "secrets", security(("bearer" = [])),
     params(("tenant" = String, Path)), responses((status = 200, description = "Names only; values are never returned", body = Vec<SecretOut>), (status = 404)))]
 pub async fn list_secrets(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>) -> ApiResult<Json<Vec<SecretOut>>> {
-    user.require("read")?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "secrets:read").await?;
     let rows: Vec<(String, String, i64)> =
         sqlx::query_as("SELECT name, updated_by, (EXTRACT(EPOCH FROM updated_at))::bigint FROM secrets WHERE tenant_id = $1 ORDER BY name").bind(tid).fetch_all(&st.pool).await?;
     Ok(Json(rows.into_iter().map(|(name, updated_by, updated_at)| SecretOut { name, updated_by, updated_at }).collect()))
@@ -110,8 +108,7 @@ pub async fn list_secrets(State(st): State<AppState>, Authn(user): Authn, Path(t
 #[utoipa::path(delete, path = "/v1/tenants/{tenant}/secrets/{name}", tag = "secrets", security(("bearer" = [])),
     params(("tenant" = String, Path), ("name" = String, Path)), responses((status = 204), (status = 404)))]
 pub async fn delete_secret(State(st): State<AppState>, Authn(user): Authn, Path((tenant, name)): Path<(String, String)>) -> ApiResult<StatusCode> {
-    user.require("secrets:write")?;
-    let tid = tenant_id(&st.pool, &tenant).await?;
+    let tid = user.tenant(&st.pool, &tenant, "secrets:write").await?;
     let mut tx = st.pool.begin().await?;
     let n = sqlx::query("DELETE FROM secrets WHERE tenant_id = $1 AND name = $2").bind(tid).bind(&name).execute(&mut *tx).await?.rows_affected();
     if n == 0 {
