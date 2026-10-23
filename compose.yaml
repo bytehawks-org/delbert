@@ -1,0 +1,63 @@
+# Local development only (Podman). Production target is Kubernetes/K3s.
+# Rust is not required on the host: `core` builds and runs inside a container.
+services:
+  postgres:
+    image: docker.io/library/postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${DELBERT_POSTGRES_USER:-delbert}
+      POSTGRES_PASSWORD: ${DELBERT_POSTGRES_PASSWORD:-delbert-dev}
+      POSTGRES_DB: ${DELBERT_POSTGRES_DB:-delbert}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DELBERT_POSTGRES_USER:-delbert}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  nats:
+    image: docker.io/library/nats:2-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  core:
+    image: docker.io/library/rust:1
+    working_dir: /work
+    command: cargo run -p delbert-core
+    environment:
+      RUST_LOG: info
+      DATABASE_URL: postgres://delbert:${DELBERT_POSTGRES_PASSWORD:-delbert-dev}@postgres:5432/delbert
+      NATS_URL: nats://nats:4222
+      # Development defaults only. Generate the signing key with `delbert-sign keygen` (see README).
+      DELBERT_BOOTSTRAP_ADMIN_PASSWORD: ${DELBERT_BOOTSTRAP_ADMIN_PASSWORD:-dev-admin-password}
+      DELBERT_SIGNING_KEY_FILE: ${DELBERT_SIGNING_KEY_FILE:-}
+      DELBERT_SIGNING_KID: ${DELBERT_SIGNING_KID:-}
+      DELBERT_CONFLICT_STRATEGY: ${DELBERT_CONFLICT_STRATEGY:-error}
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/work:Z
+      - cargo_registry:/usr/local/cargo/registry
+      - cargo_target:/work/target
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  nats_data:
+  cargo_registry:
+  cargo_target:

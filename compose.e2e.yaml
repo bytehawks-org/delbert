@@ -1,0 +1,102 @@
+# End-to-end simulation: one Core "server" and two agent containers acting as
+# managed hosts, with mutual TLS everywhere. Development only; see docs/TESTING.md.
+#   podman compose -f compose.e2e.yaml up -d --no-build postgres nats core
+#   (create an enrollment key per agent, then)
+#   E2E_PSK_1=... E2E_PSK_2=... podman compose -f compose.e2e.yaml up -d --no-build agent-1 agent-2
+services:
+  postgres:
+    image: docker.io/library/postgres:17-alpine
+    environment:
+      POSTGRES_USER: delbert
+      POSTGRES_PASSWORD: delbert-dev
+      POSTGRES_DB: delbert
+    volumes:
+      - ./deploy/dev/postgres-init.sql:/docker-entrypoint-initdb.d/10-roles.sql:ro,Z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U delbert"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  nats:
+    image: docker.io/library/nats:2-alpine
+    command: ["-c", "/etc/nats/nats.conf"]
+    environment:
+      NATS_AUTH_PASSWORD: e2e-callout-auth-password
+      NATS_ISSUER_PUBLIC: ${E2E_NATS_ISSUER_PUBLIC}   # export E2E_NATS_ISSUER_PUBLIC=$(cat dev/pki/nats-issuer.pub)
+    volumes:
+      - ./deploy/dev/nats-callout.conf:/etc/nats/nats.conf:ro,Z
+      - ./dev/pki:/certs:ro,Z
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  core:
+    build: { context: ., target: core }
+    image: localhost/delbert-core
+    hostname: core
+    environment:
+      RUST_LOG: info
+      # Runtime role: cannot modify the audit trail. Migrations run as the owner.
+      DATABASE_URL: postgres://delbert_rt:delbert-rt-dev@postgres:5432/delbert
+      DATABASE_MIGRATE_URL: postgres://delbert:delbert-dev@postgres:5432/delbert
+      DELBERT_BOOTSTRAP_ADMIN_PASSWORD: e2e-admin-password
+      DELBERT_SIGNING_KEY_FILE: /keys/k1.key
+      DELBERT_SIGNING_KID: k1
+      DELBERT_CONFLICT_STRATEGY: error
+      DELBERT_SECRETS_KEY_FILE: /pki/secrets.key
+      DELBERT_CA_CERT_FILE: /pki/ca.pem
+      DELBERT_CA_KEY_FILE: /pki/ca.key
+      DELBERT_TLS_CERT_FILE: /pki/core.pem
+      DELBERT_TLS_KEY_FILE: /pki/core.key
+      NATS_URL: tls://nats:4222
+      NATS_CA_FILE: /pki/ca.pem
+      NATS_CLIENT_CERT_FILE: /pki/core-nats.pem
+      NATS_CLIENT_KEY_FILE: /pki/core-nats.key
+      DELBERT_PUBLIC_NATS_URL: tls://nats:4222
+      # Authorization callout: the Core decides per connection what NATS clients may do.
+      NATS_AUTH_USER: auth
+      NATS_AUTH_PASSWORD: e2e-callout-auth-password
+      DELBERT_NATS_ISSUER_SEED_FILE: /pki/nats-issuer.seed
+      DELBERT_NATS_ACCOUNT: APP
+      DELBERT_NATS_SESSION_SECS: "60"      # short on purpose: revocation is visible within a minute
+      DELBERT_AGENT_CERT_DAYS: "1"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dev/k1.key:/keys/k1.key:ro,Z
+      - ./dev/pki:/pki:ro,Z
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_healthy }
+
+  agent-1:
+    build: { context: ., target: agent }
+    image: localhost/delbert-agent
+    hostname: agent-1
+    environment:
+      DELBERT_CORE_URL: https://core:8080
+      DELBERT_CA_FILE: /etc/delbert/ca.pem
+      DELBERT_ENROLL_PSK: ${E2E_PSK_1:-}
+      DELBERT_AGENT_ID: agent-1
+      DELBERT_INTERVAL_SECS: "20"
+      RUST_LOG: info
+    volumes:
+      - ./dev/pki/ca.pem:/etc/delbert/ca.pem:ro,Z
+    depends_on: [core]
+
+  agent-2:
+    image: localhost/delbert-agent
+    hostname: agent-2
+    environment:
+      DELBERT_CORE_URL: https://core:8080
+      DELBERT_CA_FILE: /etc/delbert/ca.pem
+      DELBERT_ENROLL_PSK: ${E2E_PSK_2:-}
+      DELBERT_AGENT_ID: agent-2
+      DELBERT_INTERVAL_SECS: "20"
+      RUST_LOG: info
+    volumes:
+      - ./dev/pki/ca.pem:/etc/delbert/ca.pem:ro,Z
+    depends_on: [core]

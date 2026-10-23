@@ -1,0 +1,39 @@
+[package]
+name = "delbert-core"
+description = "Delbert Core Server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+argon2.workspace = true
+utoipa.workspace = true
+utoipa-swagger-ui.workspace = true
+async-nats.workspace = true
+futures.workspace = true
+axum.workspace = true
+base64.workspace = true
+age.workspace = true
+axum-server.workspace = true
+delbert-natsauth = { path = "../delbert-natsauth" }
+delbert-pki = { path = "../delbert-pki" }
+nkeys.workspace = true
+delbert-policy = { path = "../delbert-policy" }
+rustls.workspace = true
+delbert-wire = { path = "../delbert-wire" }
+ed25519-dalek.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+age.workspace = true
+x509-parser = "0.18"
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }

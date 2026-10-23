@@ -1,0 +1,28 @@
+apiVersion: delbert/v1
+kind: Policy
+metadata: { name: baseline, tenant: acme }
+spec:
+  target: { groups: [web] }
+  vars: { port: 8080 }
+  secrets: [db_password]
+  resources:
+    - id: tree
+      package: { name: tree, state: present }
+    - id: app-dir
+      file: { path: /etc/app, state: directory, mode: "0755" }
+    - id: app-conf
+      copy: { content: "port=8080\n", dest: /etc/app/app.conf, mode: "0640" }
+      depends_on: [app-dir]
+      notify: [app-reloaded]
+    - id: db-conf
+      template: { src: "artifact://db.conf.j2", dest: /etc/app/db.conf, mode: "0600" }
+      depends_on: [app-dir]
+    - id: app-extra
+      file: { path: /etc/app/extra.conf }
+      depends_on: [app-dir]
+    - id: app-debug
+      line_in_file: { path: /etc/app/extra.conf, line: "debug=false" }
+      depends_on: [app-extra]
+    - id: app-reloaded
+      handler: true
+      file: { path: /etc/app/reloaded }

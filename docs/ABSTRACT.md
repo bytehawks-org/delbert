@@ -1,0 +1,71 @@
+# Delbert - Abstract Architetturale
+
+## 1. Visione e Scopo
+**Delbert** è una piattaforma open-source di Configuration Management e State Enforcement progettata per orchestrare, mantenere e verificare in modo idempotente lo stato di infrastrutture ibride: server e client fisici, Virtual Machines, runtime container (Docker, Podman) e cluster Kubernetes.
+
+L'architettura si ispira ai pattern consolidati di sistemi quali Rudder, CFEngine, SaltStack e Puppet per il controllo dichiarativo dello stato, unendoli alla semplicità di gestione endpoint tipica di SCCM, Intune e ManageEngine.
+
+## 2. Architettura di Sistema e Comunicazione
+Il sistema adotta un'architettura distribuita basata su quattro componenti: **Core Server** (o cluster Core), **Proxy/Relay Server**, **Agent** e **Kubernetes Operator**.
+
+* **Modello di Comunicazione (Pub/Sub & Pull):** Gli agent operano in modalità *outbound-only* (nessuna porta in ascolto richiesta sugli endpoint). Si sottoscrivono a **NATS** su TLS per ricevere notifiche real-time su cambi di stato, policy o task immediati. L'agent esegue comunque un *pull* periodico del Desired State, così che la perdita di una notifica non causi drift permanente.
+* **Message Bus: solo NATS (JetStream).** Un unico broker, scelto per scalabilità, footprint ridotto e leaf node nativi per i Proxy. Il bus serve solo a notifiche, task e report; stato e storia restano in PostgreSQL. Autenticazione con mTLS; account e permessi sui subject per tenant e per agent, in modo che un agent possa leggere solo i propri subject e pubblicare solo i propri report. Client Rust: `async-nats`.
+* **Sicurezza del payload:** tutto il traffico (NATS, gRPC/HTTPS) è cifrato con TLS 1.3 e mTLS. Poiché JetStream persiste i messaggi e il Proxy li mette in cache, i valori marcati `sensitive` sono inoltre cifrati *a livello di campo* per il solo agent destinatario (§3), così non sono leggibili a riposo da broker, Proxy o backup.
+* **Trasferimento Artefatti e Fallback:** Dove il message bus non risulti ottimale (es. file binari pesanti, pacchetti, sincronizzazione massiva di directory), la comunicazione avviene tramite stream **gRPC o HTTPS (HTTP/2, chunked transfer) con mTLS**, garantendo integrità e ripresa del trasferimento senza esporre SSH/rsync sui client.
+* **Topologia e Server Proxy:** Per branch office o reti isolate, Delbert prevede nodi **Proxy** (Relay). Gli agent dei siti remoti comunicano esclusivamente con il Proxy locale, che fa da cache per gli artefatti e replica i flussi verso il Core (NATS leaf node). Solo il Proxy instaura una connessione sicura verso il Core, minimizzando la superficie di esposizione. I report di conformità risalgono Agent → Proxy → Core con *store-and-forward*, così che un'interruzione del link non faccia perdere eventi di audit.
+* **Alta disponibilità del Core:** il Core può essere un singolo nodo o un cluster ("master cluster"); stato su PostgreSQL, componenti Core stateless dietro load balancer.
+
+## 3. Gestione degli Agent e Onboarding
+* **Design Stateless (definizione):** l'agent non mantiene *stato non ricostruibile*. Conserva localmente solo configurazione minimale, identità (certificato) e una cache della policy corrente, tutte rigenerabili dal Core. Calcola il delta tra stato attuale dell'host e *Desired State* applicando correzioni strettamente **idempotenti** per annullare il configuration drift; se il Core è irraggiungibile continua ad applicare la policy in cache.
+* **Provisioning & Sicurezza:** L'onboarding (attended o unattended) avviene tramite pacchetto precompilato o script di bootstrap richiamabile via URL. La registrazione iniziale usa una **Pre-Shared Key (PSK)** associata al tenant/gruppo, con scadenza, limite di utilizzi e revocabile. In cambio della PSK l'agent genera la chiave privata localmente, invia una CSR e riceve il certificato client (mTLS) firmato dalla PKI di Delbert. La chiave privata non lascia mai l'host. Opzionalmente la registrazione richiede approvazione manuale dell'amministratore.
+* **Principio di esecuzione:** Core e Proxy **non eseguono mai comandi** sui sistemi gestiti né su sé stessi come effetto di una policy o di un task: distribuiscono solo Desired State, task e artefatti. Ogni azione sul sistema (file, pacchetti, servizi, container, ecc.) è eseguita esclusivamente dall'agent (o dall'Operator in-cluster) sull'host che lo ospita, sotto il proprio account di servizio. Il server non ha alcun canale di esecuzione remota diretta.
+* **YAML per l'utente, JSON per la macchina:** il YAML è solo il formato di *authoring* per gli amministratori (leggibile, versionabile); non viaggia mai verso gli agent. Il Core lo valida (JSON Schema generato dai tipi Rust + deserializzazione tipizzata), risolve variabili, artefatti e conflitti (§3 "Conflitti") e lo **compila in una *effective policy* JSON per endpoint**. Il YAML è dichiarativo: descrive *lo stato voluto*, non sequenze di comandi. Il vocabolario di risorse (`file`, `copy`, `template`, `line_in_file`, `get_url`, `package`, `service`, `container`, ...) è un sottoinsieme limitato ispirato ad Ansible, descritto in [POLICY.md](POLICY.md).
+* **Firma delle policy:** la *effective policy* JSON è serializzata in forma canonica secondo **JCS (RFC 8785, JSON Canonicalization Scheme)** e firmata con **Ed25519** (busta JWS con EdDSA, RFC 7515/8037) da una *Policy Signing Key* distinta dalla CA degli agent. La forma canonica elimina ambiguità di ordine delle chiavi e di numeri, così firma e verifica coincidono su ogni piattaforma. CBOR deterministico (RFC 8949 §4.2) con COSE è l'alternativa se servirà un payload più compatto; si è scelto JSON per leggibilità e debug. L'agent verifica la firma prima di applicare qualunque cosa, indipendentemente dal canale di consegna (bus, gRPC, HTTPS, cache del Proxy). I metadati firmati includono tenant, target, versione monotona crescente (anti-rollback/replay) e scadenza. Le chiavi pubbliche di firma (con `key id`, per consentire la rotazione) sono ancorate nell'agent all'onboarding. Due modalità: `core` (default, il Core firma dopo l'approvazione) e `external` (firma offline/HSM sulla workstation dell'amministratore con il tool `delbert-sign`, protegge anche da compromissione del Core). Implementato nel crate `delbert-wire`: l'agent rifiuta alterazioni, chiavi sconosciute, `alg` diversi da EdDSA, payload non canonico, policy scadute o destinate ad altri agent, e versioni più vecchie dell'ultima applicata. Ogni firma e rotazione è un evento di audit.
+* **Dati sensibili nelle policy:** i campi marcati `sensitive` (password, token, chiavi) sono cifrati nella effective policy con la chiave pubblica di cifratura del solo agent destinatario (coppia di chiavi distinta da quella mTLS, generata sull'host all'onboarding; schema a busta tipo HPKE RFC 9180 o `age`, libreria da selezionare). La firma copre il testo cifrato. L'agent decifra solo al momento dell'uso e i valori sono mascherati nell'audit e nei diff.
+* **Conflitti tra policy:** più policy possono colpire lo stesso endpoint (per gruppo, tag o target puntuale) e dichiarare stati incompatibili. Il conflitto è risolto **solo dal Core**, in fase di compilazione della effective policy, così il risultato è deterministico, auditato e coperto dalla firma; l'agent non risolve nulla e rifiuta una effective policy con chiavi duplicate.
+  * **Chiave di risorsa:** ogni verbo definisce l'identità di ciò che governa (es. `file`/`copy`/`template`/`get_url` → percorso; `package` → nome; `service` → nome; `line_in_file` → percorso + `regexp` o riga). Due risorse con la stessa chiave e parametri normalizzati identici si fondono; con parametri diversi sono in **conflitto**. I verbi che modificano parti disgiunte dello stesso oggetto (righe diverse nello stesso file) non confliggono.
+  * **Strategie:** `error` (default: la chiave in conflitto *non* viene applicata, il resto sì, l'endpoint risulta `conflicted` con evento di audit e alert), `specificity` (vince il target più specifico: agent > gruppo dinamico > gruppo statico > tenant), `priority` (priorità numerica esplicita su policy o risorsa), `merge` (solo per i verbi che lo dichiarano). Una catena configurabile (es. `[specificity, priority, error]`) prova le strategie in ordine e ricade su `error` se restano parità.
+  * **Livelli di configurazione**, dal più forte al più debole: *resolution record* puntuale (admin, per chiave + endpoint/gruppo, con vincitore, motivo, scadenza e approvatore, auditato) → impostazione sulla risorsa → impostazione sulla policy → default globale/tenant.
+  * **Prevenzione:** alla modifica di una policy il Core mostra in anteprima quali endpoint andrebbero in conflitto (*impact preview*) prima della pubblicazione.
+* **Risorsa `command` (exec):** esiste, ma con vincoli rigidi, applicati dall'agent:
+  * disattivata di default; si abilita solo nella **configurazione locale dell'agent**, mai da policy remota;
+  * `argv` come array, **nessuna shell** e nessuna interpolazione;
+  * eseguibili ammessi da **allowlist locale** (percorso assoluto, opzionalmente hash SHA-256); script e binari distribuiti come artefatti con hash fissato nella policy firmata;
+  * obbligo di una guardia di idempotenza (`creates`, `onlyif` o `unless`); la policy senza guardia viene rifiutata;
+  * utente di esecuzione dichiarato, timeout obbligatorio, output e codice di uscita registrati nell'audit.
+* **Targeting Granulare:** Le policy si applicano a singolo agent (puntuale) o tramite gruppi statici o dinamici (tag, OS, attributi hardware/rete).
+
+## 4. PKI e Gestione dei Certificati
+* **PKI interna al Core:** la CA è gestita dal Core Server (o dal cluster Core). Gerarchia: Root CA offline/protetta → Intermediate CA del Core → (opzionale) Intermediate CA per Proxy, in modo che un Proxy possa emettere certificati per i propri agent senza esporre la chiave del Core.
+* **Implementazione:** libreria Rust (`rcgen` + `rustls`) integrata nel Core. In alternativa, se l'effort risultasse eccessivo, delega a **OpenSSL** (CLI `openssl ca` / `openssl req`) invocato dal Core con un wrapper controllato; l'interfaccia è dietro un trait `CertificateAuthority` per poter sostituire il backend senza impatti.
+* **Ciclo di vita:** certificati a breve scadenza con rinnovo automatico e rotazione della chiave (implementato), revoca applicata dal Core tramite *authorization callout* di NATS e dai controlli sulle richieste (implementato: effetto entro la durata della sessione NATS), CRL/OCSP e rotazione delle Intermediate (da fare). Ogni emissione, rinnovo e revoca è un evento di audit.
+
+## 5. Piattaforme Supportate e Astrazione
+**Fasi:** la fase 1 copre Linux e container (Docker, Podman, Kubernetes). Windows è rimandato alla fase 2: partirà dal paradigma base *copia, inserisci, riavvia* dopo uno studio delle specificità della piattaforma (vedi [POLICY.md](POLICY.md)).
+
+L'agent è progettato per operare in maniera agnostica rispetto alla distribuzione o versione dell'OS su:
+* **Sistemi Operativi:** Linux (qualsiasi distribuzione) e Windows (Client e Server).
+* **Container Engine:** Gestione di container, volumi e network su Docker e Podman.
+* **Kubernetes (due livelli):**
+  * **Agent sul nodo:** sui server bare-metal/VM su cui gira Kubernetes opera l'agent standard, che gestisce OS, runtime e servizi del nodo.
+  * **Kubernetes Operator (in-cluster):** gestisce oggetti e risorse del cluster (CRD) allineandoli alle policy centrali; sviluppato in Rust con `kube-rs`. Si registra al Core con la propria identità mTLS.
+
+## 6. Audit e Conformità NIS2
+Delbert tratta l'audit come funzione di prima classe, progettata per **supportare** la conformità alla direttiva NIS2 (UE 2022/2555, in particolare art. 21 misure di gestione del rischio e art. 23 notifica degli incidenti, e normativa nazionale di recepimento). La conformità resta un obbligo organizzativo del soggetto che usa il sistema; Delbert fornisce gli strumenti tecnici.
+* **Audit trail append-only:** ogni azione amministrativa, modifica di policy, evento PKI, accesso/autenticazione e azione dell'agent genera un evento con chi, cosa, quando (UTC), origine, esito e riferimento al valore precedente/successivo.
+* **Integrità e non ripudio:** eventi concatenati con hash chain (ogni record include l'hash del precedente), con ancoraggio periodico firmato; l'utente applicativo del DB non ha privilegi di `UPDATE`/`DELETE` sulla tabella di audit.
+* **Conservazione e esportazione:** retention configurabile per tenant, export verso SIEM (syslog/JSON, OpenTelemetry), backup separato dal DB operativo.
+* **Controllo accessi:** RBAC, separazione dei ruoli (chi modifica una policy ≠ chi la approva, opzionale *four-eyes*), MFA e SSO per gli amministratori.
+* **Supporto alla notifica incidenti:** viste e report di conformità/anomalia per ricostruire timeline utili alle tempistiche NIS2 (preallerta 24h, notifica 72h, relazione finale a un mese).
+* **Privacy (GDPR):** minimizzazione dei dati personali negli eventi, pseudonimizzazione degli identificativi utente ove possibile.
+
+## 7. Stack Tecnologico
+Il progetto utilizza esclusivamente componenti open-source:
+* **Backend & Agent (Rust, edition 2024):** Core Server, Proxy e Agent in **Rust** per memory safety, alte prestazioni, basso footprint e singolo eseguibile statico multipiattaforma. Framework HTTP: **Axum**.
+* **Message Bus:** **NATS (JetStream)**, client `async-nats` (§2).
+* **Persistenza Dati:** **PostgreSQL 17.x** per inventario, stati desiderati, audit log e metriche di conformità.
+* **Accesso al DB e Migrazioni:** **SQLx** (query asincrone verificate a compile-time) con migrazioni SQL native tramite `sqlx migrate`. Nessun ORM; lo schema cambia solo via migrazioni versionate.
+* **API Documentation:** **utoipa** genera la specifica OpenAPI dalle route Axum, servita con Swagger UI.
+* **Policy e firma:** authoring YAML via `serde_yaml_ng` (fork mantenuto di `serde_yaml`), schema con `schemars`, effective policy in JSON canonico JCS (crate da selezionare), firme Ed25519 con `ed25519-dalek`.
+* **Kubernetes:** **kube-rs** per l'Operator.
+* **Frontend (Web UI):** Dashboard unica in **Next.js + Tailwind CSS** per amministrazione del Core, monitoraggio dei Proxy, definizione delle policy e stato di conformità degli agent.

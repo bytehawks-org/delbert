@@ -1,0 +1,20 @@
+apiVersion: delbert/v1
+kind: Policy
+metadata: { name: app-baseline, tenant: example }
+spec:
+  resources:
+    - id: app-dir
+      file: { path: /etc/app, state: directory, mode: "0755" }
+    - id: app-conf
+      copy: { content: "port=8080\n", dest: /etc/app/app.conf, mode: "0640" }
+      depends_on: [app-dir]
+      notify: [app-reloaded]
+    - id: app-extra
+      file: { path: /etc/app/extra.conf }
+      depends_on: [app-dir]
+    - id: app-debug
+      line_in_file: { path: /etc/app/extra.conf, line: "debug=false" }
+      depends_on: [app-extra]
+    - id: app-reloaded
+      handler: true
+      file: { path: /etc/app/reloaded }

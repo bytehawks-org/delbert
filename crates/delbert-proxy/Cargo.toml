@@ -1,0 +1,29 @@
+[package]
+name = "delbert-proxy"
+description = "Delbert Proxy: relay and cache for branch offices"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-nats.workspace = true
+axum.workspace = true
+axum-server.workspace = true
+base64.workspace = true
+clap.workspace = true
+delbert-natsauth = { path = "../delbert-natsauth" }
+delbert-pki = { path = "../delbert-pki" }
+futures.workspace = true
+nkeys.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

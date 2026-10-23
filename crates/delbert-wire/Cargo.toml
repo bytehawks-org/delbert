@@ -1,0 +1,21 @@
+[package]
+name = "delbert-wire"
+description = "Delbert wire format: effective policy, JCS canonicalization, Ed25519 JWS signing and verification"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "delbert-sign"
+path = "src/bin/delbert-sign.rs"
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+clap.workspace = true
+delbert-policy = { path = "../delbert-policy" }
+ed25519-dalek.workspace = true
+rand_core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

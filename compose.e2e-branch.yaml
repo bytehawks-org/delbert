@@ -1,0 +1,59 @@
+# A branch office behind a proxy (development only, see docs/TESTING.md). Start the Core side first
+# (compose.e2e.yaml); this file joins its network for the proxy ONLY. The branch network is
+# internal: agents there reach neither the Core nor the internet, only the proxy and their site's NATS.
+#   export E2E_BRANCH_NATS_ISSUER=$(cat dev/proxy-identity/local-issuer.pub)
+#   E2E_PSK_B1=... podman compose -f compose.e2e-branch.yaml up -d --no-build
+name: delbert-branch
+services:
+  nats-site:
+    image: docker.io/library/nats:2-alpine
+    hostname: nats-site
+    command: ["-c", "/etc/nats/nats.conf"]
+    environment:
+      NATS_AUTH_PASSWORD: e2e-site-callout-password
+      NATS_ISSUER_PUBLIC: ${E2E_BRANCH_NATS_ISSUER}
+    volumes:
+      - ./deploy/dev/nats-site.conf:/etc/nats/nats.conf:ro,Z
+      - ./dev/proxy-identity:/identity:ro,Z
+    networks: [branch]
+
+  proxy:
+    build: { context: ., target: proxy }
+    image: localhost/delbert-proxy
+    hostname: proxy
+    environment:
+      RUST_LOG: info
+      DELBERT_IDENTITY_DIR: /identity
+      DELBERT_STATE_DIR: /var/lib/delbert-proxy
+      DELBERT_LOCAL_NATS_URL: tls://nats-site:4222
+      DELBERT_LOCAL_AUTH_PASSWORD: e2e-site-callout-password
+      DELBERT_PUBLIC_NATS_URL: tls://nats-site:4222
+      DELBERT_LOCAL_SESSION_SECS: "60"
+      DELBERT_SYNC_SECS: "20"
+      DELBERT_FLUSH_SECS: "5"
+    volumes:
+      - ./dev/proxy-identity:/identity:ro,Z
+    networks: [branch, hq]
+    depends_on: [nats-site]
+
+  agent-b1:
+    image: localhost/delbert-agent
+    hostname: agent-b1
+    environment:
+      DELBERT_CORE_URL: https://proxy:8443
+      DELBERT_CA_FILE: /etc/delbert/ca.pem
+      DELBERT_ENROLL_PSK: ${E2E_PSK_B1:-}
+      DELBERT_AGENT_ID: agent-b1
+      DELBERT_INTERVAL_SECS: "20"
+      RUST_LOG: info
+    volumes:
+      - ./dev/pki/ca.pem:/etc/delbert/ca.pem:ro,Z
+    networks: [branch]
+    depends_on: [proxy]
+
+networks:
+  branch:
+    internal: true   # no route to the Core or the internet
+  hq:
+    name: delbert_default
+    external: true
