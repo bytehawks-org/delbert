@@ -22,7 +22,7 @@ delbert-pki = { path = "../delbert-pki" }
 delbert-policy = { path = "../delbert-policy" }
 delbert-wire = { path = "../delbert-wire" }
 minijinja.workspace = true
-rand_core.workspace = true
+delbert-fs = { path = "../delbert-fs" }
 regex.workspace = true
 reqwest.workspace = true
 rustls.workspace = true

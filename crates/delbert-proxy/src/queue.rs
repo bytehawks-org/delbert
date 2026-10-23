@@ -30,9 +30,7 @@ impl ReportQueue {
     pub fn push(&self, tenant: &str, agent: &str, received_at: i64, envelope: &Value) -> Result<()> {
         let item = json!({ "tenant": tenant, "agent": agent, "received_at": received_at, "envelope": envelope });
         let path = self.dir.join(format!("{tenant}.{agent}.json"));
-        let tmp = path.with_extension("tmp");
-        fs::write(&tmp, serde_json::to_vec(&item)?)?;
-        fs::rename(&tmp, path)?;
+        delbert_fs::write_private(&path, &serde_json::to_vec(&item)?)?;
         Ok(())
     }
 

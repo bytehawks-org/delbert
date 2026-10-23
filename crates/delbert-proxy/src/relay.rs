@@ -84,7 +84,7 @@ impl Relay {
         match self.hub.relay(kind, &tenant, &agent, payload).await {
             Ok(answer) => {
                 if kind == "effective" && answer["token"].is_string() {
-                    let _ = fs::write(self.cache_file(&tenant, &agent), answer.to_string());
+                    let _ = delbert_fs::write_private(&self.cache_file(&tenant, &agent), answer.to_string().as_bytes());
                 }
                 if kind == "renew" {
                     self.sync().await; // the agent reconnects with a new key right away: learn it first

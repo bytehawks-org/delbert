@@ -17,6 +17,7 @@ base64.workspace = true
 clap.workspace = true
 delbert-natsauth = { path = "../delbert-natsauth" }
 delbert-pki = { path = "../delbert-pki" }
+delbert-fs = { path = "../delbert-fs" }
 futures.workspace = true
 nkeys.workspace = true
 reqwest.workspace = true

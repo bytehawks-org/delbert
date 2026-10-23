@@ -56,9 +56,7 @@ impl Identity {
 }
 
 fn write_private(path: &Path, data: &str) -> Result<()> {
-    fs::write(path, data)?;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-    Ok(())
+    Ok(delbert_fs::write_private(path, data.as_bytes())?)
 }
 
 #[derive(Deserialize)]
@@ -102,13 +100,13 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
     fs::create_dir_all(dir)?;
     fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
     write_private(&dir.join("key.pem"), &key_pem)?;
-    fs::write(dir.join("cert.pem"), &resp.cert_pem)?;
-    fs::write(dir.join("ca.pem"), &ca_pem)?;
+    delbert_fs::write_public(&dir.join("cert.pem"), resp.cert_pem.as_bytes())?;
+    delbert_fs::write_public(&dir.join("ca.pem"), ca_pem.as_bytes())?;
     // The site's NATS server delegates authorization to this proxy, with its own issuer key.
     let issuer = nkeys::KeyPair::new_account();
     write_private(&dir.join("local-issuer.seed"), &issuer.seed().map_err(|e| anyhow::anyhow!("{e}"))?)?;
-    fs::write(dir.join("local-issuer.pub"), issuer.public_key())?;
+    delbert_fs::write_public(&dir.join("local-issuer.pub"), issuer.public_key().as_bytes())?;
     let meta = Meta { site: args.site, core_url: args.core_url.trim_end_matches('/').to_owned(), hub_nats_url: resp.nats_url };
-    fs::write(dir.join("meta.json"), serde_json::to_string_pretty(&meta)?)?; // last: marks the identity as complete
+    delbert_fs::write_public(&dir.join("meta.json"), serde_json::to_string_pretty(&meta)?.as_bytes())?; // last: marks the identity as complete
     Identity::load(dir)
 }

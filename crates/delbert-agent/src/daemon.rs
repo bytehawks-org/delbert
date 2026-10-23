@@ -55,7 +55,7 @@ fn sha_hex(bytes: &[u8]) -> String {
 }
 
 fn write_atomic(path: &std::path::Path, data: &[u8]) -> Result<()> {
-    crate::fsutil::replace_file(path, data, 0o600, None, None)
+    Ok(delbert_fs::write_private(path, data)?)
 }
 
 /// JSON sent to the Core after every cycle.
@@ -185,7 +185,7 @@ impl Agent<'_> {
                     }
                 },
             };
-            let _ = fs::write(stage.join(name), bytes);
+            let _ = delbert_fs::write_private(&stage.join(name), &bytes);
         }
         stage
     }

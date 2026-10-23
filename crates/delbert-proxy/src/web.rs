@@ -118,8 +118,7 @@ async fn artifact(State(web): State<Arc<Web>>, Path((tenant, agent, name)): Path
         return error(StatusCode::BAD_GATEWAY, "content does not match the requested hash");
     }
     let _ = fs::create_dir_all(&web.artifact_dir);
-    let tmp = cached.with_extension("tmp");
-    if fs::write(&tmp, &bytes).and_then(|()| fs::rename(&tmp, &cached)).is_err() {
+    if delbert_fs::write_private(&cached, &bytes).is_err() {
         tracing::warn!("cannot cache artifact {}", q.sha256);
     }
     ([(header::CONTENT_TYPE, "application/octet-stream")], bytes.to_vec()).into_response()

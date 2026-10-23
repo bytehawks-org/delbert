@@ -15,6 +15,7 @@ anyhow.workspace = true
 base64.workspace = true
 clap.workspace = true
 delbert-wire = { path = "../delbert-wire" }
+delbert-fs = { path = "../delbert-fs" }
 ed25519-dalek.workspace = true
 rand_core.workspace = true
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem", "x509-parser"] }

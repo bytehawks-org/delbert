@@ -779,12 +779,12 @@ dependencies = [
  "async-nats",
  "base64 0.22.1",
  "clap",
+ "delbert-fs",
  "delbert-pki",
  "delbert-policy",
  "delbert-wire",
  "futures",
  "minijinja",
- "rand_core 0.6.4",
  "regex",
  "reqwest",
  "rustls",
@@ -833,6 +833,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "delbert-fs"
+version = "0.1.0"
+dependencies = [
+ "rand_core 0.6.4",
+ "tempfile",
+]
+
+[[package]]
 name = "delbert-natsauth"
 version = "0.1.0"
 dependencies = [
@@ -855,6 +863,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "clap",
+ "delbert-fs",
  "delbert-wire",
  "ed25519-dalek",
  "nkeys",
@@ -890,6 +899,7 @@ dependencies = [
  "axum-server",
  "base64 0.22.1",
  "clap",
+ "delbert-fs",
  "delbert-natsauth",
  "delbert-pki",
  "futures",

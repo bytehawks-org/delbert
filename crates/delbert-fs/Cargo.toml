@@ -1,0 +1,15 @@
+[package]
+name = "delbert-fs"
+description = "Delbert crash-safe file replacement"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+rand_core.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

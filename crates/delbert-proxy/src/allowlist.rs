@@ -63,8 +63,7 @@ impl AllowList {
             map.insert(id(t, n), Entry { public_key, previous_public_key });
         }
         let count = map.len();
-        let tmp = self.file.with_extension("tmp");
-        fs::write(&tmp, serde_json::to_vec(&map).map_err(|e| e.to_string())?).and_then(|()| fs::rename(&tmp, &self.file)).map_err(|e| e.to_string())?;
+        delbert_fs::write_private(&self.file, &serde_json::to_vec(&map).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         *self.inner.write().unwrap() = map;
         Ok(count)
     }

@@ -23,7 +23,7 @@ impl State {
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
-        crate::fsutil::replace_file(path, &serde_json::to_vec_pretty(self)?, 0o600, None, None)
+        Ok(delbert_fs::write_private(path, &serde_json::to_vec_pretty(self)?)?)
     }
 }
 

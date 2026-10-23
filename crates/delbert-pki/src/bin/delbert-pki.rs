@@ -4,7 +4,7 @@
 //! (NATS server, Core client, Core HTTPS). Agent certificates are issued by the
 //! Core at enrollment, never with this tool.
 
-use std::{fs, os::unix::fs::PermissionsExt, path::{Path, PathBuf}};
+use std::{fs, path::{Path, PathBuf}};
 
 use clap::{Parser, Subcommand};
 use delbert_pki::Ca;
@@ -53,9 +53,8 @@ fn write(path: &Path, data: &str, private: bool) -> anyhow::Result<()> {
     if path.exists() {
         anyhow::bail!("refusing to overwrite {}", path.display());
     }
-    fs::write(path, data)?;
     // Private keys are 0600; in development containers may need 0644 (see docs/TESTING.md).
-    fs::set_permissions(path, fs::Permissions::from_mode(if private { 0o600 } else { 0o644 }))?;
+    delbert_fs::replace_file(path, data.as_bytes(), if private { 0o600 } else { 0o644 }, None, None)?;
     println!("wrote {}", path.display());
     Ok(())
 }

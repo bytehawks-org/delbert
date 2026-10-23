@@ -71,7 +71,7 @@ impl Identity {
 /// place (certificate last), so an interruption can be completed by [`recover`].
 pub fn install_renewed(dir: &Path, key_pem: &str, cert_pem: &str) -> Result<()> {
     write_private(&dir.join("key.pem.new"), key_pem)?;
-    fs::write(dir.join("cert.pem.new"), cert_pem)?;
+    delbert_fs::write_public(&dir.join("cert.pem.new"), cert_pem.as_bytes())?;
     recover(dir)
 }
 
@@ -97,9 +97,7 @@ pub fn renewal_due(cert_pem: &str, now: i64, renew_before_secs: Option<i64>) -> 
 }
 
 fn write_private(path: &Path, data: &str) -> Result<()> {
-    fs::write(path, data)?;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-    Ok(())
+    Ok(delbert_fs::write_private(path, data.as_bytes())?)
 }
 
 #[cfg(test)]
@@ -198,10 +196,10 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
     let dir = &args.identity_dir;
     write_private(&dir.join("key.pem"), &key_pem)?;
     write_private(&dir.join("enc.key"), enc.to_string().expose_secret())?;
-    fs::write(dir.join("cert.pem"), &resp.cert_pem)?;
-    fs::write(dir.join("ca.pem"), &ca_pem)?;
-    fs::write(dir.join("trusted-keys.txt"), resp.signing_keys.join("\n") + "\n")?;
+    delbert_fs::write_public(&dir.join("cert.pem"), resp.cert_pem.as_bytes())?;
+    delbert_fs::write_public(&dir.join("ca.pem"), ca_pem.as_bytes())?;
+    delbert_fs::write_public(&dir.join("trusted-keys.txt"), (resp.signing_keys.join("\n") + "\n").as_bytes())?;
     let meta = Meta { tenant: resp.tenant, agent: resp.agent, nats_url: resp.nats_url, core_url: Some(args.core_url.trim_end_matches('/').to_owned()) };
-    fs::write(dir.join("meta.json"), serde_json::to_string_pretty(&meta)?)?; // last: marks the identity as complete
+    delbert_fs::write_public(&dir.join("meta.json"), serde_json::to_string_pretty(&meta)?.as_bytes())?; // last: marks the identity as complete
     Identity::load(dir)
 }
