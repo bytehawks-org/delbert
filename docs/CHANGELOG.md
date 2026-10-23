@@ -8,6 +8,10 @@
 ### Authentication hardening
 - Migration `0013`. Cookie sessions with CSRF (double-submit token stored hashed), idle timeout, listable/revocable sessions; TOTP MFA with sealed secret, replay protection and recovery codes, optional or mandatory (`DELBERT_MFA_REQUIRED`); login throttling per (user, address), address and user; admin reset of MFA/sessions. Tests in `tests/auth.rs`. See [API.md](API.md).
 
+### Configuration file and content sources
+- Core configuration file (TOML) layered under the environment, strict keys, `--check-config` (`config.rs`, example in `deploy/`). Proxy to follow.
+- Design of repository-backed content (`CONTENT.md`): `directory` and `git` sources (local Forgejo/Gitea component or a public remote), snapshot validation, diffs, versions, ownership.
+
 ### API tokens
 - Migration `0014`: scoped, expiring, revocable tokens that never exceed their owner (`tests/auth.rs`).
 

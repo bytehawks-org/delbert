@@ -1,0 +1,51 @@
+# Delbert Core configuration (example). Every setting can also be given as an environment
+# variable (the name is in docs/API.md), and the environment wins over this file.
+# Check it with:  delbert-core --config delbert-core.toml --check-config
+# Prefer the *_file settings for anything secret and keep this file out of version control.
+
+[server]
+bind = "0.0.0.0:8080"
+tls_cert_file = "/etc/delbert/core.pem"
+tls_key_file = "/etc/delbert/core.key"
+# api_docs = false              # hide Swagger UI and /openapi.json in production
+# trust_forwarded = true        # only behind a trusted reverse proxy
+
+[database]
+# Runtime role (cannot rewrite the audit trail) and, separately, the schema owner for migrations.
+url = "postgres://delbert_rt@db.example.com:5432/delbert"
+# migrate_url = "postgres://delbert@db.example.com:5432/delbert"
+
+[nats]
+url = "tls://nats.example.com:4222"
+ca_file = "/etc/delbert/ca.pem"
+client_cert_file = "/etc/delbert/core-nats.pem"
+client_key_file = "/etc/delbert/core-nats.key"
+issuer_seed_file = "/etc/delbert/nats-issuer.seed"
+public_url = "tls://nats.example.com:4222"
+session_secs = 900
+
+[pki]
+ca_cert_file = "/etc/delbert/ca.pem"
+ca_key_file = "/etc/delbert/ca.key"
+secrets_key_file = "/etc/delbert/secrets.key"
+agent_cert_days = 365
+
+[policy]
+signing_key_file = "/etc/delbert/k1.key"
+signing_kid = "k1"
+ttl_secs = 86400
+conflict_strategy = "error"       # comma-separated chain: priority, error
+approval_default = false          # true: new tenants require policy approval
+
+[auth]
+mfa_required = "admins"           # none | admins | all
+
+[artifacts]
+store = "local"                   # local | s3
+dir = "/var/lib/delbert-core/artifacts"
+# store = "s3"
+# s3_endpoint = "https://garage.example.com:3900"
+# s3_bucket = "delbert-artifacts"
+# s3_region = "garage"
+# s3_access_key = "GK..."
+# s3_secret_key_file = "/etc/delbert/s3.secret"

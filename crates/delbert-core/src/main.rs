@@ -1,4 +1,6 @@
-//! Delbert Core Server entry point: configuration from the environment.
+//! Delbert Core Server entry point. Configuration: environment variables, optionally layered over a
+//! TOML file (`--config <file>` or `DELBERT_CONFIG`, see `config.rs`); `--check-config` validates
+//! and prints the effective configuration (secrets masked) without starting anything.
 
 use std::{fs, sync::Arc};
 
@@ -6,6 +8,7 @@ use anyhow::Context;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use delbert_core::{
     api::{AppState, router},
+    config::Config,
     bus::{Bus, BusTls},
     compile::{self, Strategy},
 };
@@ -13,8 +16,26 @@ use delbert_wire::Signer;
 use ed25519_dalek::SigningKey;
 use sqlx::postgres::PgPoolOptions;
 
+static CONFIG: std::sync::OnceLock<Config> = std::sync::OnceLock::new();
+
 fn var(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|v| !v.is_empty())
+    CONFIG.get().and_then(|c| c.get(name))
+}
+
+/// `--config <file>` / `--config=<file>` / `DELBERT_CONFIG`, and `--check-config`.
+fn parse_args() -> anyhow::Result<(Option<String>, bool)> {
+    let mut path = std::env::var("DELBERT_CONFIG").ok().filter(|v| !v.is_empty());
+    let mut check = false;
+    let mut args = std::env::args().skip(1);
+    while let Some(a) = args.next() {
+        match a.as_str() {
+            "--check-config" => check = true,
+            "--config" => path = Some(args.next().context("--config needs a file")?),
+            _ if a.starts_with("--config=") => path = Some(a["--config=".len()..].to_owned()),
+            _ => anyhow::bail!("unknown argument '{a}' (usage: delbert-core [--config <file>] [--check-config])"),
+        }
+    }
+    Ok((path, check))
 }
 
 fn load_signer() -> anyhow::Result<Option<Arc<Signer>>> {
@@ -44,10 +65,23 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
     rustls::crypto::ring::default_provider().install_default().ok();
 
-    let database_url = std::env::var("DATABASE_URL").context("DATABASE_URL is required")?;
-    let bind = std::env::var("DELBERT_BIND").unwrap_or_else(|_| "0.0.0.0:8080".into());
-    let ttl_secs = std::env::var("DELBERT_POLICY_TTL_SECS").ok().map(|v| v.parse()).transpose().context("DELBERT_POLICY_TTL_SECS")?.unwrap_or(86_400);
-    let strategies = compile::parse_chain(&std::env::var("DELBERT_CONFLICT_STRATEGY").unwrap_or_else(|_| "error".into())).map_err(anyhow::Error::msg)?;
+    let (config_path, check_only) = parse_args()?;
+    let config = match &config_path {
+        Some(p) => Config::load(std::path::Path::new(p)).map_err(anyhow::Error::msg)?,
+        None => Config::default(),
+    };
+    if check_only {
+        print!("{}", config.effective());
+        let problems = config.problems();
+        problems.iter().for_each(|p| eprintln!("problem: {p}"));
+        std::process::exit(if problems.is_empty() { 0 } else { 1 });
+    }
+    CONFIG.set(config).expect("configuration is set once");
+
+    let database_url = var("DATABASE_URL").context("DATABASE_URL is required (environment or [database] url)")?;
+    let bind = var("DELBERT_BIND").unwrap_or_else(|| "0.0.0.0:8080".into());
+    let ttl_secs = var("DELBERT_POLICY_TTL_SECS").map(|v| v.parse()).transpose().context("DELBERT_POLICY_TTL_SECS")?.unwrap_or(86_400);
+    let strategies = compile::parse_chain(&var("DELBERT_CONFLICT_STRATEGY").unwrap_or_else(|| "error".into())).map_err(anyhow::Error::msg)?;
     let strategies: Vec<Strategy> = strategies;
 
     // Schema changes happen only through migrations (crates/delbert-core/migrations),

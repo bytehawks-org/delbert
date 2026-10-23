@@ -77,6 +77,9 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Auth: service accounts (users of kind `service` without password) | to-do | 2026-10-23 |
 | Auth: SSO via OIDC (Keycloak, Microsoft Entra ID, ...): authorization code + PKCE, group/claim to (role, scope) mapping, break-glass local account; LDAP/AD later | to-do | 2026-10-23 |
 | Auth: captcha (Turnstile) after repeated failures, WebAuthn, password breach check | to-do | 2026-10-23 |
-| Configuration file for Core and Proxy (TOML/YAML + env override, validated, `--check`), replacing the growing list of environment variables | to-do | 2026-10-23 |
-| Content repository on the Core's server (files, policies, configs): the Core reads a local repo, detects changes, records diffs and versions the content; managed from the web UI | to-do (design first) | 2026-10-23 |
+| Configuration file for the Core (TOML, env override, strict keys, `--check-config`) | complete | 2026-10-23 |
+| Configuration file for the Proxy (clap reads only the environment; needs a shared loader) | to-do | 2026-10-23 |
+| Content sources design: directory or git (local Forgejo component or public remote), diff/version/apply ([CONTENT.md](CONTENT.md)) | complete | 2026-10-23 |
+| Content sources implementation (migrations, directory source, git via the `git` program, sync API, ownership) | to-do | 2026-10-23 |
+| Content sources in the web UI (sources, snapshots, diffs, sync now) | to-do | 2026-10-23 |
 | Key rotation beyond agent certificates (which renew with key rotation): policy signing key (trusted-keys overlap), internal CA, NATS issuer key, secrets age key, proxy certificate | to-do | 2026-10-23 |

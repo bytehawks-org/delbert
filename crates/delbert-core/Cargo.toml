@@ -34,6 +34,7 @@ sqlx.workspace = true
 thiserror.workspace = true
 bytes = "1"
 hmac = "0.12"
+toml = "0.9"
 sha1 = "0.10"
 data-encoding = "2"
 tokio.workspace = true

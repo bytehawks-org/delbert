@@ -16,5 +16,6 @@ pub mod totp;
 pub mod secrets;
 pub mod bus;
 pub mod bus_auth;
+pub mod config;
 pub mod compile;
 pub mod enroll;
