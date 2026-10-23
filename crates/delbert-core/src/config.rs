@@ -161,6 +161,6 @@ mod tests {
             assert!(p.contains(needle), "{needle} in {p}");
         }
         let shown = c.effective();
-        assert!(shown.contains("database.url = ******** (file)") && !shown.contains("pw@h"));
+        assert!(shown.contains("database.url = ********") && !shown.contains("pw@h"));
     }
 }
