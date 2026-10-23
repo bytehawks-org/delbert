@@ -67,7 +67,9 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Frontend design ([FRONTEND.md](FRONTEND.md)) | complete | 2026-10-23 |
 | Frontend M0 (Next.js BFF, generated client, login with MFA/SSO, i18n, theme, Playwright) | complete | 2026-10-23 |
 | Frontend M1 (read-only: dashboard, tenants, agents, policies and versions, proxies, audit) | complete | 2026-10-23 |
-| Frontend M2-M4 (operations, governance, hardening) | to-do | 2026-10-23 |
+| Frontend M2 (policy editor with dry-run validation and diff, version steps, enrollment keys, secrets, artifacts) | complete | 2026-10-23 |
+| Frontend M2 leftovers: tenant create/delete, agent and proxy management, content sources screens, CodeMirror highlighting | to-do | 2026-10-23 |
+| Frontend M3-M4 (governance, hardening) | to-do | 2026-10-23 |
 | `git init`, CI pipeline (tests, clippy, image build) | to-do | 2026-10-23 |
 | Audit browse and export API (`GET /v1/audit`, `/v1/audit/export`) | complete | 2026-10-23 |
 | Artifact storage outside PostgreSQL: local directory and S3-compatible (Garage verified) | complete | 2026-10-23 |

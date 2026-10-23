@@ -844,6 +844,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/{tenant}/policies/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Runs the checks of a save without storing anything or writing audit events. Requires `policies:write`. */
+        post: operations["validate_policy_dry_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/{tenant}/policies/{name}": {
         parameters: {
             query?: never;
@@ -1381,6 +1398,16 @@ export interface components {
             password: string;
             username: string;
         };
+        PolicyCheck: {
+            /** @description A save creates a draft that needs approval (otherwise it goes live at once). */
+            approval_required: boolean;
+            name: string;
+            /**
+             * Format: int64
+             * @description Version a save would create.
+             */
+            next_version: number;
+        };
         PolicyOut: {
             active: boolean;
             name: string;
@@ -1669,6 +1696,8 @@ export interface components {
             first_bad?: number | null;
         };
         VersionDetail: components["schemas"]["VersionOut"] & {
+            /** @description The tenant requires approval before a version goes live (readable by anyone who can read the policy). */
+            approval_required: boolean;
             events: components["schemas"]["EventOut"][];
             yaml: string;
         };
@@ -3733,6 +3762,51 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid policy */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    validate_policy_dry_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewPolicy"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyCheck"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Owned by a content source */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

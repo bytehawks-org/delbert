@@ -95,6 +95,8 @@ pub struct VersionDetail {
     pub summary: VersionOut,
     pub yaml: String,
     pub events: Vec<EventOut>,
+    /// The tenant requires approval before a version goes live (readable by anyone who can read the policy).
+    pub approval_required: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -119,7 +121,7 @@ pub async fn list_versions(State(st): State<AppState>, Authn(user): Authn, Path(
         "SELECT v.version, v.created_by, (EXTRACT(EPOCH FROM v.created_at))::bigint, \
            (SELECT e.event FROM policy_version_events e WHERE e.policy_id = v.policy_id AND e.version = v.version \
             AND e.event IN ('submitted', 'approved', 'rejected') ORDER BY e.id DESC LIMIT 1), \
-           p.active_version = v.version \
+           COALESCE(p.active_version = v.version, false) \
          FROM policies p JOIN policy_versions v ON v.policy_id = p.id WHERE p.tenant_id = $1 AND p.name = $2 ORDER BY v.version DESC",
     )
     .bind(tid)
@@ -144,7 +146,7 @@ pub async fn get_version(State(st): State<AppState>, Authn(user): Authn, Path((t
         "SELECT v.version, v.created_by, (EXTRACT(EPOCH FROM v.created_at))::bigint, \
            (SELECT e.event FROM policy_version_events e WHERE e.policy_id = v.policy_id AND e.version = v.version \
             AND e.event IN ('submitted', 'approved', 'rejected') ORDER BY e.id DESC LIMIT 1), \
-           p.active_version = v.version, v.yaml, p.id \
+           COALESCE(p.active_version = v.version, false), v.yaml, p.id \
          FROM policies p JOIN policy_versions v ON v.policy_id = p.id WHERE p.tenant_id = $1 AND p.name = $2 AND v.version = $3",
     )
     .bind(tid)
@@ -160,8 +162,10 @@ pub async fn get_version(State(st): State<AppState>, Authn(user): Authn, Path((t
     .bind(version)
     .fetch_all(&st.pool)
     .await?;
+    let approval_required: bool = sqlx::query_scalar("SELECT approval_required FROM tenants WHERE id = $1").bind(tid).fetch_one(&st.pool).await?;
     Ok(Json(VersionDetail {
         summary: version_out((v, by, at, state, active)),
+        approval_required,
         yaml,
         events: events.into_iter().map(|(event, actor, comment, at)| EventOut { event, actor, comment, at }).collect(),
     }))

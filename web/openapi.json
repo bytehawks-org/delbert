@@ -2666,6 +2666,61 @@
         ]
       }
     },
+    "/v1/tenants/{tenant}/policies/validate": {
+      "post": {
+        "tags": [
+          "policies"
+        ],
+        "description": "Runs the checks of a save without storing anything or writing audit events. Requires `policies:write`.",
+        "operationId": "validate_policy_dry_run",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyCheck"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": "Owned by a content source"
+          },
+          "422": {
+            "description": "Invalid policy"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/tenants/{tenant}/policies/{name}": {
       "get": {
         "tags": [
@@ -4488,6 +4543,28 @@
           }
         }
       },
+      "PolicyCheck": {
+        "type": "object",
+        "required": [
+          "name",
+          "next_version",
+          "approval_required"
+        ],
+        "properties": {
+          "approval_required": {
+            "type": "boolean",
+            "description": "A save creates a draft that needs approval (otherwise it goes live at once)."
+          },
+          "name": {
+            "type": "string"
+          },
+          "next_version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Version a save would create."
+          }
+        }
+      },
       "PolicyOut": {
         "type": "object",
         "required": [
@@ -5516,9 +5593,14 @@
             "type": "object",
             "required": [
               "yaml",
-              "events"
+              "events",
+              "approval_required"
             ],
             "properties": {
+              "approval_required": {
+                "type": "boolean",
+                "description": "The tenant requires approval before a version goes live (readable by anyone who can read the policy)."
+              },
               "events": {
                 "type": "array",
                 "items": {

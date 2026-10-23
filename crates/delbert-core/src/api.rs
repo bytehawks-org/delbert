@@ -233,6 +233,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/tenants/{tenant}/agents/{agent}", put(update_agent).delete(delete_agent))
         .route("/v1/tenants/{tenant}/agents/{agent}/effective", get(effective))
         .route("/v1/tenants/{tenant}/policies", get(list_policies).post(create_policy))
+        .route("/v1/tenants/{tenant}/policies/validate", post(validate_policy_dry_run))
         .route("/v1/tenants/{tenant}/policies/{name}", get(get_policy).delete(delete_policy))
         .route("/v1/tenants/{tenant}/settings", get(approval::get_settings).put(approval::put_settings))
         .route("/v1/tenants/{tenant}/policies/{name}/versions", get(approval::list_versions))
@@ -500,6 +501,31 @@ pub async fn create_policy(State(st): State<AppState>, Authn(user): Authn, Path(
     let tid = user.tenant(&st.pool, &tenant, "policies:write").await?;
     crate::content::ensure_unowned(&st.pool, tid, "policy", &parse_policy_name(&body.yaml)).await?;
     Ok((StatusCode::CREATED, Json(store_policy_version(&st, tid, &tenant, &body.yaml, &user.username).await?)))
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PolicyCheck {
+    pub name: String,
+    /// Version a save would create.
+    pub next_version: i64,
+    /// A save creates a draft that needs approval (otherwise it goes live at once).
+    pub approval_required: bool,
+}
+
+#[utoipa::path(post, path = "/v1/tenants/{tenant}/policies/validate", tag = "policies", security(("bearer" = [])), request_body = NewPolicy,
+    description = "Runs the checks of a save without storing anything or writing audit events. Requires `policies:write`.",
+    params(("tenant" = String, Path)), responses((status = 200, body = PolicyCheck), (status = 404), (status = 409, description = "Owned by a content source"), (status = 422, description = "Invalid policy")))]
+pub async fn validate_policy_dry_run(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>, Json(body): Json<NewPolicy>) -> ApiResult<Json<PolicyCheck>> {
+    let tid = user.tenant(&st.pool, &tenant, "policies:write").await?;
+    let name = validate_policy(&body.yaml, &tenant)?;
+    crate::content::ensure_unowned(&st.pool, tid, "policy", &name).await?;
+    let next_version: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(v.version), 0) + 1 FROM policies p JOIN policy_versions v ON v.policy_id = p.id WHERE p.tenant_id = $1 AND p.name = $2")
+        .bind(tid)
+        .bind(&name)
+        .fetch_one(&st.pool)
+        .await?;
+    let approval_required: bool = sqlx::query_scalar("SELECT approval_required FROM tenants WHERE id = $1").bind(tid).fetch_one(&st.pool).await?;
+    Ok(Json(PolicyCheck { name, next_version, approval_required }))
 }
 
 /// Parse and check a policy for a tenant; returns its name.

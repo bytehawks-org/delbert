@@ -36,7 +36,7 @@ test("an administrator browses tenants, policies with their versions, agents, pr
   await page.getByRole("navigation", { name: /main/i }).getByRole("link", { name: "Tenants" }).click();
   await page.getByRole("link", { name: tenant }).click();
   await expect(page.getByRole("heading", { name: tenant, level: 1 })).toBeVisible();
-  await expect(page.getByText("Names only")).toBeVisible();
+  await expect(page.getByText(/Write-only/)).toBeVisible();
 
   await page.getByRole("link", { name: "web-base" }).click();
   await expect(page.getByTestId("policy-yaml")).toContainText("second");

@@ -1,6 +1,6 @@
 # Delbert - Frontend
 
-Administration web UI for the Core: tenants, agents, policies, secrets, artifacts, proxies, users and roles, audit. Status: **milestone M0 implemented** in [`web/`](../web) (skeleton, login through the backend-for-frontend with MFA and single sign-on, i18n, theme, generated client, container image, Playwright tests). **M1 (read-only views) is implemented too**; M2 onwards is design. The API additions this UI depends on ([RBAC.md](RBAC.md)) are in the Core.
+Administration web UI for the Core: tenants, agents, policies, secrets, artifacts, proxies, users and roles, audit. Status: **milestone M0 implemented** in [`web/`](../web) (skeleton, login through the backend-for-frontend with MFA and single sign-on, i18n, theme, generated client, container image, Playwright tests). **M1 (read-only views) and M2 (policy editor, version steps, enrollment keys, secrets, artifacts) are implemented too**; M3 onwards is design. Mutations go through one narrow allow-listed pass-through (`/api/core/...`, same-origin only) that adds the session on the server; the editor is a plain validated textarea with a diff (CodeMirror highlighting is a later refinement). The API additions this UI depends on ([RBAC.md](RBAC.md)) are in the Core.
 
 ## Stack
 
@@ -64,7 +64,7 @@ UI rules that follow from the product: secret values are never rendered; destruc
 
 1. **M0 - skeleton**: Next.js app in `web/`, Containerfile target `web`, compose service, generated client in CI, login through the BFF, layout, i18n and theme, Playwright smoke test against the e2e stack.
 2. **M1 - read-only (implemented)**: dashboard, tenants, agents (list/detail), policies (list, read-only YAML), proxies, audit browser.
-3. **M2 - operations**: enrollment keys, secrets, artifacts, agent and proxy management, policy editor with validation and versions.
+3. **M2 - operations (implemented, except agent/proxy management, which is still API-only)**: enrollment keys, secrets, artifacts, agent and proxy management, policy editor with validation and versions.
 4. **M3 - governance**: users, roles and the permission matrix, tenant settings, approval workflow, MFA, API tokens.
 5. **M4 - hardening**: SSO login, SSE, accessibility audit, performance budget, visual regression.
 

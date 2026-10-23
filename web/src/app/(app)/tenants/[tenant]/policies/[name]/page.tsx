@@ -3,7 +3,10 @@ import { getTranslations } from "next-intl/server";
 import { Badge, Card, Cell, Notice, PageHeader, Row, Table } from "@/components/ui";
 import { core } from "@/lib/core";
 import { stamp, unwrap } from "@/lib/data";
+import { VersionActions } from "@/components/version-actions";
 import { requireMe } from "@/lib/me";
+import { can } from "@/lib/perm";
+import Link from "next/link";
 
 type Props = { params: Promise<{ tenant: string; name: string }>; searchParams: Promise<{ version?: string }> };
 
@@ -16,7 +19,7 @@ export default async function Policy({ params, searchParams }: Props) {
   const tenant = decodeURIComponent(raw.tenant);
   const name = decodeURIComponent(raw.name);
   const wanted = Number((await searchParams).version);
-  const { token } = await requireMe();
+  const { me, token } = await requireMe();
   const t = await getTranslations("policies");
   const api = core(token);
   const path = { tenant, name };
@@ -27,11 +30,29 @@ export default async function Policy({ params, searchParams }: Props) {
   // Default to the version that is live, else the newest.
   const shown = sorted.find((v) => v.version === wanted) ?? sorted.find((v) => v.active) ?? sorted[0];
   const detail = shown ? unwrap(await api.GET("/v1/tenants/{tenant}/policies/{name}/versions/{version}", { params: { path: { ...path, version: shown.version } } })) : null;
+  const approval = detail?.approval_required ?? false;
+  const activeVersion = sorted.find((v) => v.active)?.version ?? 0;
+  const steps = (() => {
+    if (!shown) return [] as ("submit" | "approve" | "reject" | "activate" | "rollback")[];
+    const out: ("submit" | "approve" | "reject" | "activate" | "rollback")[] = [];
+    const write = can(me, "policies:write", tenant);
+    const review = can(me, "policies:approve", tenant);
+    if (approval && write && (shown.state === "draft" || shown.state === "rejected")) out.push("submit");
+    if (approval && review && shown.state === "submitted") out.push("approve", "reject");
+    if (!shown.active && write && (!approval || shown.state === "approved")) out.push("activate");
+    if (approval && review && !shown.active && shown.version < activeVersion) out.push("rollback");
+    return out;
+  })();
   const tone = (s: string) => (s === "active" ? "ok" : s === "rejected" ? "bad" : "neutral");
 
   return (
     <div className="space-y-6">
       <PageHeader title={name} back={{ href: `/tenants/${encodeURIComponent(tenant)}`, label: tenant }} />
+      {can(me, "policies:write", tenant) && shown && (
+        <Link href={`/tenants/${encodeURIComponent(tenant)}/policies/${encodeURIComponent(name)}/edit?version=${shown.version}`} className="inline-block rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg">
+          {t("editFrom", { version: shown.version })}
+        </Link>
+      )}
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         <Card id="yaml" title={t("source", { version: shown?.version ?? 0 })}>
           {detail ? (
@@ -61,6 +82,11 @@ export default async function Policy({ params, searchParams }: Props) {
               ))}
             </Table>
           </Card>
+          {steps.length > 0 && shown && (
+            <Card id="actions" title={t("actions", { version: shown.version })}>
+              <VersionActions tenant={tenant} name={name} version={shown.version} steps={steps} />
+            </Card>
+          )}
           {detail && detail.events.length > 0 && (
             <Card id="history" title={t("history", { version: shown!.version })}>
               <ol className="space-y-2 text-sm">

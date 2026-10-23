@@ -54,6 +54,7 @@ async fn without_approval_versions_go_live_and_can_roll_back(pool: PgPool) {
     assert_eq!(versions[1]["active"], true);
     let (_, detail) = admin.call("GET", "/v1/tenants/acme/policies/p/versions/1", None).await;
     assert_eq!(detail["events"].as_array().unwrap().last().unwrap()["event"], "rolled_back");
+    assert_eq!(detail["approval_required"], false);
 }
 
 #[sqlx::test]
@@ -116,4 +117,40 @@ async fn four_eyes_approval_gates_activation(pool: PgPool) {
     // Every step is in the audit trail, which stays consistent.
     let (_, chain) = admin.call("GET", "/v1/audit/verify", None).await;
     assert_eq!(chain["first_bad"], Value::Null);
+}
+
+#[sqlx::test]
+async fn dry_run_validation_checks_without_storing_or_auditing(pool: PgPool) {
+    let admin = admin_client(state(pool, vec![Strategy::Error], None)).await;
+    assert_eq!(admin.call("POST", "/v1/tenants", Some(json!({ "name": "acme" }))).await.0, S::CREATED);
+    let (_, before) = admin.call("GET", "/v1/audit/verify", None).await;
+
+    let (s, ok) = admin.call("POST", "/v1/tenants/acme/policies/validate", Some(policy("/etc/one"))).await;
+    assert_eq!((s, ok["name"].as_str(), ok["next_version"].as_i64(), ok["approval_required"].as_bool()), (S::OK, Some("p"), Some(1), Some(false)));
+
+    // Nothing was stored, and the dry run left no audit event.
+    assert_eq!(admin.call("GET", "/v1/tenants/acme/policies", None).await.1, json!([]));
+    assert_eq!(admin.call("GET", "/v1/audit/verify", None).await.1["events"], before["events"]);
+
+    // Same errors as a save; the version counter follows the stored versions.
+    assert_eq!(admin.call("POST", "/v1/tenants/acme/policies/validate", Some(json!({ "yaml": "nonsense: [" }))).await.0, S::UNPROCESSABLE_ENTITY);
+    admin.call("POST", "/v1/tenants/acme/policies", Some(policy("/etc/one"))).await;
+    assert_eq!(admin.call("POST", "/v1/tenants/acme/policies/validate", Some(policy("/etc/two"))).await.1["next_version"], 2);
+
+    // A viewer cannot use it (it needs `policies:write`).
+    let viewer = user(&admin, "vera", "viewer").await;
+    assert_eq!(viewer.call("POST", "/v1/tenants/acme/policies/validate", Some(policy("/etc/two"))).await.0, S::FORBIDDEN);
+}
+
+#[sqlx::test]
+async fn a_policy_that_was_never_activated_can_be_listed(pool: PgPool) {
+    let admin = admin_client(state(pool, vec![Strategy::Error], None)).await;
+    assert_eq!(admin.call("POST", "/v1/tenants", Some(json!({ "name": "acme" }))).await.0, S::CREATED);
+    assert_eq!(admin.call("PUT", "/v1/tenants/acme/settings", Some(json!({ "approval_required": true }))).await.0, S::NO_CONTENT);
+    assert_eq!(admin.call("POST", "/v1/tenants/acme/policies", Some(policy("/etc/one"))).await.1["live"], false);
+
+    let (s, versions) = admin.call("GET", "/v1/tenants/acme/policies/p/versions", None).await;
+    assert_eq!((s, versions[0]["active"].as_bool(), versions[0]["state"].as_str()), (S::OK, Some(false), Some("draft")));
+    let (s, detail) = admin.call("GET", "/v1/tenants/acme/policies/p/versions/1", None).await;
+    assert_eq!((s, detail["approval_required"].as_bool()), (S::OK, Some(true)));
 }

@@ -84,7 +84,9 @@
     "secretsNote": "Names only: values are write-only and never shown.",
     "noSecrets": "No secrets.",
     "updatedBy": "Updated by",
-    "updatedAt": "Updated"
+    "updatedAt": "Updated",
+    "newPolicy": "New policy",
+    "keys": "Enrollment keys"
   },
   "agents": {
     "title": "Agents",
@@ -118,7 +120,9 @@
     "state": "State",
     "by": "Author",
     "live": "live",
-    "history": "History of version {version}"
+    "history": "History of version {version}",
+    "editFrom": "Edit as new version (from v{version})",
+    "actions": "Actions on version {version}"
   },
   "proxies": {
     "title": "Proxies",
@@ -160,5 +164,64 @@
     "outcomeCol": "Outcome",
     "none": "No events match.",
     "older": "Older events"
+  },
+  "editor": {
+    "newTitle": "New policy",
+    "editTitle": "New version of a policy",
+    "startsFrom": "Starting from version {version}.",
+    "denied": "Your roles do not let you write policies in this tenant.",
+    "source": "Policy (YAML)",
+    "empty": "The policy is empty.",
+    "checking": "Checking…",
+    "valid": "Valid: {name}, saving creates version {version}.",
+    "draftNote": "It will be a draft until approved.",
+    "liveNote": "It goes live at once.",
+    "save": "Save as new version",
+    "saving": "Saving…",
+    "changes": "Changes against {base}",
+    "noChanges": "No changes."
+  },
+  "versionActions": {
+    "comment": "Comment (required to reject)",
+    "submit": "Submit for approval",
+    "approve": "Approve",
+    "reject": "Reject",
+    "activate": "Activate",
+    "rollback": "Roll back to this version"
+  },
+  "keys": {
+    "title": "Enrollment keys",
+    "groups": "Groups",
+    "maxUses": "Max uses",
+    "ttl": "Valid for (hours)",
+    "create": "Create key",
+    "shownOnce": "Copy this key now: it is shown only once.",
+    "uses": "Uses",
+    "expires": "Expires (UTC)",
+    "state": "State",
+    "none": "No enrollment keys.",
+    "revoked": "revoked",
+    "expired": "expired",
+    "used": "used up",
+    "valid": "valid",
+    "revoke": "Revoke"
+  },
+  "secrets": {
+    "title": "Secrets",
+    "note": "Write-only: values are sealed on the Core and never shown again. Saving an existing name replaces its value.",
+    "name": "Name",
+    "value": "Value",
+    "save": "Save secret",
+    "updatedBy": "Updated by",
+    "updatedAt": "Updated",
+    "none": "No secrets.",
+    "delete": "Delete",
+    "confirmDelete": "Delete the secret {name}?"
+  },
+  "artifacts": {
+    "file": "File",
+    "nameOptional": "Name (default: file name)",
+    "upload": "Upload",
+    "uploading": "Uploading…"
   }
 }

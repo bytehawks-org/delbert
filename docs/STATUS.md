@@ -49,7 +49,7 @@ See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI only at mileston
 
 ## Next steps
 
-1. Frontend M2 onwards ([FRONTEND.md](FRONTEND.md)): operations (enrollment keys, secrets, artifacts, policy editor with validation), then governance. M0 and M1 (read-only views) are in `web/`.
+1. Frontend M3 onwards ([FRONTEND.md](FRONTEND.md)): governance (users, roles and the permission matrix, tenant settings, MFA and API tokens, SSO providers), then hardening. M0-M2 are in `web/`; agent, proxy and tenant management (create/delete) and the content sources screens are still API-only.
 2. Per-action audit events from agents (also through the proxy); Kubernetes Operator; Windows agent study.
 3. Proxy config file and live branch check of proxy renewal; SSH remotes and signed commits for content sources; Entra ID check against a real tenant.
 

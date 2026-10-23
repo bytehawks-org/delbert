@@ -8,6 +8,12 @@
 ### Authentication hardening
 - Migration `0013`. Cookie sessions with CSRF (double-submit token stored hashed), idle timeout, listable/revocable sessions; TOTP MFA with sealed secret, replay protection and recovery codes, optional or mandatory (`DELBERT_MFA_REQUIRED`); login throttling per (user, address), address and user; admin reset of MFA/sessions. Tests in `tests/auth.rs`. See [API.md](API.md).
 
+### Frontend M2
+- Policy editor (`/tenants/{t}/policies/new`, `.../{name}/edit`): validates as you type through the new `POST /v1/tenants/{tenant}/policies/validate` (same checks as a save, stores nothing, no audit event), shows the next version number, whether it will be a draft, and a line diff against the live version. Version steps from the policy page (submit, approve, reject, activate, rollback) appear only where role and state allow; the Core still decides. Enrollment keys (create, shown once, revoke), write-only secrets and artifact upload on the tenant page. `GET .../versions/{v}` now includes `approval_required`.
+- Mutations from the browser go through `/api/core/...`, an allow-list of the calls the UI makes (everything else is a 404), same-origin only, session added server side. Browser uploads are limited by the Next.js proxy body limit (10 MB by default); use the API for larger artifacts.
+- Fix: listing versions or opening one of a policy that was never activated (a draft under approval) failed with a 500.
+- Playwright: editor, four-eyes flow with two users, keys/secrets/artifacts, pass-through restrictions (11 scenarios in total).
+
 ### Frontend M1
 - Read-only views in `web/`: tenants (agents, policies, artifacts, secret names), fleet-wide agent list with state filter and agent detail, policy source with versions and approval history, proxies, audit browser (filters, keyset paging, hash-chain status). Sections a role does not cover show a notice instead of failing. Two more Playwright scenarios (administrator browse; tenant-scoped viewer). Core fix: the audit filters were documented as path parameters in the OpenAPI document; they are now query parameters (`web/openapi.json` regenerated).
 

@@ -2,6 +2,10 @@
 
 JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/swagger-ui` and `/openapi.json` (generated with utoipa; disable with `DELBERT_API_DOCS=false`). Everything except `/healthz`, `POST /v1/auth/login` and the documentation requires `Authorization: Bearer <session token>` and the permission listed below. Agents do not use this API: they talk to the Core over NATS ([ABSTRACT.md](ABSTRACT.md) §2).
 
+## Policy dry run
+
+`POST /v1/tenants/{tenant}/policies/validate` with `{"yaml": "..."}` runs the checks of a save (syntax, schema, tenant match, name, content-source ownership) and answers `{name, next_version, approval_required}` without storing anything or writing an audit event. Needs `policies:write`.
+
 ## Configuration (file and environment)
 
 `delbert-core --config <file>` (or `DELBERT_CONFIG`) reads a TOML file whose settings map one-to-one to the variables below (`[server] bind` is `DELBERT_BIND`; the example [deploy/delbert-core.example.toml](../deploy/delbert-core.example.toml) lists every key). **The environment wins over the file**, which wins over the default. Unknown keys and wrong types are errors. `delbert-core [--config <file>] --check-config` prints the effective configuration with the origin of each value (secrets masked), reports missing files, bad numbers and invalid choices, and exits non-zero on problems without starting anything. Use the `*_file` settings for secrets.

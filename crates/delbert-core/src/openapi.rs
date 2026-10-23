@@ -32,7 +32,7 @@ impl Modify for BearerAuth {
         auth::list_tenant_assignments, auth::set_tenant_assignments,
         api::create_tenant, api::list_tenants,
         api::create_agent, api::list_agents, api::update_agent, api::delete_agent, api::effective,
-        api::create_policy, api::list_policies, api::get_policy, api::delete_policy,
+        api::create_policy, api::validate_policy_dry_run, api::list_policies, api::get_policy, api::delete_policy,
         crate::approval::get_settings, crate::approval::put_settings, crate::approval::list_versions, crate::approval::get_version,
         crate::approval::submit, crate::approval::approve, crate::approval::reject, crate::approval::activate, crate::approval::rollback,
         crate::sso::public_providers, crate::sso::start, crate::sso::callback, crate::sso::exchange,

@@ -84,7 +84,9 @@
     "secretsNote": "Solo i nomi: i valori sono in sola scrittura e non vengono mai mostrati.",
     "noSecrets": "Nessun segreto.",
     "updatedBy": "Aggiornato da",
-    "updatedAt": "Aggiornato"
+    "updatedAt": "Aggiornato",
+    "newPolicy": "Nuova policy",
+    "keys": "Chiavi di registrazione"
   },
   "agents": {
     "title": "Agent",
@@ -118,7 +120,9 @@
     "state": "Stato",
     "by": "Autore",
     "live": "attiva",
-    "history": "Storico della versione {version}"
+    "history": "Storico della versione {version}",
+    "editFrom": "Modifica come nuova versione (da v{version})",
+    "actions": "Azioni sulla versione {version}"
   },
   "proxies": {
     "title": "Proxy",
@@ -160,5 +164,64 @@
     "outcomeCol": "Esito",
     "none": "Nessun evento corrisponde.",
     "older": "Eventi precedenti"
+  },
+  "editor": {
+    "newTitle": "Nuova policy",
+    "editTitle": "Nuova versione di una policy",
+    "startsFrom": "Parte dalla versione {version}.",
+    "denied": "I tuoi ruoli non permettono di scrivere policy in questo tenant.",
+    "source": "Policy (YAML)",
+    "empty": "La policy è vuota.",
+    "checking": "Verifica in corso…",
+    "valid": "Valida: {name}, salvando si crea la versione {version}.",
+    "draftNote": "Resterà in bozza fino all'approvazione.",
+    "liveNote": "Diventa attiva subito.",
+    "save": "Salva come nuova versione",
+    "saving": "Salvataggio…",
+    "changes": "Modifiche rispetto a {base}",
+    "noChanges": "Nessuna modifica."
+  },
+  "versionActions": {
+    "comment": "Commento (obbligatorio per rifiutare)",
+    "submit": "Invia per approvazione",
+    "approve": "Approva",
+    "reject": "Rifiuta",
+    "activate": "Attiva",
+    "rollback": "Ripristina questa versione"
+  },
+  "keys": {
+    "title": "Chiavi di registrazione",
+    "groups": "Gruppi",
+    "maxUses": "Usi massimi",
+    "ttl": "Validità (ore)",
+    "create": "Crea chiave",
+    "shownOnce": "Copia ora questa chiave: viene mostrata una sola volta.",
+    "uses": "Usi",
+    "expires": "Scadenza (UTC)",
+    "state": "Stato",
+    "none": "Nessuna chiave di registrazione.",
+    "revoked": "revocata",
+    "expired": "scaduta",
+    "used": "esaurita",
+    "valid": "valida",
+    "revoke": "Revoca"
+  },
+  "secrets": {
+    "title": "Segreti",
+    "note": "Sola scrittura: i valori sono cifrati nel Core e non vengono più mostrati. Salvare un nome esistente ne sostituisce il valore.",
+    "name": "Nome",
+    "value": "Valore",
+    "save": "Salva segreto",
+    "updatedBy": "Aggiornato da",
+    "updatedAt": "Aggiornato",
+    "none": "Nessun segreto.",
+    "delete": "Elimina",
+    "confirmDelete": "Eliminare il segreto {name}?"
+  },
+  "artifacts": {
+    "file": "File",
+    "nameOptional": "Nome (predefinito: nome del file)",
+    "upload": "Carica",
+    "uploading": "Caricamento…"
   }
 }
