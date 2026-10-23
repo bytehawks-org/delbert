@@ -1,6 +1,6 @@
 # Delbert - Frontend
 
-Administration web UI for the Core: tenants, agents, policies, secrets, artifacts, proxies, users and roles, audit. Status: **design**, not implemented. It depends on the API additions of [RBAC.md](RBAC.md).
+Administration web UI for the Core: tenants, agents, policies, secrets, artifacts, proxies, users and roles, audit. Status: **milestone M0 implemented** in [`web/`](../web) (skeleton, login through the backend-for-frontend with MFA and single sign-on, i18n, theme, generated client, container image, Playwright tests). M1 onwards is design. The API additions this UI depends on ([RBAC.md](RBAC.md)) are in the Core.
 
 ## Stack
 

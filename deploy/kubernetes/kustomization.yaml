@@ -7,7 +7,11 @@ resources:
   - namespace.yaml
   - nats.yaml
   - core.yaml
+  - web.yaml
 images:
   - name: delbert-core
     newName: localhost/delbert-core      # replace with your registry
+    newTag: latest
+  - name: delbert-web
+    newName: localhost/delbert-web
     newTag: latest

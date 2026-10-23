@@ -1,0 +1,54 @@
+{
+  "app": { "name": "Delbert", "tagline": "Configuration management and state enforcement" },
+  "common": { "loading": "Loading…", "skipToContent": "Skip to content" },
+  "nav": { "dashboard": "Dashboard", "main": "Main navigation" },
+  "header": {
+    "signedInAs": "Signed in as {name}",
+    "logout": "Sign out",
+    "language": "Language",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System"
+  },
+  "login": {
+    "title": "Sign in",
+    "username": "Username",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "mfaTitle": "Second factor",
+    "mfaHelp": "Enter the 6-digit code from your authenticator app, or a recovery code.",
+    "mfaCode": "Code",
+    "mfaSubmit": "Verify",
+    "ssoSeparator": "or",
+    "ssoWith": "Sign in with {provider}",
+    "errors": {
+      "invalid": "Invalid username or password.",
+      "throttled": "Too many failed attempts. Try again in a few minutes.",
+      "invalidCode": "Invalid code.",
+      "unavailable": "The Core is not reachable. Try again shortly.",
+      "generic": "Something went wrong.",
+      "expired": "Your session has ended. Sign in again.",
+      "sso": "Single sign-on was refused: {reason}"
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome, {name}",
+    "account": "Your account",
+    "roles": "Roles",
+    "noRoles": "No roles assigned.",
+    "scopeGlobal": "whole platform",
+    "scopeTenant": "tenant {tenant}",
+    "mfa": "Multi-factor authentication",
+    "mfaOn": "enabled",
+    "mfaOff": "not set up",
+    "overview": "Overview",
+    "tenants": "Tenants you can reach",
+    "agents": "Agents",
+    "compliant": "compliant",
+    "drifted": "drifted or unknown",
+    "m1": "Agents, policies, proxies and the audit trail arrive in the next milestone."
+  }
+}

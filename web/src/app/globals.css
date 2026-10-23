@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens. Components only use these, so a theme is a handful of variables. */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --fg: #14161a;
+  --muted: #566070;
+  --border: #d9dde4;
+  --accent: #3445c8;
+  --accent-fg: #ffffff;
+  --danger: #b3261e;
+  --ok: #1b7a43;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0e1013;
+  --surface: #161a20;
+  --fg: #e8eaee;
+  --muted: #9aa4b4;
+  --border: #29303a;
+  --accent: #8a98ff;
+  --accent-fg: #0e1013;
+  --danger: #ff8a80;
+  --ok: #6fd39a;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-danger: var(--danger);
+  --color-ok: var(--ok);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

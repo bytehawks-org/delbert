@@ -73,6 +73,8 @@ services:
       DELBERT_NATS_ACCOUNT: APP
       DELBERT_NATS_SESSION_SECS: "60"      # short on purpose: revocation is visible within a minute
       DELBERT_AGENT_CERT_DAYS: "1"
+      DELBERT_PUBLIC_URL: https://localhost:8080      # single sign-on redirect URIs
+      DELBERT_UI_URL: http://localhost:3000/auth/callback
     ports:
       - "8080:8080"
     volumes:
@@ -82,6 +84,21 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       nats: { condition: service_healthy }
+
+  web:
+    build: { context: ., target: web }
+    image: localhost/delbert-web
+    environment:
+      DELBERT_CORE_URL: https://core:8080            # how the UI server reaches the Core
+      WEB_CORE_PUBLIC_URL: https://localhost:8080    # how the browser reaches it (single sign-on redirects)
+      NODE_EXTRA_CA_CERTS: /pki/ca.pem               # the Core's certificate is signed by the Delbert CA
+      WEB_SESSION_SECRET: ${E2E_WEB_SECRET:-ZGV2LW9ubHktc2VjcmV0LWZvci1lMmUtMzJieXRlcyE}   # 32 bytes, base64url; development only
+      WEB_INSECURE_COOKIES: "true"                   # plain HTTP in this stack
+    volumes:
+      - ./dev/pki/ca.pem:/pki/ca.pem:ro,Z
+    ports:
+      - "3000:3000"
+    depends_on: [core]
 
   agent-1:
     build: { context: ., target: agent }

@@ -8,6 +8,9 @@
 ### Authentication hardening
 - Migration `0013`. Cookie sessions with CSRF (double-submit token stored hashed), idle timeout, listable/revocable sessions; TOTP MFA with sealed secret, replay protection and recovery codes, optional or mandatory (`DELBERT_MFA_REQUIRED`); login throttling per (user, address), address and user; admin reset of MFA/sessions. Tests in `tests/auth.rs`. See [API.md](API.md).
 
+### Frontend M0
+- `web/`: Next.js 16.4.2 (App Router), React 19.3.1, Tailwind CSS 4.3.3, TypeScript 5.9; backend-for-frontend with the Core session in an encrypted HttpOnly SameSite=Strict cookie (`jose`), `Origin` check on mutations, per-request CSP nonce in `proxy.ts`, login with MFA and SSO callback/exchange, IT/EN (`next-intl`), light/dark/system theme, typed client generated from the Core's OpenAPI (`delbert-core --print-openapi`), dashboard skeleton. Containerfile target `web`, `web` service in `compose.e2e.yaml`, `deploy/kubernetes/web.yaml`. Playwright tests (security headers, login/logout, language/theme, cross-origin refusal, TOTP login) pass against the live stack. See [web/README.md](../web/README.md).
+
 ### Rotations (CA, secrets key, proxy certificate, NATS issuer)
 - Internal CA rotation with overlap: CA bundles (`delbert-pki::bundle`), in-band announcement (`ca_add`, `ca_remove`, `renew_issued_before` in the signed trust update), agents report trusted CAs and their certificate's issuer, `GET /v1/pki/ca`; enrollment and renewal hand out the bundle. Verified live (announce, switch with forced renewal, retire).
 - Secrets-key rotation: `SecretsKeys` (current + old), `GET /v1/secrets/key`, `POST /v1/secrets/reseal` over tenant secrets, TOTP, SSO and git tokens (migration-free).

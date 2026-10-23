@@ -24,6 +24,12 @@ fn var(name: &str) -> Option<String> {
 
 /// `--config <file>` / `--config=<file>` / `DELBERT_CONFIG`, and `--check-config`.
 fn parse_args() -> anyhow::Result<(Option<String>, bool)> {
+    // `--print-openapi` needs neither a database nor a configuration: it feeds the web client generator.
+    if std::env::args().nth(1).as_deref() == Some("--print-openapi") {
+        use utoipa::OpenApi;
+        println!("{}", delbert_core::openapi::ApiDoc::openapi().to_pretty_json()?);
+        std::process::exit(0);
+    }
     let mut path = std::env::var("DELBERT_CONFIG").ok().filter(|v| !v.is_empty());
     let mut check = false;
     let mut args = std::env::args().skip(1);
@@ -32,7 +38,7 @@ fn parse_args() -> anyhow::Result<(Option<String>, bool)> {
             "--check-config" => check = true,
             "--config" => path = Some(args.next().context("--config needs a file")?),
             _ if a.starts_with("--config=") => path = Some(a["--config=".len()..].to_owned()),
-            _ => anyhow::bail!("unknown argument '{a}' (usage: delbert-core [--config <file>] [--check-config])"),
+            _ => anyhow::bail!("unknown argument '{a}' (usage: delbert-core [--config <file>] [--check-config] | --print-openapi)"),
         }
     }
     Ok((path, check))

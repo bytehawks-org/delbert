@@ -2,6 +2,7 @@
 #   podman build --target core  -t localhost/delbert-core  .
 #   podman build --target agent -t localhost/delbert-agent .
 #   podman build --target proxy -t localhost/delbert-proxy .
+#   podman build --target web   -t localhost/delbert-web   .   # administration UI (Next.js)
 #   podman build --target tools -t localhost/delbert-tools .   # delbert-pki and delbert-sign, to bootstrap keys
 FROM docker.io/library/rust:1 AS build
 WORKDIR /src
@@ -49,3 +50,23 @@ ENTRYPOINT ["delbert-proxy", "run"]
 FROM docker.io/library/debian:13-slim AS tools
 COPY --from=build /out/delbert-pki /usr/local/bin/delbert-pki
 COPY --from=build /out/delbert-sign /usr/local/bin/delbert-sign
+
+# Administration UI: a Next.js backend-for-frontend. The browser only talks to this server, which holds the
+# Core session in an encrypted HttpOnly cookie. docs/FRONTEND.md.
+FROM docker.io/library/node:22-slim AS web-build
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+# The build never needs the real secret: pages are rendered on demand.
+RUN WEB_SESSION_SECRET=build-time-placeholder-not-used npm run build
+
+FROM docker.io/library/node:22-slim AS web
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_DISABLED=1
+WORKDIR /app
+COPY --from=web-build /web/.next/standalone ./
+COPY --from=web-build /web/.next/static ./.next/static
+COPY --from=web-build /web/public ./public
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]
