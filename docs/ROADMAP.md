@@ -60,7 +60,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Core: audit hash chain writer, policy CRUD API, OpenAPI (utoipa) | to-do | 2026-10-23 |
 | RBAC v2 design: tenant-scoped roles, `resource:action` permissions, optional per-tenant four-eyes approval ([RBAC.md](RBAC.md)) | complete | 2026-10-23 |
 | RBAC v2: tenant-scoped assignments, `resource:action` permissions, built-in roles, delegated tenant administration (migration `0010`) | complete | 2026-10-23 |
-| RBAC v2: approval workflow (`approval_required`, `active_version`, `policy_version_events`) | to-do | 2026-10-23 |
+| RBAC v2: approval workflow (`approval_required`, `active_version`, `policy_version_events`, migration `0011`) | complete | 2026-10-23 |
+| Approval: version diff, impact preview before approving, emergency path | to-do | 2026-10-23 |
 | Auth hardening: cookie sessions + CSRF, TOTP MFA, login throttling/Turnstile, scoped API tokens | to-do | 2026-10-23 |
 | Core API for the UI: audit search/export, pagination and filters, policy versions/diff/schema, tenant delete, SSE status | to-do | 2026-10-23 |
 | Frontend design ([FRONTEND.md](FRONTEND.md)) | complete | 2026-10-23 |

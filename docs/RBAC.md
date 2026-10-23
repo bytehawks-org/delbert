@@ -1,6 +1,6 @@
 # Delbert - RBAC v2 and authentication
 
-Design for the next iteration of access control, driven by the web frontend ([FRONTEND.md](FRONTEND.md)). Status: **tenant-scoped roles and permissions implemented** (migration `0010`, [API.md](API.md)); approval workflow, authentication hardening and tokens are still design. What exists today is described in [API.md](API.md) ("Authentication and RBAC").
+Design for the next iteration of access control, driven by the web frontend ([FRONTEND.md](FRONTEND.md)). Status: **tenant-scoped roles and permissions implemented** (migration `0010`, [API.md](API.md)); the approval workflow is implemented too (migration `0011`: submit/approve/reject/activate/rollback, no diff or preview yet); authentication hardening and tokens are still design. What exists today is described in [API.md](API.md) ("Authentication and RBAC").
 
 ## Where we are (v1)
 
@@ -127,6 +127,6 @@ approval_required = true  :  upload ─▶ submitted ─▶ approved ─▶ acti
 
 ## Open points
 
-- Whether `tenant-admin` may disable `approval_required` for their own tenant (default: only `platform-admin`, configurable).
+- Whether `tenant-admin` may disable `approval_required` for their own tenant (implemented: only a global grant, not configurable yet).
 - The emergency path (`policies:emergency`) and who may hold it.
 - Per-group scoping inside a tenant (e.g. an operator limited to agents of group `web`): deliberately out of v2, the data model leaves room for it.

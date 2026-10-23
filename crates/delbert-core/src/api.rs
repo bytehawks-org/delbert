@@ -20,6 +20,7 @@ use utoipa::ToSchema;
 
 use crate::{
     audit::{self, NewEvent},
+    approval,
     auth::{self, Authn},
     compile::{self, Conflict, PolicyInput, Strategy},
 };
@@ -43,6 +44,8 @@ pub struct AppState {
     pub agent_cert_days: i64,
     /// NATS URL handed to agents at enrollment.
     pub public_nats_url: Option<String>,
+    /// Whether new tenants require policy approval (`DELBERT_APPROVAL_DEFAULT`).
+    pub approval_default: bool,
 }
 
 // --- errors -------------------------------------------------------------------------
@@ -121,6 +124,14 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/tenants/{tenant}/agents/{agent}/effective", get(effective))
         .route("/v1/tenants/{tenant}/policies", get(list_policies).post(create_policy))
         .route("/v1/tenants/{tenant}/policies/{name}", get(get_policy).delete(delete_policy))
+        .route("/v1/tenants/{tenant}/settings", get(approval::get_settings).put(approval::put_settings))
+        .route("/v1/tenants/{tenant}/policies/{name}/versions", get(approval::list_versions))
+        .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}", get(approval::get_version))
+        .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/submit", post(approval::submit))
+        .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/approve", post(approval::approve))
+        .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/reject", post(approval::reject))
+        .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/activate", post(approval::activate))
+        .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/rollback", post(approval::rollback))
         .route("/v1/audit/verify", get(audit_verify));
     if state.docs {
         app = app.merge(crate::openapi::docs());
@@ -225,7 +236,7 @@ pub async fn create_tenant(State(st): State<AppState>, Authn(user): Authn, Json(
     user.require_global("tenants:create")?;
     check_token(&body.name, "tenant")?;
     let mut tx = st.pool.begin().await?;
-    let id: Uuid = sqlx::query_scalar("INSERT INTO tenants (name) VALUES ($1) RETURNING id").bind(&body.name).fetch_one(&mut *tx).await?;
+    let id: Uuid = sqlx::query_scalar("INSERT INTO tenants (name, approval_required) VALUES ($1, $2) RETURNING id").bind(&body.name).bind(st.approval_default).fetch_one(&mut *tx).await?;
     audit::append(&mut tx, &NewEvent { tenant_id: Some(id), actor: &user.username, action: "tenant.create", target: Some(&body.name), outcome: "ok", details: json!({}) }).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(TenantOut { id: id.to_string(), name: body.name })))
@@ -348,6 +359,8 @@ pub struct NewPolicy {
 pub struct PolicyVersionOut {
     pub name: String,
     pub version: i64,
+    /// `false` when the tenant requires approval: the version is a draft.
+    pub live: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -355,6 +368,8 @@ pub struct PolicySummary {
     pub name: String,
     pub active: bool,
     pub latest_version: Option<i64>,
+    /// Version the compiler uses; differs from the latest while a draft waits for approval.
+    pub active_version: Option<i64>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -381,9 +396,10 @@ pub async fn create_policy(State(st): State<AppState>, Authn(user): Authn, Path(
     let name = policy.metadata.name;
 
     let mut tx = st.pool.begin().await?;
-    // Upsert (re-activating a deleted policy); the row lock serializes concurrent versions.
+    let approval_required: bool = sqlx::query_scalar("SELECT approval_required FROM tenants WHERE id = $1").bind(tid).fetch_one(&mut *tx).await?;
+    // Upsert; a deactivated policy comes back only when a version is activated; the row lock serializes concurrent versions.
     let pid: Uuid = sqlx::query_scalar(
-        "INSERT INTO policies (tenant_id, name) VALUES ($1, $2) ON CONFLICT (tenant_id, name) DO UPDATE SET active = true RETURNING id",
+        "INSERT INTO policies (tenant_id, name) VALUES ($1, $2) ON CONFLICT (tenant_id, name) DO UPDATE SET active = policies.active RETURNING id",
     )
     .bind(tid)
     .bind(&name)
@@ -397,23 +413,29 @@ pub async fn create_policy(State(st): State<AppState>, Authn(user): Authn, Path(
         .bind(&user.username)
         .execute(&mut *tx)
         .await?;
-    audit::append(&mut tx, &NewEvent { tenant_id: Some(tid), actor: &user.username, action: "policy.create", target: Some(&name), outcome: "ok", details: json!({ "version": version }) }).await?;
+    // Without approval the version goes live at once; with it, it is a draft until activated.
+    if !approval_required {
+        approval::set_active(&mut tx, pid, version, "activated", &user.username, None).await?;
+    }
+    audit::append(&mut tx, &NewEvent { tenant_id: Some(tid), actor: &user.username, action: "policy.create", target: Some(&name), outcome: "ok", details: json!({ "version": version, "live": !approval_required }) }).await?;
     tx.commit().await?;
-    notify_tenant(&st, &tenant, tid).await;
-    Ok((StatusCode::CREATED, Json(PolicyVersionOut { name, version })))
+    if !approval_required {
+        notify_tenant(&st, &tenant, tid).await;
+    }
+    Ok((StatusCode::CREATED, Json(PolicyVersionOut { name, version, live: !approval_required })))
 }
 
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/policies", tag = "policies", security(("bearer" = [])),
     params(("tenant" = String, Path)), responses((status = 200, body = Vec<PolicySummary>), (status = 404)))]
 pub async fn list_policies(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>) -> ApiResult<Json<Vec<PolicySummary>>> {
     let tid = user.tenant(&st.pool, &tenant, "policies:read").await?;
-    let rows: Vec<(String, bool, Option<i64>)> = sqlx::query_as(
-        "SELECT p.name, p.active, (SELECT MAX(version) FROM policy_versions v WHERE v.policy_id = p.id) FROM policies p WHERE p.tenant_id = $1 ORDER BY p.name",
+    let rows: Vec<(String, bool, Option<i64>, Option<i64>)> = sqlx::query_as(
+        "SELECT p.name, p.active, (SELECT MAX(version) FROM policy_versions v WHERE v.policy_id = p.id), p.active_version FROM policies p WHERE p.tenant_id = $1 ORDER BY p.name",
     )
     .bind(tid)
     .fetch_all(&st.pool)
     .await?;
-    Ok(Json(rows.into_iter().map(|(name, active, latest_version)| PolicySummary { name, active, latest_version }).collect()))
+    Ok(Json(rows.into_iter().map(|(name, active, latest_version, active_version)| PolicySummary { name, active, latest_version, active_version }).collect()))
 }
 
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/policies/{name}", tag = "policies", security(("bearer" = [])),
@@ -482,7 +504,7 @@ pub async fn issue(st: &AppState, tenant: String, agent: String, actor: &str) ->
 
     let sources: Vec<(String, String)> = sqlx::query_as(
         "SELECT p.name, v.yaml FROM policies p \
-         JOIN LATERAL (SELECT yaml FROM policy_versions WHERE policy_id = p.id ORDER BY version DESC LIMIT 1) v ON true \
+         JOIN policy_versions v ON v.policy_id = p.id AND v.version = p.active_version \
          WHERE p.tenant_id = $1 AND p.active ORDER BY p.name",
     )
     .bind(tid)

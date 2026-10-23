@@ -31,7 +31,8 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 - Permissions: `tenants:{read,create,delete,settings}`, `agents:{read,write,enroll,preview}`, `policies:{read,write,approve}`, `secrets:{read,write}`, `artifacts:{read,write}`, `proxies:{read,write}`, `users:{read,write}`, `roles:{read,write,assign}`, `audit:{read,export,verify}`, `tokens:manage`. Built-in roles (immutable): `platform-admin` (`*`, global), `tenant-admin`, `operator`, `approver` (tenant), `auditor`, `viewer` (any). Custom roles can be created, changed and deleted (not while assigned).
 - Delegation: a holder of `roles:assign` in a tenant (the `tenant-admin`) manages assignments of that tenant only, and can only grant permissions they hold there.
 - The last active holder of a global `*` cannot be deleted, deactivated or demoted.
-- Not done yet: approval workflow, SSO (OIDC/SAML), LDAP/AD, MFA, login throttling, API tokens ([ROADMAP.md](ROADMAP.md)).
+- Policy lifecycle: with `approval_required` on a tenant, a new version is a draft (`live: false` in the upload answer) until submitted, approved by someone else and activated; without it, an upload goes live at once. The compiler uses `policies.active_version`. New tenants take the default of `DELBERT_APPROVAL_DEFAULT` (`true`/`false`, default `false`).
+- Not done yet: SSO (OIDC/SAML), LDAP/AD, MFA, login throttling, API tokens ([ROADMAP.md](ROADMAP.md)).
 
 ## Endpoints
 
@@ -55,6 +56,10 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 | `GET /v1/agent/{t}/{a}/artifacts/{name}?sha256=` | agent proof | Download by hash, authenticated with `Authorization: Delbert-Agent <base64 proof>` |
 | `POST/GET /v1/tenants/{t}/policies` | `policies:write` / `policies:read` | Upload a policy YAML (`{"yaml": "..."}`, new immutable version) / list |
 | `GET/DELETE /v1/tenants/{t}/policies/{name}` | `policies:read` / `policies:write` | Latest version / deactivate (soft delete, history kept) |
+| `GET/PUT /v1/tenants/{t}/settings` | `tenants:read` / `tenants:settings` | Tenant settings: `approval_required`. Switching it off needs a global grant and no version waiting for approval |
+| `GET .../policies/{name}/versions`, `GET .../versions/{v}` | `policies:read` | Versions with state (`draft`, `submitted`, `approved`, `rejected`), the live one, YAML and event history |
+| `POST .../versions/{v}/submit`, `.../activate` | `policies:write` | Put a draft up for review / make an approved version live |
+| `POST .../versions/{v}/approve`, `.../reject`, `.../rollback` | `policies:approve` | Review (the author and the submitter cannot, nobody is exempt; reject needs a `comment`) / go back to a previously approved older version |
 | `GET /v1/tenants/{t}/agents/{a}/effective` | `agents:preview` | Compile the policies targeting the agent, resolve conflicts, sign: `{token, version, conflicts}` |
 | `GET /v1/audit/verify` | `audit:verify` (global) | Recompute the audit hash chain: `{events, first_bad}` |
 

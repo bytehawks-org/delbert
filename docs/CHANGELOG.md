@@ -10,6 +10,10 @@
 - Authorization is tenant-aware: `CurrentUser::tenant()` resolves the tenant and checks the permission in scope (404 when the caller has no role there); global-only permissions never come from a tenant-scoped assignment; `GET /v1/tenants` lists only reachable tenants.
 - Users carry `assignments` (`role`, optional `tenant`) instead of `roles`; `/v1/me` shows assignments and per-tenant permissions; delegated `GET/PUT /v1/tenants/{t}/assignments`, limited to what the delegate holds. Breaking change of the API (unreleased project). Tests: scope matrix and delegation (`tests/rbac.rs`). See [API.md](API.md), [RBAC.md](RBAC.md).
 
+### RBAC v2 (part 2): policy approval
+- Migration `0011`: `tenants.approval_required`, `policies.active_version`, append-only `policy_version_events`. The compiler now uses the active version, not the latest.
+- Per-tenant optional four-eyes: upload makes a draft, then `submit` → `approve`/`reject` (author and submitter excluded, no override) → `activate`; `rollback` to a previously approved version needs `policies:approve`. Without approval an upload goes live at once. Settings endpoint; switching the control off needs a global grant and no pending versions. Version list/detail with events. Tests in `tests/approval.rs`.
+
 ### Code
 - Cargo workspace (Rust edition 2024) with `delbert-policy`, `delbert-core`, `delbert-agent`.
 - `delbert-policy`: typed YAML model (`file`, `copy`, `line_in_file`, `package`, `service`), JSON Schema, validation (duplicate ids, single verb, dependencies, handlers, cycles, paths, modes) with 6 tests.

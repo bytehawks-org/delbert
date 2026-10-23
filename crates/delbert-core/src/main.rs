@@ -121,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let agent_cert_days = var("DELBERT_AGENT_CERT_DAYS").map(|v| v.parse()).transpose().context("DELBERT_AGENT_CERT_DAYS")?.unwrap_or(365);
 
-    let state = AppState { pool, signer: load_signer()?, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL") };
+    let state = AppState { pool, signer: load_signer()?, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true") };
     if state.bus.is_some() {
         tokio::spawn(delbert_core::bus::serve(state.clone()));
     }

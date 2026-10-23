@@ -4,6 +4,7 @@
 //! compiles and signs desired state; only agents act (docs/ABSTRACT.md §3).
 
 pub mod api;
+pub mod approval;
 pub mod artifacts;
 pub mod audit;
 pub mod auth;
