@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 
 use delbert_policy::Resource;
+
+use crate::trust::TrustUpdate;
 use serde::{Deserialize, Serialize};
 
 /// Value of [`EffectivePolicy::schema`].
@@ -43,4 +45,8 @@ pub struct EffectivePolicy {
     #[serde(default)]
     pub secrets: BTreeMap<String, String>,
     pub resources: Vec<Resource>,
+    /// Signing-key rotation: keys to learn or forget (docs/ROTATION.md). Only honoured because the
+    /// whole payload is signed by a key the agent already trusts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust: Option<TrustUpdate>,
 }

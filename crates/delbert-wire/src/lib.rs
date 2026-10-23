@@ -7,6 +7,8 @@
 pub mod canonical;
 pub mod jws;
 pub mod model;
+pub mod trust;
 
 pub use jws::{Expect, Signer, VerifyError, Verifier};
+pub use trust::{TrustUpdate, TrustedKey};
 pub use model::{ArtifactRef, EffectivePolicy, SCHEMA};

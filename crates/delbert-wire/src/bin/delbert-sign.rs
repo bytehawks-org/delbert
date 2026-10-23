@@ -83,6 +83,7 @@ fn main() -> anyhow::Result<()> {
                 artifacts: Default::default(),
                 secrets: Default::default(),
                 resources: parsed.spec.resources,
+                trust: None,
             };
             println!("{}", Signer::new(SigningKey::from_bytes(&seed), kid).sign(&effective)?);
         }

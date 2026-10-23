@@ -61,6 +61,8 @@ Scenarios run on 2026-10-23 (all passed):
 
 Findings from these runs, fixed: the real NATS server puts the client certificate in `client_tls.verified_chains`, not in `certs` (found by the first live callout); an agent whose renewal threshold exceeds the certificate life renewed on every cycle (2,198 renewals in a minute) - renewals are now at least an hour apart; `package` failed on hosts with empty apt indexes (now refreshes once and retries); Core and agent ignored SIGTERM as PID 1 (graceful shutdown); issued certificates lacked the Authority Key Identifier, which strict TLS clients (Python 3.13) reject.
 
+Signing-key rotation, run on 2026-10-23 with the same stack (`E2E_SIGNING_KID`, `E2E_PUBLISH_KEYS`, `E2E_RETIRE_KEYS` select the stage; key files in `dev/` must be readable by the Core's user, `chmod 644`): announce `k2` while signing with `k1` -> the agent's `trusted-keys.txt` gains `k2` and `GET /v1/signing/keys` shows both keys known; sign with `k2` -> the next policy applies; retire `k1` -> the agent drops it; retiring the active key stops the Core at startup. See [ROTATION.md](ROTATION.md).
+
 Probe: `cargo run -p delbert-agent --example probe -- <identity dir> tls://nats:4222 <other agent>` (copy an agent's `identity/` directory out of its container first).
 
 Not covered: `service` on a real systemd host (unit tests with a fake runner only), Windows, Kubernetes, the `external` signing mode in a deployed flow.

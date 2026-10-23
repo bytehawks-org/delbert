@@ -43,8 +43,11 @@ services:
       DATABASE_URL: postgres://delbert_rt:delbert-rt-dev@postgres:5432/delbert
       DATABASE_MIGRATE_URL: postgres://delbert:delbert-dev@postgres:5432/delbert
       DELBERT_BOOTSTRAP_ADMIN_PASSWORD: e2e-admin-password
-      DELBERT_SIGNING_KEY_FILE: /keys/k1.key
-      DELBERT_SIGNING_KID: k1
+      # Key rotation (docs/ROTATION.md): which key signs, which are announced, which are retired.
+      DELBERT_SIGNING_KEY_FILE: /keys/${E2E_SIGNING_KID:-k1}.key
+      DELBERT_SIGNING_KID: ${E2E_SIGNING_KID:-k1}
+      DELBERT_SIGNING_PUBLISH_KEYS: ${E2E_PUBLISH_KEYS:-}
+      DELBERT_SIGNING_RETIRE_KEYS: ${E2E_RETIRE_KEYS:-}
       DELBERT_CONFLICT_STRATEGY: error
       DELBERT_SECRETS_KEY_FILE: /pki/secrets.key
       DELBERT_CA_CERT_FILE: /pki/ca.pem
@@ -66,7 +69,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./dev/k1.key:/keys/k1.key:ro,Z
+      - ./dev:/keys:ro,Z
       - ./dev/pki:/pki:ro,Z
       - core-data:/var/lib/delbert-core
     depends_on:

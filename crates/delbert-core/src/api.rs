@@ -47,6 +47,10 @@ pub struct AppState {
     /// Where artifact content lives (local directory or S3-compatible).
     pub blobs: crate::blobs::Blobs,
     pub auth: AuthConfig,
+    /// Signing-key rotation to announce to agents in every policy (docs/ROTATION.md).
+    pub trust: Option<delbert_wire::TrustUpdate>,
+    /// Keys agents should know at enrollment besides the active one.
+    pub published_keys: Vec<delbert_wire::TrustedKey>,
     pub content: ContentConfig,
     /// Whether new tenants require policy approval (`DELBERT_APPROVAL_DEFAULT`).
     pub approval_default: bool,
@@ -217,6 +221,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/reject", post(approval::reject))
         .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/activate", post(approval::activate))
         .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/rollback", post(approval::rollback))
+        .route("/v1/signing/keys", get(crate::signing::status))
         .route("/v1/audit", get(crate::audit_api::list))
         .route("/v1/audit/export", get(crate::audit_api::export))
         .route("/v1/audit/verify", get(audit_verify));
@@ -692,6 +697,7 @@ pub async fn issue(st: &AppState, tenant: String, agent: String, actor: &str) ->
             artifacts: compiled.artifacts,
             secrets: sealed,
             resources: compiled.resources,
+            trust: st.trust.clone(),
         })
         .map_err(|e| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
     Ok(Issued { token, version, conflicts: compiled.conflicts })

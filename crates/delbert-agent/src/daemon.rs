@@ -59,7 +59,7 @@ fn write_atomic(path: &std::path::Path, data: &[u8]) -> Result<()> {
 }
 
 /// JSON sent to the Core after every cycle.
-pub fn report_json(report: Option<&Report>, version: Option<u64>, error: Option<&str>) -> Value {
+pub fn report_json(report: Option<&Report>, version: Option<u64>, error: Option<&str>, trusted_kids: &[String]) -> Value {
     let resources: Vec<Value> = report
         .map(|r| {
             r.resources
@@ -85,6 +85,8 @@ pub fn report_json(report: Option<&Report>, version: Option<u64>, error: Option<
         "compliant": error.is_none() && report.is_some_and(Report::is_compliant),
         "error": error,
         "resources": resources,
+        // Key ids this agent trusts: the Core uses them to know when a signing-key rotation is safe.
+        "trusted_kids": trusted_kids,
     })
 }
 
@@ -118,7 +120,24 @@ impl Agent<'_> {
         let verifier = Verifier::from_trusted_keys(&keys)?;
         let meta = &self.cfg.identity.meta;
         let expect = Expect { tenant: &meta.tenant, agent: &meta.agent, now: now() };
-        Ok(verifier.verify(token, &expect, |name| state.versions.get(name).copied())?)
+        let policy = verifier.verify(token, &expect, |name| state.versions.get(name).copied())?;
+        // The policy is authentic: honour the key rotation it announces (docs/ROTATION.md).
+        if let (Some(update), Some(signed_by)) = (&policy.trust, delbert_wire::jws::token_kid(token)) {
+            match delbert_wire::trust::apply(&keys, update, &signed_by) {
+                Ok(Some(next)) => {
+                    delbert_fs::write_public(&self.cfg.identity.trusted_keys(), next.as_bytes()).context("updating trusted keys")?;
+                    tracing::info!("trusted signing keys are now: {}", delbert_wire::trust::kids(&next).join(", "));
+                }
+                Ok(None) => {}
+                Err(e) => tracing::error!("ignoring the key update of the policy: {e}"),
+            }
+        }
+        Ok(policy)
+    }
+
+    /// Key ids currently trusted, for the report.
+    fn trusted_kids(&self) -> Vec<String> {
+        fs::read_to_string(self.cfg.identity.trusted_keys()).map(|t| delbert_wire::trust::kids(&t)).unwrap_or_default()
     }
 
     /// Replace the certificate with a new one for a NEW key; the Core authenticates the
@@ -271,14 +290,14 @@ impl Agent<'_> {
                             report.resources.len(),
                             report.is_compliant()
                         );
-                        report_json(Some(&report), Some(policy.version), from_cache.then_some("Core unreachable, applied cached policy").filter(|_| false))
+                        report_json(Some(&report), Some(policy.version), from_cache.then_some("Core unreachable, applied cached policy").filter(|_| false), &self.trusted_kids())
                     }
-                    Err(e) => report_json(None, Some(policy.version), Some(&format!("apply task failed: {e}"))),
+                    Err(e) => report_json(None, Some(policy.version), Some(&format!("apply task failed: {e}")), &self.trusted_kids()),
                 }
             }
             Err(e) => {
                 tracing::error!("no valid policy: {e:#}");
-                report_json(None, None, Some(&format!("{e:#}")))
+                report_json(None, None, Some(&format!("{e:#}")), &self.trusted_kids())
             }
         };
 

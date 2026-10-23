@@ -39,6 +39,8 @@ pub const KEYS: &[(&str, &str, bool)] = &[
     ("pki.secrets_key_file", "DELBERT_SECRETS_KEY_FILE", false),
     ("policy.signing_key_file", "DELBERT_SIGNING_KEY_FILE", false),
     ("policy.signing_kid", "DELBERT_SIGNING_KID", false),
+    ("policy.publish_keys", "DELBERT_SIGNING_PUBLISH_KEYS", false),
+    ("policy.retire_keys", "DELBERT_SIGNING_RETIRE_KEYS", false),
     ("policy.ttl_secs", "DELBERT_POLICY_TTL_SECS", false),
     ("policy.conflict_strategy", "DELBERT_CONFLICT_STRATEGY", false),
     ("policy.approval_default", "DELBERT_APPROVAL_DEFAULT", false),

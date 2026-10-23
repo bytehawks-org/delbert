@@ -34,7 +34,7 @@ use crate::{
 };
 
 /// Every permission a role may contain (besides `*` and `resource:*`).
-pub const PERMISSIONS: [&str; 31] = [
+pub const PERMISSIONS: [&str; 32] = [
     "tenants:read", "tenants:create", "tenants:delete", "tenants:settings",
     "agents:read", "agents:write", "agents:enroll", "agents:preview",
     "policies:read", "policies:write", "policies:approve",
@@ -47,11 +47,12 @@ pub const PERMISSIONS: [&str; 31] = [
     "tokens:manage",
     "sso:read", "sso:write",
     "content:read", "content:write", "content:sync",
+    "keys:read",
 ];
 
 /// Permissions that only a global assignment can grant (they are not about one tenant).
-pub const GLOBAL_ONLY: [&str; 11] = [
-    "tenants:create", "tenants:delete", "proxies:read", "proxies:write", "users:read", "users:write", "roles:read", "roles:write", "audit:verify", "sso:read", "sso:write",
+pub const GLOBAL_ONLY: [&str; 12] = [
+    "tenants:create", "tenants:delete", "proxies:read", "proxies:write", "users:read", "users:write", "roles:read", "roles:write", "audit:verify", "sso:read", "sso:write", "keys:read",
 ];
 
 /// `*`, the exact permission or `resource:*`.

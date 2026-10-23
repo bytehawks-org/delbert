@@ -85,4 +85,5 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Content sources implementation (directory + https git, sync API, ownership, diffs, poller) | complete | 2026-10-23 |
 | Content sources: SSH remotes / deploy keys with pinned host keys, required signed commits or tags, webhook secret | to-do | 2026-10-23 |
 | Content sources in the web UI (sources, snapshots, diffs, sync now) | to-do | 2026-10-23 |
-| Key rotation beyond agent certificates (which renew with key rotation): policy signing key (trusted-keys overlap), internal CA, NATS issuer key, secrets age key, proxy certificate | to-do | 2026-10-23 |
+| Key rotation: policy signing key with overlap (in-band trust update, readiness API) | complete | 2026-10-23 |
+| Key rotation: internal CA, NATS issuer key, secrets age key, proxy certificate renewal ([ROTATION.md](ROTATION.md)) | to-do | 2026-10-23 |

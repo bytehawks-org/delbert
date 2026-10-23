@@ -56,6 +56,13 @@ fn strip_nulls(v: &mut Value) {
     }
 }
 
+/// The `kid` in a token's header, without trusting anything else in it.
+pub fn token_kid(token: &str) -> Option<String> {
+    let header = token.trim().split('.').next()?;
+    let v: Value = serde_json::from_slice(&B64.decode(header).ok()?).ok()?;
+    v["kid"].as_str().map(str::to_owned)
+}
+
 pub struct Signer {
     key: SigningKey,
     kid: String,
@@ -188,6 +195,7 @@ mod tests {
             artifacts: Default::default(),
             secrets: Default::default(),
             resources: delbert_policy::from_yaml(yaml).unwrap().spec.resources,
+            trust: None,
         }
     }
 
@@ -262,5 +270,44 @@ mod tests {
         let v = Verifier::from_trusted_keys(&line).unwrap();
         let token = Signer::new(key, "k1").sign(&policy()).unwrap();
         assert!(v.verify(&token, &expect(1_500), |_| None).is_ok());
+    }
+
+    /// The whole rotation, as an agent lives it: learn the new key from a policy signed by the old
+    /// one, then accept policies signed by the new one, then forget the old one.
+    #[test]
+    fn signing_key_rotation_end_to_end() {
+        use crate::trust::{self, TrustUpdate, TrustedKey};
+        let (k1, k2) = (SigningKey::generate(&mut OsRng), SigningKey::generate(&mut OsRng));
+        let pubkey = |k: &SigningKey| B64.encode(k.verifying_key().to_bytes());
+        let (s1, s2) = (Signer::new(k1.clone(), "k1"), Signer::new(k2.clone(), "k2"));
+        let mut file = format!("k1 {}\n", pubkey(&k1));
+        let expect = Expect { tenant: "t1", agent: "agent-1", now: 1_500 };
+        let check = |file: &str, token: &str| Verifier::from_trusted_keys(file).unwrap().verify(token, &expect, |_| None);
+
+        // Before the rotation k2 is unknown.
+        let plain = s2.sign(&policy()).unwrap();
+        assert!(matches!(check(&file, &plain), Err(VerifyError::UnknownKey(_))));
+
+        // Step 1: k1 signs a policy announcing k2; the agent verifies it and learns k2.
+        let mut announce = policy();
+        announce.trust = Some(TrustUpdate { add: vec![TrustedKey { kid: "k2".into(), public_key: pubkey(&k2) }], remove: vec![] });
+        let token = s1.sign(&announce).unwrap();
+        let verified = check(&file, &token).unwrap();
+        file = trust::apply(&file, verified.trust.as_ref().unwrap(), &token_kid(&token).unwrap()).unwrap().unwrap();
+        assert_eq!(trust::kids(&file), ["k1", "k2"]);
+
+        // Step 2: policies signed by k2 are now accepted; step 3: k2 retires k1.
+        assert!(check(&file, &plain).is_ok());
+        let mut retire = policy();
+        retire.trust = Some(TrustUpdate { add: vec![], remove: vec!["k1".into()] });
+        let token = s2.sign(&retire).unwrap();
+        let verified = check(&file, &token).unwrap();
+        file = trust::apply(&file, verified.trust.as_ref().unwrap(), &token_kid(&token).unwrap()).unwrap().unwrap();
+        assert_eq!(trust::kids(&file), ["k2"]);
+        assert!(matches!(check(&file, &s1.sign(&policy()).unwrap()), Err(VerifyError::UnknownKey(_))), "the retired key no longer works");
+
+        // An update inside a policy signed by an untrusted key never gets that far: the signature fails first.
+        let rogue = Signer::new(SigningKey::generate(&mut OsRng), "k2");
+        assert!(matches!(check(&file, &rogue.sign(&announce).unwrap()), Err(VerifyError::Signature)));
     }
 }

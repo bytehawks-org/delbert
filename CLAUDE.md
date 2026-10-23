@@ -60,6 +60,7 @@ This file extends and integrates the user-scoped CLAUDE.md file.
 - docs/API.md (Core API), docs/PROXY.md (branch-office proxy), docs/TESTING.md
 - docs/RBAC.md (access control v2), docs/FRONTEND.md (web UI design)
 - docs/STATUS.md (current state and handoff: read it first in a new session)
+- docs/ROTATION.md (key and certificate rotation)
 - docs/CONTENT.md (content sources: directory / git)
 - docs/DESIDERATA.md
 - docs/SCOPE.md

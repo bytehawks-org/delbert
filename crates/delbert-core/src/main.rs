@@ -181,7 +181,24 @@ async fn main() -> anyhow::Result<()> {
         other => anyhow::bail!("DELBERT_ARTIFACT_STORE must be 'local' or 's3', not '{other}'"),
     };
 
-    let state = AppState { pool, signer: load_signer()?, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, content: delbert_core::api::ContentConfig {
+    let signer = load_signer()?;
+    // Signing-key rotation (docs/ROTATION.md): keys agents should learn, and key ids they should drop.
+    let published_keys: Vec<delbert_wire::TrustedKey> = var("DELBERT_SIGNING_PUBLISH_KEYS")
+        .map(|v| {
+            v.split(',')
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .map(|p| p.split_once('=').map(|(kid, key)| delbert_wire::TrustedKey { kid: kid.trim().to_owned(), public_key: key.trim().to_owned() }).context("DELBERT_SIGNING_PUBLISH_KEYS entries are kid=publickey"))
+                .collect::<anyhow::Result<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let retired: Vec<String> = var("DELBERT_SIGNING_RETIRE_KEYS").map(|v| v.split(',').map(|k| k.trim().to_owned()).filter(|k| !k.is_empty()).collect()).unwrap_or_default();
+    if let Some(s) = &signer {
+        anyhow::ensure!(!retired.iter().any(|k| k == s.kid()), "DELBERT_SIGNING_RETIRE_KEYS lists the active signing key '{}'", s.kid());
+    }
+    let trust = (!published_keys.is_empty() || !retired.is_empty()).then(|| delbert_wire::TrustUpdate { add: published_keys.clone(), remove: retired });
+    let state = AppState { pool, signer, trust, published_keys, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, content: delbert_core::api::ContentConfig {
         dir: var("DELBERT_CONTENT_DIR").unwrap_or_else(|| "./data/content".into()).into(),
         allow_tenant_git: var("DELBERT_CONTENT_ALLOW_TENANT_GIT").as_deref() == Some("true"),
         allow_file: var("DELBERT_CONTENT_ALLOW_FILE").as_deref() == Some("true"),

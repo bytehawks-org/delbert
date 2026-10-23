@@ -213,6 +213,13 @@ pub async fn do_enroll(st: &AppState, req: EnrollRequest, proxy_id: Option<Uuid>
         crate::api::notify_proxy_of(st, &tenant, &req.agent_name).await; // let the site know about its new agent
     }
 
-    let signing_keys = st.signer.iter().map(|s| format!("{} {}", s.kid(), s.public_key_b64())).collect();
+    let signing_keys = trusted_key_lines(&st);
     Ok(EnrollResponse { tenant, agent: req.agent_name, cert_pem: signed.cert_pem, ca_pem: ca.cert_pem().to_owned(), signing_keys, nats_url: st.public_nats_url.clone() })
+}
+
+/// `<kid> <public key>` lines handed to a new agent: the active signing key and the published ones.
+pub(crate) fn trusted_key_lines(st: &AppState) -> Vec<String> {
+    let active = st.signer.iter().map(|s| format!("{} {}", s.kid(), s.public_key_b64()));
+    let published = st.published_keys.iter().filter(|k| st.signer.as_ref().is_none_or(|s| s.kid() != k.kid)).map(|k| format!("{} {}", k.kid, k.public_key));
+    active.chain(published).collect()
 }
