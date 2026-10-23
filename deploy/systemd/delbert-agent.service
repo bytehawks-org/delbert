@@ -1,0 +1,31 @@
+# Delbert agent on a Linux host (docs/install.md). Install as /etc/systemd/system/delbert-agent.service.
+# The agent changes the host it runs on, so it runs as root; everything it does is the signed policy
+# it pulled from the Core. Outbound connections only: nothing listens.
+[Unit]
+Description=Delbert agent
+Documentation=https://github.com/bytehawks-org/delbert
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/delbert/agent.env
+ExecStart=/usr/local/bin/delbert-agent run
+Restart=always
+RestartSec=5
+# SIGTERM ends the current cycle cleanly.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+StateDirectory=delbert
+StateDirectoryMode=0700
+# The agent needs to write most of the filesystem, so the sandbox is deliberately light.
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectHome=read-only
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

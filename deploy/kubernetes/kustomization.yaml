@@ -1,0 +1,13 @@
+# Delbert control plane on Kubernetes / K3s (docs/install.md). Needs an external PostgreSQL 17
+# and the secrets described there. Apply with:  kubectl apply -k deploy/kubernetes
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: delbert
+resources:
+  - namespace.yaml
+  - nats.yaml
+  - core.yaml
+images:
+  - name: delbert-core
+    newName: localhost/delbert-core      # replace with your registry
+    newTag: latest

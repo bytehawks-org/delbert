@@ -87,3 +87,7 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Content sources in the web UI (sources, snapshots, diffs, sync now) | to-do | 2026-10-23 |
 | Key rotation: policy signing key with overlap (in-band trust update, readiness API) | complete | 2026-10-23 |
 | Key rotation: internal CA, NATS issuer key, secrets age key, proxy certificate renewal ([ROTATION.md](ROTATION.md)) | to-do | 2026-10-23 |
+| Quickstart and installation guides ([quickstart.md](quickstart.md), [install.md](install.md)) | complete | 2026-10-23 |
+| Kubernetes manifests verified on a real K3s cluster; NetworkPolicy, PodDisruptionBudget, Helm chart | to-do | 2026-10-23 |
+| Published images and release pipeline (registry, signed images, SBOM); agent packages (deb/rpm) and a static (musl) agent build | to-do | 2026-10-23 |
+| Quadlet units for single-host Podman; HA of NATS and the Core | to-do | 2026-10-23 |

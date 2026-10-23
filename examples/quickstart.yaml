@@ -1,0 +1,16 @@
+# A first policy for the quickstart (docs/quickstart.md): runs anywhere, no packages needed.
+apiVersion: delbert/v1
+kind: Policy
+metadata: { name: quickstart, tenant: acme }
+spec:
+  target: { groups: [web] }
+  vars: { greeting: hello }
+  resources:
+    - id: app-dir
+      file: { path: /etc/quickstart, state: directory, mode: "0755" }
+    - id: motd
+      copy: { content: "Managed by Delbert\n", dest: /etc/quickstart/motd, mode: "0644" }
+      depends_on: [app-dir]
+    - id: settings
+      template: { src: "artifact://settings.conf.j2", dest: /etc/quickstart/settings.conf, mode: "0640" }
+      depends_on: [app-dir]

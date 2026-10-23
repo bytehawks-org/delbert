@@ -1,0 +1,122 @@
+# The Delbert Core. Secrets expected in the namespace (see docs/install.md):
+#   delbert-pki      : ca.pem, ca.key, core.pem, core.key, core-nats.pem, core-nats.key,
+#                      secrets.key, nats-issuer.seed, k1.key
+#   delbert-core-env : DATABASE_URL, DATABASE_MIGRATE_URL, DELBERT_BOOTSTRAP_ADMIN_PASSWORD,
+#                      NATS_AUTH_USER, NATS_AUTH_PASSWORD
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: delbert-core-config
+data:
+  delbert-core.toml: |
+    [server]
+    bind = "0.0.0.0:8080"
+    tls_cert_file = "/etc/delbert/pki/core.pem"
+    tls_key_file = "/etc/delbert/pki/core.key"
+    api_docs = false
+    public_url = "https://delbert.example.com:8443"      # CHANGE: how users and agents reach the Core
+
+    [nats]
+    url = "tls://delbert-nats:4222"
+    ca_file = "/etc/delbert/pki/ca.pem"
+    client_cert_file = "/etc/delbert/pki/core-nats.pem"
+    client_key_file = "/etc/delbert/pki/core-nats.key"
+    issuer_seed_file = "/etc/delbert/pki/nats-issuer.seed"
+    public_url = "tls://nats.example.com:4222"           # CHANGE: how agents reach NATS
+
+    [pki]
+    ca_cert_file = "/etc/delbert/pki/ca.pem"
+    ca_key_file = "/etc/delbert/pki/ca.key"
+    secrets_key_file = "/etc/delbert/pki/secrets.key"
+
+    [policy]
+    signing_key_file = "/etc/delbert/pki/k1.key"
+    signing_kid = "k1"
+
+    [auth]
+    mfa_required = "admins"
+
+    [artifacts]
+    store = "local"
+    dir = "/var/lib/delbert-core/artifacts"
+
+    [content]
+    dir = "/var/lib/delbert-core/content"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: delbert-core-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 10Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: delbert-core
+spec:
+  replicas: 1
+  # One replica owns the volume; with S3 artifacts and no local content sources this can scale out.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: delbert-core }
+  template:
+    metadata:
+      labels: { app: delbert-core }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: core
+          image: delbert-core
+          args: ["--config", "/etc/delbert/delbert-core.toml"]
+          envFrom:
+            - secretRef: { name: delbert-core-env }
+          env:
+            - { name: RUST_LOG, value: info }
+          ports:
+            - { name: api, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: api, scheme: HTTPS }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: api, scheme: HTTPS }
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: config, mountPath: /etc/delbert/delbert-core.toml, subPath: delbert-core.toml, readOnly: true }
+            - { name: pki, mountPath: /etc/delbert/pki, readOnly: true }
+            - { name: data, mountPath: /var/lib/delbert-core }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: config
+          configMap: { name: delbert-core-config }
+        - name: pki
+          secret: { secretName: delbert-pki, defaultMode: 0440 }
+        - name: data
+          persistentVolumeClaim: { claimName: delbert-core-data }
+        - name: tmp
+          emptyDir: {}
+---
+# Users and agents reach the Core over HTTPS with the Delbert CA's certificate, so it is exposed
+# directly (no TLS-terminating ingress in front of it).
+apiVersion: v1
+kind: Service
+metadata:
+  name: delbert-core
+spec:
+  type: LoadBalancer
+  selector: { app: delbert-core }
+  ports:
+    - { name: api, port: 8443, targetPort: api }

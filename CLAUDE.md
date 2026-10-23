@@ -55,6 +55,7 @@ This file extends and integrates the user-scoped CLAUDE.md file.
 
 # Project Details and Documentation
 
+- docs/quickstart.md (ten-minute trial), docs/install.md (deployment, backup, upgrades)
 - docs/ABSTRACT.md
 - docs/POLICY.md (policy YAML format)
 - docs/API.md (Core API), docs/PROXY.md (branch-office proxy), docs/TESTING.md

@@ -2,6 +2,8 @@
 
 Open-source configuration management and state enforcement for hybrid infrastructure (Linux hosts, containers, Kubernetes). Agents pull signed, declarative YAML policies and converge the local system idempotently; the server never executes commands.
 
+Start here: [Quickstart](docs/quickstart.md) · [Installation](docs/install.md)
+
 Status and handoff: [docs/STATUS.md](docs/STATUS.md) · RBAC v2: [docs/RBAC.md](docs/RBAC.md) · Frontend: [docs/FRONTEND.md](docs/FRONTEND.md)
 
 Design: [docs/ABSTRACT.md](docs/ABSTRACT.md) · Scope: [docs/SCOPE.md](docs/SCOPE.md) · Policy format: [docs/POLICY.md](docs/POLICY.md) · Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md) · Changes: [docs/CHANGELOG.md](docs/CHANGELOG.md)

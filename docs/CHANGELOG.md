@@ -8,6 +8,10 @@
 ### Authentication hardening
 - Migration `0013`. Cookie sessions with CSRF (double-submit token stored hashed), idle timeout, listable/revocable sessions; TOTP MFA with sealed secret, replay protection and recovery codes, optional or mandatory (`DELBERT_MFA_REQUIRED`); login throttling per (user, address), address and user; admin reset of MFA/sessions. Tests in `tests/auth.rs`. See [API.md](API.md).
 
+### Guides and deployment files
+- `docs/quickstart.md` (verified from scratch: keys, stack, tenant, artifact, policy, enrollment, convergence, change, drift, audit) and `docs/install.md` (components, keys, PostgreSQL, NATS, Core configuration, Kubernetes/K3s, Podman, agents with systemd, proxy, integrations, backup/restore, upgrades, troubleshooting, known limits).
+- `deploy/kubernetes/` (kustomization: namespace, NATS StatefulSet, Core Deployment; not run on a cluster yet), `deploy/systemd/` (agent unit and environment example), `examples/quickstart.yaml`, Containerfile targets `tools` (delbert-pki, delbert-sign) and the existing images documented.
+
 ### Signing-key rotation
 - Signed policies can carry a `trust` update (keys to add, key ids to remove) that agents apply to `trusted-keys.txt` after verifying the signature, with fail-closed rules; agents report their trusted key ids; `GET /v1/signing/keys` shows readiness; `DELBERT_SIGNING_PUBLISH_KEYS` / `DELBERT_SIGNING_RETIRE_KEYS`. Procedure and the state of every other rotation in [ROTATION.md](ROTATION.md). Verified live with a Core and an agent in containers; `compose.e2e.yaml` now takes the signing key from `${E2E_SIGNING_KID}` and mounts `./dev` at `/keys`.
 

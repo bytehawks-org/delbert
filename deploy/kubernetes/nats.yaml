@@ -1,0 +1,95 @@
+# NATS with mutual TLS (certificates of the Delbert CA) and the authorization callout.
+# Secrets expected in the namespace (see docs/install.md):
+#   delbert-nats-tls   : nats.pem, nats.key, ca.pem
+#   delbert-nats-env   : NATS_AUTH_PASSWORD, NATS_ISSUER_PUBLIC
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: delbert-nats-conf
+data:
+  nats.conf: |
+    port: 4222
+    http: 8222
+    tls {
+      cert_file: "/certs/nats.pem"
+      key_file: "/certs/nats.key"
+      ca_file: "/certs/ca.pem"
+      verify: true
+    }
+    accounts {
+      AUTH { users: [ { user: "auth", password: $NATS_AUTH_PASSWORD } ] }
+      APP { jetstream: enabled }
+    }
+    jetstream { store_dir: "/data" }
+    authorization {
+      auth_callout {
+        issuer: $NATS_ISSUER_PUBLIC
+        auth_users: [ auth ]
+        account: AUTH
+      }
+    }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: delbert-nats
+spec:
+  serviceName: delbert-nats
+  replicas: 1
+  selector:
+    matchLabels: { app: delbert-nats }
+  template:
+    metadata:
+      labels: { app: delbert-nats }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: nats
+          image: docker.io/library/nats:2-alpine
+          args: ["-c", "/etc/nats/nats.conf"]
+          envFrom:
+            - secretRef: { name: delbert-nats-env }
+          ports:
+            - { name: client, containerPort: 4222 }
+            - { name: monitor, containerPort: 8222 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: monitor }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: monitor }
+            periodSeconds: 10
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: conf, mountPath: /etc/nats, readOnly: true }
+            - { name: tls, mountPath: /certs, readOnly: true }
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: conf
+          configMap: { name: delbert-nats-conf }
+        - name: tls
+          secret: { secretName: delbert-nats-tls }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 2Gi } }
+---
+# Agents reach NATS from outside the cluster: on K3s a LoadBalancer Service is served by the
+# built-in ServiceLB on the node addresses.
+apiVersion: v1
+kind: Service
+metadata:
+  name: delbert-nats
+spec:
+  type: LoadBalancer
+  selector: { app: delbert-nats }
+  ports:
+    - { name: client, port: 4222, targetPort: client }

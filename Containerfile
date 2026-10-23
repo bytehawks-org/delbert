@@ -1,6 +1,8 @@
 # Builds the Delbert binaries and two runtime images:
 #   podman build --target core  -t localhost/delbert-core  .
 #   podman build --target agent -t localhost/delbert-agent .
+#   podman build --target proxy -t localhost/delbert-proxy .
+#   podman build --target tools -t localhost/delbert-tools .   # delbert-pki and delbert-sign, to bootstrap keys
 FROM docker.io/library/rust:1 AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock* ./
@@ -9,7 +11,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release --workspace \
  && mkdir /out \
- && cp target/release/delbert-core target/release/delbert-agent target/release/delbert-sign target/release/delbert-proxy /out/
+ && cp target/release/delbert-core target/release/delbert-agent target/release/delbert-sign target/release/delbert-proxy target/release/delbert-pki /out/
 
 FROM docker.io/library/debian:13-slim AS core
 # git: content sources of kind "git" (docs/CONTENT.md). The Core runs it on its own host, never on managed systems.
@@ -42,3 +44,8 @@ COPY --from=build /out/delbert-proxy /usr/local/bin/delbert-proxy
 VOLUME /var/lib/delbert-proxy
 EXPOSE 8443
 ENTRYPOINT ["delbert-proxy", "run"]
+
+# Administration tools: the internal CA / key generation (delbert-pki) and the signing-key tool (delbert-sign).
+FROM docker.io/library/debian:13-slim AS tools
+COPY --from=build /out/delbert-pki /usr/local/bin/delbert-pki
+COPY --from=build /out/delbert-sign /usr/local/bin/delbert-sign
