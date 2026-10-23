@@ -1,6 +1,6 @@
 # Delbert - RBAC v2 and authentication
 
-Design for the next iteration of access control, driven by the web frontend ([FRONTEND.md](FRONTEND.md)). Status: **tenant-scoped roles and permissions implemented** (migration `0010`, [API.md](API.md)); the approval workflow is implemented too (migration `0011`: submit/approve/reject/activate/rollback, no diff or preview yet); authentication hardening and tokens are still design. What exists today is described in [API.md](API.md) ("Authentication and RBAC").
+Design for the next iteration of access control, driven by the web frontend ([FRONTEND.md](FRONTEND.md)). Status: **cookie sessions, CSRF, TOTP MFA, throttling, tenant-scoped roles and permissions implemented** (migration `0010`, [API.md](API.md)); the approval workflow is implemented too (migration `0011`: submit/approve/reject/activate/rollback, no diff or preview yet); authentication hardening and tokens are still design. What exists today is described in [API.md](API.md) ("Authentication and RBAC").
 
 ## Where we are (v1)
 

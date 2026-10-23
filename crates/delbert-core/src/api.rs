@@ -46,8 +46,36 @@ pub struct AppState {
     pub public_nats_url: Option<String>,
     /// Where artifact content lives (local directory or S3-compatible).
     pub blobs: crate::blobs::Blobs,
+    pub auth: AuthConfig,
     /// Whether new tenants require policy approval (`DELBERT_APPROVAL_DEFAULT`).
     pub approval_default: bool,
+}
+
+/// Browser-session and login policy (docs/RBAC.md).
+#[derive(Clone, Debug)]
+pub struct AuthConfig {
+    /// Add `Secure` to the session cookie (turn off only for plain-HTTP development).
+    pub cookie_secure: bool,
+    /// Take the client address from `X-Forwarded-For` (only behind a trusted reverse proxy).
+    pub trust_forwarded: bool,
+    /// Who must have a second factor.
+    pub mfa: MfaPolicy,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MfaPolicy {
+    /// Optional for everybody.
+    Optional,
+    /// Required for users with a global role.
+    Admins,
+    /// Required for everybody.
+    All,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        AuthConfig { cookie_secure: true, trust_forwarded: false, mfa: MfaPolicy::Optional }
+    }
 }
 
 // --- errors -------------------------------------------------------------------------
@@ -97,6 +125,14 @@ pub fn router(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/auth/logout", post(auth::logout))
+        .route("/v1/auth/mfa", post(auth::complete_mfa))
+        .route("/v1/me/mfa/enroll", post(auth::mfa_enroll))
+        .route("/v1/me/mfa/confirm", post(auth::mfa_confirm))
+        .route("/v1/me/mfa/disable", post(auth::mfa_disable))
+        .route("/v1/me/sessions", get(auth::my_sessions))
+        .route("/v1/me/sessions/{id}", axum::routing::delete(auth::revoke_session))
+        .route("/v1/users/{username}/mfa", axum::routing::delete(auth::admin_reset_mfa))
+        .route("/v1/users/{username}/sessions", axum::routing::delete(auth::admin_revoke_sessions))
         .route("/v1/me", get(auth::me))
         .route("/v1/users", get(auth::list_users).post(auth::create_user))
         .route("/v1/users/{username}", put(auth::update_user).delete(auth::delete_user))

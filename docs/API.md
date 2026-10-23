@@ -16,6 +16,9 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 | `DELBERT_PUBLIC_NATS_URL` | NATS URL handed to agents at enrollment |
 | `DELBERT_ARTIFACT_STORE` | Where artifact content lives: `local` (default; directory `DELBERT_ARTIFACT_DIR`, default `./data/artifacts`, `/var/lib/delbert-core/artifacts` in the image) or `s3` (any S3-compatible service, e.g. Garage). PostgreSQL only keeps metadata |
 | `DELBERT_S3_ENDPOINT`, `DELBERT_S3_BUCKET`, `DELBERT_S3_REGION` (default `garage`), `DELBERT_S3_ACCESS_KEY`, `DELBERT_S3_SECRET_KEY` or `DELBERT_S3_SECRET_KEY_FILE` | S3 settings (path-style addressing; `http://` endpoints are accepted for development only). The Core checks reachability and credentials at startup |
+| `DELBERT_MFA_REQUIRED` | `none` (default), `admins` (users with a global role) or `all`: who must set up TOTP. Without it such a user only reaches the profile and the enrolment endpoints |
+| `DELBERT_COOKIE_INSECURE` | `true` drops the `Secure` flag of the session cookie (plain-HTTP development only) |
+| `DELBERT_TRUST_FORWARDED` | `true` takes the client address from `X-Forwarded-For` (only behind a trusted reverse proxy); used for login throttling and the session list |
 | `DELBERT_APPROVAL_DEFAULT` | `true` = new tenants require policy approval (default `false`) |
 | `DATABASE_URL` | PostgreSQL connection of the runtime role (member of `delbert_app`, see Database) (required) |
 | `DATABASE_MIGRATE_URL` | Schema owner connection used only to run migrations; defaults to `DATABASE_URL` |
@@ -30,19 +33,24 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 ## Authentication and RBAC
 
 - `POST /v1/auth/login` with `{username, password}` returns a session token valid 8 hours (Argon2id passwords; only the SHA-256 of the token is stored). `POST /v1/auth/logout` revokes it; changing a password or deactivating a user revokes their sessions.
+- **Sessions:** 8 h absolute, 30 min idle. `POST /v1/auth/login` with `"cookie": true` also sets `delbert_session` (`HttpOnly; SameSite=Strict; Secure`) and returns a `csrf_token`; cookie-authenticated unsafe requests must carry it as `X-CSRF-Token`. Bearer use needs no CSRF token. `GET/DELETE /v1/me/sessions[/{id}]` list and revoke own sessions, `DELETE /v1/users/{u}/sessions` revokes a user's.
+- **MFA (TOTP, RFC 6238):** `POST /v1/me/mfa/enroll` → secret and `otpauth://` URI (the secret is sealed with the Core key; MFA needs `DELBERT_SECRETS_KEY_FILE`), `POST /v1/me/mfa/confirm {code}` → 10 single-use recovery codes (shown once), `POST /v1/me/mfa/disable {password, code}`. With MFA on, login returns `mfa_required: true` and a 5-minute pending session that opens nothing but `POST /v1/auth/mfa {code}` (TOTP or recovery code). A TOTP step is accepted once (replay protection). `DELETE /v1/users/{u}/mfa` resets a user's factor and ends their sessions.
+- **Throttling:** failed logins (and failed second factors) within 15 minutes are counted per (user, address) — 5 —, per address — 30 — and per user — 20 —; beyond that login answers 429, even with the right password. Counting per pair keeps a stranger from locking the real user out. Attempts, throttling and MFA results are audited.
 - A role is a list of `resource:action` permissions (`*` = everything, `resource:*` = every action on a resource) and has a **scope**: `global`, `tenant` or `any`. A user holds roles through **assignments** `{role, tenant?}`: global, or for one tenant. A tenant-scoped assignment grants its permissions only inside that tenant and never the global-only ones (`tenants:create|delete`, `proxies:*`, `users:*`, `roles:read|write`, `audit:verify`). A tenant the caller has no role in answers 404, not 403. Full model: [RBAC.md](RBAC.md).
 - Permissions: `tenants:{read,create,delete,settings}`, `agents:{read,write,enroll,preview}`, `policies:{read,write,approve}`, `secrets:{read,write}`, `artifacts:{read,write}`, `proxies:{read,write}`, `users:{read,write}`, `roles:{read,write,assign}`, `audit:{read,export,verify}`, `tokens:manage`. Built-in roles (immutable): `platform-admin` (`*`, global), `tenant-admin`, `operator`, `approver` (tenant), `auditor`, `viewer` (any). Custom roles can be created, changed and deleted (not while assigned).
 - Delegation: a holder of `roles:assign` in a tenant (the `tenant-admin`) manages assignments of that tenant only, and can only grant permissions they hold there.
 - The last active holder of a global `*` cannot be deleted, deactivated or demoted.
 - Policy lifecycle: with `approval_required` on a tenant, a new version is a draft (`live: false` in the upload answer) until submitted, approved by someone else and activated; without it, an upload goes live at once. The compiler uses `policies.active_version`. New tenants take the default of `DELBERT_APPROVAL_DEFAULT` (`true`/`false`, default `false`).
-- Not done yet: SSO (OIDC/SAML), LDAP/AD, MFA, login throttling, API tokens ([ROADMAP.md](ROADMAP.md)).
+- Not done yet: SSO (OIDC/SAML), LDAP/AD, scoped API tokens, captcha (Turnstile) after failures, WebAuthn ([ROADMAP.md](ROADMAP.md)).
 
 ## Endpoints
 
 | Method and path | Permission | Purpose |
 |-----------------|------------|---------|
 | `GET /healthz` | public | Liveness and database reachability |
-| `POST /v1/auth/login`, `POST /v1/auth/logout`, `GET /v1/me` | public / any session | Session handling |
+| `POST /v1/auth/login`, `POST /v1/auth/mfa`, `POST /v1/auth/logout`, `GET /v1/me` | public / pending / any session | Session handling |
+| `POST /v1/me/mfa/enroll|confirm|disable`, `GET/DELETE /v1/me/sessions` | any session | Own MFA and sessions |
+| `DELETE /v1/users/{u}/mfa`, `DELETE /v1/users/{u}/sessions` | `users:write` | Reset MFA / revoke sessions of a user |
 | `GET/POST /v1/users`, `PUT/DELETE /v1/users/{username}` | `users:read` / `users:write` | Users (password, active, `assignments`) |
 | `GET/POST /v1/roles`, `PUT/DELETE /v1/roles/{name}` | `roles:read` (or `roles:assign` in a tenant) / `roles:write` | Roles (`permissions`, `scope`) |
 | `GET /v1/tenants/{t}/assignments`, `PUT .../assignments/{username}` | `roles:assign` in the tenant | Delegated administration: who holds which role in the tenant; set a user's roles there |

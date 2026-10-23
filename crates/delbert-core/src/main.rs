@@ -147,7 +147,16 @@ async fn main() -> anyhow::Result<()> {
         other => anyhow::bail!("DELBERT_ARTIFACT_STORE must be 'local' or 's3', not '{other}'"),
     };
 
-    let state = AppState { pool, signer: load_signer()?, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs };
+    let state = AppState { pool, signer: load_signer()?, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, auth: delbert_core::api::AuthConfig {
+        cookie_secure: var("DELBERT_COOKIE_INSECURE").as_deref() != Some("true"),
+        trust_forwarded: var("DELBERT_TRUST_FORWARDED").as_deref() == Some("true"),
+        mfa: match var("DELBERT_MFA_REQUIRED").as_deref().unwrap_or("none") {
+            "none" => delbert_core::api::MfaPolicy::Optional,
+            "admins" => delbert_core::api::MfaPolicy::Admins,
+            "all" => delbert_core::api::MfaPolicy::All,
+            other => anyhow::bail!("DELBERT_MFA_REQUIRED must be none, admins or all, not '{other}'"),
+        },
+    } };
     if state.bus.is_some() {
         tokio::spawn(delbert_core::bus::serve(state.clone()));
     }
@@ -163,13 +172,13 @@ async fn main() -> anyhow::Result<()> {
             });
             tracing::info!("delbert-core listening on {bind} (HTTPS)");
             let addr: std::net::SocketAddr = bind.parse().context("DELBERT_BIND must be host:port with an IP address")?;
-            axum_server::bind_rustls(addr, config).handle(handle).serve(app.into_make_service()).await?;
+            axum_server::bind_rustls(addr, config).handle(handle).serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await?;
         }
         _ => {
             tracing::warn!("DELBERT_TLS_CERT_FILE / DELBERT_TLS_KEY_FILE not set: serving plain HTTP (development only)");
             let listener = tokio::net::TcpListener::bind(&bind).await?;
             tracing::info!("delbert-core listening on {bind}");
-            axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await?;
+            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(shutdown_signal()).await?;
         }
     }
     tracing::info!("shut down");

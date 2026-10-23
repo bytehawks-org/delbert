@@ -11,6 +11,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use axum::response::IntoResponse;
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::{OsRng, RngCore}},
@@ -28,7 +29,7 @@ use sqlx::{PgPool, types::Uuid};
 use utoipa::ToSchema;
 
 use crate::{
-    api::{ApiError, ApiResult, AppState},
+    api::{ApiError, ApiResult, AppState, MfaPolicy},
     audit::{self, NewEvent},
 };
 
@@ -107,6 +108,9 @@ pub struct CurrentUser {
     pub global: HashSet<String>,
     /// Permissions of the assignments scoped to one tenant.
     pub scoped: HashMap<Uuid, HashSet<String>>,
+    pub session_id: Uuid,
+    /// The user has confirmed a second factor.
+    pub mfa_enrolled: bool,
     token_hash: Vec<u8>,
 }
 
@@ -154,49 +158,138 @@ fn forbidden(permission: &str) -> ApiError {
     ApiError(StatusCode::FORBIDDEN, format!("missing permission '{permission}'"))
 }
 
-/// Extractor: a valid, unexpired session of an active user.
+pub const COOKIE: &str = "delbert_session";
+/// A session unused for this long ends.
+const IDLE_MINUTES: i32 = 30;
+/// Time to give the second factor after the password.
+const PENDING_MINUTES: i32 = 5;
+
+/// How much of a session a handler accepts.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Need {
+    /// Password and, if enabled, second factor given; MFA enrolment done when the policy requires it.
+    Full,
+    /// Like `Full` but allowed while MFA enrolment is still missing (the endpoints that fix that).
+    Enrolling,
+    /// A session still waiting for its second factor (only `POST /v1/auth/mfa`).
+    Pending,
+}
+
+fn cookie_value(parts: &Parts) -> Option<String> {
+    let all = parts.headers.get(header::COOKIE)?.to_str().ok()?;
+    all.split(';').filter_map(|c| c.trim().strip_prefix(&format!("{COOKIE}="))).next().map(str::to_owned)
+}
+
+async fn authenticate(parts: &Parts, st: &AppState, need: Need) -> Result<CurrentUser, ApiError> {
+    let unauthorized = || ApiError(StatusCode::UNAUTHORIZED, "missing or invalid session".into());
+    let bearer = parts.headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer "));
+    let (token, via_cookie) = match (bearer, cookie_value(parts)) {
+        (Some(t), _) => (t.to_owned(), false),
+        (None, Some(c)) => (c, true),
+        _ => return Err(unauthorized()),
+    };
+    let hash = token_hash(&token);
+    let row: Option<(Uuid, String, Uuid, bool, Option<Vec<u8>>, bool)> = sqlx::query_as(
+        "SELECT u.id, u.username, s.id, s.mfa_ok, s.csrf_hash, u.totp_enabled FROM sessions s JOIN users u ON u.id = s.user_id \
+         WHERE s.token_hash = $1 AND s.expires_at > now() AND s.last_seen > now() - make_interval(mins => $2) AND u.active",
+    )
+    .bind(&hash)
+    .bind(IDLE_MINUTES)
+    .fetch_optional(&st.pool)
+    .await?;
+    let (id, username, session_id, mfa_ok, csrf_hash, totp_enabled) = row.ok_or_else(unauthorized)?;
+
+    // A pending session is good for nothing but the second factor; a full one is not for that.
+    if (need == Need::Pending) == mfa_ok {
+        return Err(if mfa_ok { ApiError(StatusCode::CONFLICT, "no second factor is pending".into()) } else { ApiError(StatusCode::UNAUTHORIZED, "second factor required: POST /v1/auth/mfa".into()) });
+    }
+    // Browser cookies are ambient credentials: unsafe methods must prove intent with the CSRF token.
+    if via_cookie && !matches!(parts.method, axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS) {
+        let ok = parts.headers.get("x-csrf-token").and_then(|v| v.to_str().ok()).is_some_and(|t| csrf_hash.as_deref() == Some(token_hash(t).as_slice()));
+        if !ok {
+            return Err(ApiError(StatusCode::FORBIDDEN, "missing or invalid CSRF token".into()));
+        }
+    }
+    sqlx::query("UPDATE sessions SET last_seen = now() WHERE id = $1 AND last_seen < now() - interval '1 minute'").bind(session_id).execute(&st.pool).await?;
+
+    let rows: Vec<(Option<Uuid>, String)> = sqlx::query_as(
+        "SELECT ur.tenant_id, unnest(r.permissions) FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1",
+    )
+    .bind(id)
+    .fetch_all(&st.pool)
+    .await?;
+    let mut global = HashSet::new();
+    let mut scoped: HashMap<Uuid, HashSet<String>> = HashMap::new();
+    for (tenant, permission) in rows {
+        match tenant {
+            None => global.insert(permission),
+            Some(t) => scoped.entry(t).or_default().insert(permission),
+        };
+    }
+    // A tenant-scoped assignment without permissions still counts as "has a role there".
+    let empty: Vec<Uuid> = sqlx::query_scalar("SELECT DISTINCT tenant_id FROM user_roles WHERE user_id = $1 AND tenant_id IS NOT NULL").bind(id).fetch_all(&st.pool).await?;
+    for t in empty {
+        scoped.entry(t).or_default();
+    }
+    let user = CurrentUser { id, username, global, scoped, session_id, mfa_enrolled: totp_enabled, token_hash: hash };
+
+    let must_have_mfa = match st.auth.mfa {
+        MfaPolicy::Optional => false,
+        MfaPolicy::Admins => !user.global.is_empty(),
+        MfaPolicy::All => true,
+    };
+    if need == Need::Full && must_have_mfa && !totp_enabled {
+        return Err(ApiError(StatusCode::FORBIDDEN, "multi-factor authentication is required: enroll with POST /v1/me/mfa/enroll".into()));
+    }
+    Ok(user)
+}
+
+/// Extractor: a valid, unexpired, non-idle session of an active user who completed login.
 pub struct Authn(pub CurrentUser);
 
 impl FromRequestParts<AppState> for Authn {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, st: &AppState) -> Result<Self, ApiError> {
-        let unauthorized = || ApiError(StatusCode::UNAUTHORIZED, "missing or invalid bearer token".into());
-        let token = parts
-            .headers
-            .get(header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .ok_or_else(unauthorized)?;
-        let hash = token_hash(token);
-        let user: Option<(Uuid, String)> = sqlx::query_as(
-            "SELECT u.id, u.username FROM sessions s JOIN users u ON u.id = s.user_id \
-             WHERE s.token_hash = $1 AND s.expires_at > now() AND u.active",
-        )
-        .bind(&hash)
-        .fetch_optional(&st.pool)
-        .await?;
-        let (id, username) = user.ok_or_else(unauthorized)?;
-        let rows: Vec<(Option<Uuid>, String)> = sqlx::query_as(
-            "SELECT ur.tenant_id, unnest(r.permissions) FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1",
-        )
-        .bind(id)
-        .fetch_all(&st.pool)
-        .await?;
-        let mut global = HashSet::new();
-        let mut scoped: HashMap<Uuid, HashSet<String>> = HashMap::new();
-        for (tenant, permission) in rows {
-            match tenant {
-                None => global.insert(permission),
-                Some(t) => scoped.entry(t).or_default().insert(permission),
-            };
-        }
-        // A tenant-scoped assignment without permissions still counts as "has a role there".
-        let empty: Vec<Uuid> = sqlx::query_scalar("SELECT DISTINCT tenant_id FROM user_roles WHERE user_id = $1 AND tenant_id IS NOT NULL").bind(id).fetch_all(&st.pool).await?;
-        for t in empty {
-            scoped.entry(t).or_default();
-        }
-        Ok(Authn(CurrentUser { id, username, global, scoped, token_hash: hash }))
+        authenticate(parts, st, Need::Full).await.map(Authn)
+    }
+}
+
+/// Like [`Authn`] but usable while MFA enrolment is still pending: profile, MFA enrolment, logout.
+pub struct AuthnEnrolling(pub CurrentUser);
+
+impl FromRequestParts<AppState> for AuthnEnrolling {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, st: &AppState) -> Result<Self, ApiError> {
+        authenticate(parts, st, Need::Enrolling).await.map(AuthnEnrolling)
+    }
+}
+
+/// A session that passed the password and waits for the second factor.
+pub struct AuthnPending(pub CurrentUser);
+
+impl FromRequestParts<AppState> for AuthnPending {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, st: &AppState) -> Result<Self, ApiError> {
+        authenticate(parts, st, Need::Pending).await.map(AuthnPending)
+    }
+}
+
+/// Client address, for throttling and the session list.
+pub struct ClientIp(pub String);
+
+impl FromRequestParts<AppState> for ClientIp {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, st: &AppState) -> Result<Self, Self::Rejection> {
+        let forwarded = st.auth.trust_forwarded.then(|| parts.headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()).and_then(|v| v.split(',').next())).flatten();
+        let ip = forwarded
+            .map(|v| v.trim().to_owned())
+            .or_else(|| parts.extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip().to_string()))
+            .unwrap_or_else(|| "unknown".into());
+        Ok(ClientIp(ip))
     }
 }
 
@@ -229,13 +322,20 @@ pub async fn bootstrap_admin(pool: &PgPool, password: Option<&str>) -> anyhow::R
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
+    /// Also set the session as an `HttpOnly` cookie and return a CSRF token (for browsers).
+    #[serde(default)]
+    pub cookie: bool,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct LoginResponse {
     pub token: String,
-    /// Unix seconds.
+    /// Unix seconds. While `mfa_required`, the time left to give the second factor.
     pub expires_at: i64,
+    /// The password was right but a TOTP or recovery code must follow (`POST /v1/auth/mfa`).
+    pub mfa_required: bool,
+    /// Cookie sessions: send it as `X-CSRF-Token` on every unsafe request.
+    pub csrf_token: Option<String>,
 }
 
 /// Real hash of a throwaway password, so unknown users cost the same time as wrong passwords.
@@ -244,13 +344,65 @@ fn dummy_hash() -> &'static str {
     DUMMY.get_or_init(|| hash_password("timing-equalizer-password").expect("hashing works"))
 }
 
+/// Failed attempts tolerated in the window: per (user, address), per address, per user.
+const WINDOW_MINUTES: i32 = 15;
+const MAX_PER_PAIR: i64 = 5;
+const MAX_PER_IP: i64 = 30;
+const MAX_PER_USER: i64 = 20;
+
+/// Is this login blocked by the throttle? Counting per (user, address) keeps a stranger from
+/// locking the real user out; the per-address and per-user ceilings still stop spraying and
+/// slow distributed guessing.
+async fn throttled(pool: &PgPool, username: &str, ip: &str) -> ApiResult<bool> {
+    let (pair, by_ip, by_user): (i64, i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*) FILTER (WHERE username = $1 AND ip = $2), COUNT(*) FILTER (WHERE ip = $2), COUNT(*) FILTER (WHERE username = $1) \
+         FROM login_attempts WHERE NOT success AND at > now() - make_interval(mins => $3) AND (username = $1 OR ip = $2)",
+    )
+    .bind(username)
+    .bind(ip)
+    .bind(WINDOW_MINUTES)
+    .fetch_one(pool)
+    .await?;
+    Ok(pair >= MAX_PER_PAIR || by_ip >= MAX_PER_IP || by_user >= MAX_PER_USER)
+}
+
+async fn record_attempt(pool: &PgPool, username: &str, ip: &str, success: bool) -> ApiResult<()> {
+    sqlx::query("INSERT INTO login_attempts (username, ip, success) VALUES ($1, $2, $3)").bind(username).bind(ip).bind(success).execute(pool).await?;
+    if success {
+        sqlx::query("DELETE FROM login_attempts WHERE username = $1 AND ip = $2").bind(username).bind(ip).execute(pool).await?;
+    }
+    sqlx::query("DELETE FROM login_attempts WHERE at < now() - interval '1 day'").execute(pool).await?;
+    Ok(())
+}
+
+fn too_many() -> ApiError {
+    ApiError(StatusCode::TOO_MANY_REQUESTS, format!("too many failed attempts: try again in {WINDOW_MINUTES} minutes"))
+}
+
+fn cookie_header(st: &AppState, token: &str, max_age: i64) -> header::HeaderValue {
+    let secure = if st.auth.cookie_secure { "; Secure" } else { "" };
+    header::HeaderValue::from_str(&format!("{COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={max_age}{secure}")).expect("cookie is ASCII")
+}
+
+fn random_token() -> String {
+    let mut raw = [0u8; 32];
+    OsRng.fill_bytes(&mut raw);
+    B64.encode(raw)
+}
+
 #[utoipa::path(post, path = "/v1/auth/login", tag = "auth", request_body = LoginRequest,
-    responses((status = 200, body = LoginResponse), (status = 401, description = "Invalid credentials")))]
-pub async fn login(State(st): State<AppState>, Json(body): Json<LoginRequest>) -> ApiResult<Json<LoginResponse>> {
-    let row: Option<(Uuid, String, bool)> =
-        sqlx::query_as("SELECT id, password_hash, active FROM users WHERE username = $1").bind(&body.username).fetch_optional(&st.pool).await?;
+    responses((status = 200, body = LoginResponse), (status = 401, description = "Invalid credentials"), (status = 429, description = "Too many failed attempts")))]
+pub async fn login(State(st): State<AppState>, ClientIp(ip): ClientIp, headers: axum::http::HeaderMap, Json(body): Json<LoginRequest>) -> ApiResult<axum::response::Response> {
+    if throttled(&st.pool, &body.username, &ip).await? {
+        let mut tx = st.pool.begin().await?;
+        audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &body.username, action: "auth.login", target: None, outcome: "throttled", details: json!({ "ip": ip }) }).await?;
+        tx.commit().await?;
+        return Err(too_many());
+    }
+    let row: Option<(Uuid, String, bool, bool)> =
+        sqlx::query_as("SELECT id, password_hash, active, totp_enabled FROM users WHERE username = $1").bind(&body.username).fetch_optional(&st.pool).await?;
     let (hash, known) = match &row {
-        Some((_, h, _)) => (h.clone(), true),
+        Some((_, h, _, _)) => (h.clone(), true),
         None => (dummy_hash().to_string(), false),
     };
     let password = body.password.clone();
@@ -259,33 +411,109 @@ pub async fn login(State(st): State<AppState>, Json(body): Json<LoginRequest>) -
 
     let mut tx = st.pool.begin().await?;
     if !ok {
-        audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &body.username, action: "auth.login", target: None, outcome: "denied", details: json!({}) }).await?;
+        record_attempt(&st.pool, &body.username, &ip, false).await?;
+        audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &body.username, action: "auth.login", target: None, outcome: "denied", details: json!({ "ip": ip }) }).await?;
         tx.commit().await?;
         return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid credentials".into()));
     }
-    let user_id = row.map(|r| r.0).expect("checked above");
+    let (user_id, mfa) = row.map(|r| (r.0, r.3)).expect("checked above");
+    // With MFA the password alone only opens a short pending session; the attempt counts as
+    // successful only after the second factor.
+    if !mfa {
+        record_attempt(&st.pool, &body.username, &ip, true).await?;
+    }
 
-    let mut raw = [0u8; 32];
-    OsRng.fill_bytes(&mut raw);
-    let token = B64.encode(raw);
+    let token = random_token();
+    let csrf = body.cookie.then(random_token);
+    let user_agent = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(|v| v.chars().take(200).collect::<String>());
     let expires_at: i64 = sqlx::query_scalar(
-        "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, now() + make_interval(hours => $3)) RETURNING (EXTRACT(EPOCH FROM expires_at))::bigint",
+        "INSERT INTO sessions (token_hash, user_id, expires_at, csrf_hash, mfa_ok, ip, user_agent) \
+         VALUES ($1, $2, now() + CASE WHEN $4 THEN make_interval(mins => $6) ELSE make_interval(hours => $5) END, $3, NOT $4, $7, $8) \
+         RETURNING (EXTRACT(EPOCH FROM expires_at))::bigint",
     )
     .bind(token_hash(&token))
     .bind(user_id)
+    .bind(csrf.as_deref().map(token_hash))
+    .bind(mfa)
     .bind(SESSION_HOURS as i32)
+    .bind(PENDING_MINUTES)
+    .bind(&ip)
+    .bind(user_agent)
     .fetch_one(&mut *tx)
     .await?;
-    sqlx::query("DELETE FROM sessions WHERE expires_at < now()").execute(&mut *tx).await?;
-    audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &body.username, action: "auth.login", target: None, outcome: "ok", details: json!({}) }).await?;
+    sqlx::query("DELETE FROM sessions WHERE expires_at < now() OR last_seen < now() - make_interval(mins => $1)").bind(IDLE_MINUTES).execute(&mut *tx).await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &body.username, action: "auth.login", target: None, outcome: if mfa { "mfa-pending" } else { "ok" }, details: json!({ "ip": ip, "cookie": body.cookie }) }).await?;
     tx.commit().await?;
-    Ok(Json(LoginResponse { token, expires_at }))
+
+    // The cookie lives as long as a full session; the short pending lifetime is enforced server-side.
+    let max_age = SESSION_HOURS * 3600;
+    let mut resp = Json(LoginResponse { token: token.clone(), expires_at, mfa_required: mfa, csrf_token: csrf }).into_response();
+    if body.cookie {
+        resp.headers_mut().insert(header::SET_COOKIE, cookie_header(&st, &token, max_age));
+    }
+    Ok(resp)
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct MfaCode {
+    /// A 6-digit TOTP code or an unused recovery code.
+    pub code: String,
+}
+
+/// Check a TOTP or recovery code for the user; consumes what it accepts.
+pub(crate) async fn check_second_factor(st: &AppState, user_id: Uuid, code: &str) -> ApiResult<bool> {
+    let key = st.secrets_key.as_ref().ok_or_else(|| ApiError(StatusCode::SERVICE_UNAVAILABLE, "MFA needs DELBERT_SECRETS_KEY_FILE".into()))?;
+    let mut tx = st.pool.begin().await?;
+    let row: Option<(Option<Vec<u8>>, i64)> = sqlx::query_as("SELECT totp_secret, totp_last_step FROM users WHERE id = $1 FOR UPDATE").bind(user_id).fetch_optional(&mut *tx).await?;
+    let Some((Some(sealed), last_step)) = row else { return Ok(false) };
+    let secret = crate::secrets::open(key, &sealed)?;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+    if let Some(step) = crate::totp::verify(&secret, code, now, last_step) {
+        sqlx::query("UPDATE users SET totp_last_step = $2 WHERE id = $1").bind(user_id).bind(step).execute(&mut *tx).await?;
+        tx.commit().await?;
+        return Ok(true);
+    }
+    // Recovery codes are single use.
+    let normalized: String = code.trim().to_ascii_lowercase().replace('-', "");
+    let used = sqlx::query("DELETE FROM user_recovery_codes WHERE user_id = $1 AND code_hash = $2").bind(user_id).bind(token_hash(&normalized)).execute(&mut *tx).await?.rows_affected();
+    tx.commit().await?;
+    Ok(used > 0)
+}
+
+#[utoipa::path(post, path = "/v1/auth/mfa", tag = "auth", security(("bearer" = [])), request_body = MfaCode,
+    responses((status = 200, body = LoginResponse), (status = 401, description = "Wrong code"), (status = 429)))]
+pub async fn complete_mfa(State(st): State<AppState>, ClientIp(ip): ClientIp, AuthnPending(user): AuthnPending, Json(body): Json<MfaCode>) -> ApiResult<axum::response::Response> {
+    if throttled(&st.pool, &user.username, &ip).await? {
+        return Err(too_many());
+    }
+    if !check_second_factor(&st, user.id, &body.code).await? {
+        record_attempt(&st.pool, &user.username, &ip, false).await?;
+        let mut tx = st.pool.begin().await?;
+        audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &user.username, action: "auth.mfa", target: None, outcome: "denied", details: json!({ "ip": ip }) }).await?;
+        tx.commit().await?;
+        return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid code".into()));
+    }
+    record_attempt(&st.pool, &user.username, &ip, true).await?;
+    let expires_at: i64 = sqlx::query_scalar(
+        "UPDATE sessions SET mfa_ok = true, expires_at = now() + make_interval(hours => $2) WHERE id = $1 RETURNING (EXTRACT(EPOCH FROM expires_at))::bigint",
+    )
+    .bind(user.session_id)
+    .bind(SESSION_HOURS as i32)
+    .fetch_one(&st.pool)
+    .await?;
+    let mut tx = st.pool.begin().await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &user.username, action: "auth.mfa", target: None, outcome: "ok", details: json!({ "ip": ip }) }).await?;
+    tx.commit().await?;
+    // The session token and cookie stay the same; only the server-side state changed.
+    Ok(Json(LoginResponse { token: String::new(), expires_at, mfa_required: false, csrf_token: None }).into_response())
 }
 
 #[utoipa::path(post, path = "/v1/auth/logout", tag = "auth", security(("bearer" = [])), responses((status = 204)))]
-pub async fn logout(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<StatusCode> {
+pub async fn logout(State(st): State<AppState>, AuthnEnrolling(user): AuthnEnrolling) -> ApiResult<axum::response::Response> {
     sqlx::query("DELETE FROM sessions WHERE token_hash = $1").bind(&user.token_hash).execute(&st.pool).await?;
-    Ok(StatusCode::NO_CONTENT)
+    let mut resp = StatusCode::NO_CONTENT.into_response();
+    resp.headers_mut().insert(header::SET_COOKIE, cookie_header(&st, "", 0));
+    Ok(resp)
 }
 
 /// A role held by a user, globally (`tenant` absent) or for one tenant.
@@ -303,6 +531,8 @@ pub struct Me {
     pub assignments: Vec<Assignment>,
     /// Permissions granted by tenant-scoped assignments, per tenant name.
     pub tenants: BTreeMap<String, Vec<String>>,
+    /// A second factor is set up.
+    pub mfa_enabled: bool,
 }
 
 async fn assignments_of(pool: &PgPool, user_id: Uuid) -> ApiResult<Vec<Assignment>> {
@@ -316,7 +546,7 @@ async fn assignments_of(pool: &PgPool, user_id: Uuid) -> ApiResult<Vec<Assignmen
 }
 
 #[utoipa::path(get, path = "/v1/me", tag = "auth", security(("bearer" = [])), responses((status = 200, body = Me)))]
-pub async fn me(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<Me>> {
+pub async fn me(State(st): State<AppState>, AuthnEnrolling(user): AuthnEnrolling) -> ApiResult<Json<Me>> {
     let names: Vec<(Uuid, String)> = sqlx::query_as("SELECT id, name FROM tenants").fetch_all(&st.pool).await?;
     let names: HashMap<Uuid, String> = names.into_iter().collect();
     let sorted = |set: &HashSet<String>| {
@@ -325,7 +555,7 @@ pub async fn me(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Jso
         v
     };
     let tenants = user.scoped.iter().filter_map(|(t, set)| names.get(t).map(|n| (n.clone(), sorted(set)))).collect();
-    Ok(Json(Me { permissions: sorted(&user.global), assignments: assignments_of(&st.pool, user.id).await?, tenants, username: user.username }))
+    Ok(Json(Me { permissions: sorted(&user.global), assignments: assignments_of(&st.pool, user.id).await?, tenants, mfa_enabled: user.mfa_enrolled, username: user.username }))
 }
 
 // --- users ---------------------------------------------------------------------------------
@@ -621,6 +851,147 @@ pub async fn set_tenant_assignments(
         assign(&mut tx, uid, &Assignment { role: role.clone(), tenant: Some(tenant.clone()) }).await?;
     }
     audit::append(&mut tx, &NewEvent { tenant_id: Some(tid), actor: &user.username, action: "assignment.set", target: Some(&username), outcome: "ok", details: json!({ "roles": body.roles }) }).await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// --- MFA enrolment and sessions -----------------------------------------------------------
+
+#[derive(Serialize, ToSchema)]
+pub struct MfaEnrollment {
+    /// Base32 secret to type into an authenticator app.
+    pub secret: String,
+    /// `otpauth://` URI to render as a QR code.
+    pub otpauth_uri: String,
+}
+
+#[utoipa::path(post, path = "/v1/me/mfa/enroll", tag = "auth", security(("bearer" = [])),
+    responses((status = 200, body = MfaEnrollment), (status = 409, description = "Already enabled"), (status = 503)))]
+pub async fn mfa_enroll(State(st): State<AppState>, AuthnEnrolling(user): AuthnEnrolling) -> ApiResult<Json<MfaEnrollment>> {
+    let key = st.secrets_key.as_ref().ok_or_else(|| ApiError(StatusCode::SERVICE_UNAVAILABLE, "MFA needs DELBERT_SECRETS_KEY_FILE".into()))?;
+    if user.mfa_enrolled {
+        return Err(ApiError(StatusCode::CONFLICT, "MFA is already enabled".into()));
+    }
+    let mut secret = [0u8; 20];
+    OsRng.fill_bytes(&mut secret);
+    let sealed = crate::secrets::seal(key, &secret)?;
+    sqlx::query("UPDATE users SET totp_secret = $2, totp_last_step = 0 WHERE id = $1").bind(user.id).bind(sealed).execute(&st.pool).await?;
+    Ok(Json(MfaEnrollment { secret: crate::totp::secret_to_base32(&secret), otpauth_uri: crate::totp::uri("Delbert", &user.username, &secret) }))
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RecoveryCodes {
+    /// Shown once; each works one time in place of a TOTP code.
+    pub recovery_codes: Vec<String>,
+}
+
+#[utoipa::path(post, path = "/v1/me/mfa/confirm", tag = "auth", security(("bearer" = [])), request_body = MfaCode,
+    responses((status = 200, body = RecoveryCodes), (status = 401, description = "Wrong code"), (status = 409)))]
+pub async fn mfa_confirm(State(st): State<AppState>, AuthnEnrolling(user): AuthnEnrolling, Json(body): Json<MfaCode>) -> ApiResult<Json<RecoveryCodes>> {
+    if user.mfa_enrolled {
+        return Err(ApiError(StatusCode::CONFLICT, "MFA is already enabled".into()));
+    }
+    // Only a TOTP code confirms; recovery codes do not exist yet.
+    if !check_second_factor(&st, user.id, &body.code).await? {
+        return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid code (call /v1/me/mfa/enroll first)".into()));
+    }
+    let mut codes = Vec::new();
+    let mut tx = st.pool.begin().await?;
+    sqlx::query("DELETE FROM user_recovery_codes WHERE user_id = $1").bind(user.id).execute(&mut *tx).await?;
+    for _ in 0..10 {
+        let mut raw = [0u8; 10];
+        OsRng.fill_bytes(&mut raw);
+        let c = data_encoding::BASE32_NOPAD.encode(&raw).to_ascii_lowercase();
+        let code = format!("{}-{}", &c[..8], &c[8..]);
+        sqlx::query("INSERT INTO user_recovery_codes (user_id, code_hash) VALUES ($1, $2)").bind(user.id).bind(token_hash(&code.replace('-', ""))).execute(&mut *tx).await?;
+        codes.push(code);
+    }
+    sqlx::query("UPDATE users SET totp_enabled = true WHERE id = $1").bind(user.id).execute(&mut *tx).await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &user.username, action: "mfa.enable", target: Some(&user.username), outcome: "ok", details: json!({}) }).await?;
+    tx.commit().await?;
+    Ok(Json(RecoveryCodes { recovery_codes: codes }))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct MfaDisable {
+    pub password: String,
+    pub code: String,
+}
+
+#[utoipa::path(post, path = "/v1/me/mfa/disable", tag = "auth", security(("bearer" = [])), request_body = MfaDisable,
+    responses((status = 204), (status = 401), (status = 409, description = "MFA is mandatory for this user")))]
+pub async fn mfa_disable(State(st): State<AppState>, AuthnEnrolling(user): AuthnEnrolling, Json(body): Json<MfaDisable>) -> ApiResult<StatusCode> {
+    let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1").bind(user.id).fetch_one(&st.pool).await?;
+    let password = body.password.clone();
+    if !tokio::task::spawn_blocking(move || verify_password(&password, &hash)).await.unwrap_or(false) || !check_second_factor(&st, user.id, &body.code).await? {
+        return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid password or code".into()));
+    }
+    if st.auth.mfa == MfaPolicy::All || (st.auth.mfa == MfaPolicy::Admins && !user.global.is_empty()) {
+        return Err(ApiError(StatusCode::CONFLICT, "MFA is mandatory for this account".into()));
+    }
+    reset_mfa(&st, user.id, &user.username, &user.username).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn reset_mfa(st: &AppState, user_id: Uuid, target: &str, actor: &str) -> ApiResult<()> {
+    let mut tx = st.pool.begin().await?;
+    sqlx::query("UPDATE users SET totp_secret = NULL, totp_enabled = false, totp_last_step = 0 WHERE id = $1").bind(user_id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM user_recovery_codes WHERE user_id = $1").bind(user_id).execute(&mut *tx).await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: None, actor, action: "mfa.disable", target: Some(target), outcome: "ok", details: json!({}) }).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+#[utoipa::path(delete, path = "/v1/users/{username}/mfa", tag = "users", security(("bearer" = [])), params(("username" = String, Path)),
+    responses((status = 204), (status = 404)))]
+pub async fn admin_reset_mfa(State(st): State<AppState>, Authn(user): Authn, Path(username): Path<String>) -> ApiResult<StatusCode> {
+    user.require_global("users:write")?;
+    let id: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE username = $1").bind(&username).fetch_optional(&st.pool).await?.ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "user not found".into()))?;
+    reset_mfa(&st, id, &username, &user.username).await?;
+    // The account must enrol again: its sessions end.
+    sqlx::query("DELETE FROM sessions WHERE user_id = $1").bind(id).execute(&st.pool).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SessionOut {
+    pub id: String,
+    pub current: bool,
+    pub ip: Option<String>,
+    pub user_agent: Option<String>,
+    /// Unix seconds.
+    pub created_at: i64,
+    pub last_seen: i64,
+}
+
+#[utoipa::path(get, path = "/v1/me/sessions", tag = "auth", security(("bearer" = [])), responses((status = 200, body = Vec<SessionOut>)))]
+pub async fn my_sessions(State(st): State<AppState>, AuthnEnrolling(user): AuthnEnrolling) -> ApiResult<Json<Vec<SessionOut>>> {
+    let rows: Vec<(Uuid, Option<String>, Option<String>, i64, i64)> = sqlx::query_as(
+        "SELECT id, ip, user_agent, (EXTRACT(EPOCH FROM created_at))::bigint, (EXTRACT(EPOCH FROM last_seen))::bigint FROM sessions \
+         WHERE user_id = $1 AND mfa_ok AND expires_at > now() ORDER BY created_at DESC",
+    )
+    .bind(user.id)
+    .fetch_all(&st.pool)
+    .await?;
+    Ok(Json(rows.into_iter().map(|(id, ip, user_agent, created_at, last_seen)| SessionOut { current: id == user.session_id, id: id.to_string(), ip, user_agent, created_at, last_seen }).collect()))
+}
+
+#[utoipa::path(delete, path = "/v1/me/sessions/{id}", tag = "auth", security(("bearer" = [])), params(("id" = String, Path)),
+    responses((status = 204), (status = 404)))]
+pub async fn revoke_session(State(st): State<AppState>, AuthnEnrolling(user): AuthnEnrolling, Path(id): Path<String>) -> ApiResult<StatusCode> {
+    let id: Uuid = id.parse().map_err(|_| ApiError(StatusCode::NOT_FOUND, "session not found".into()))?;
+    let n = sqlx::query("DELETE FROM sessions WHERE id = $1 AND user_id = $2").bind(id).bind(user.id).execute(&st.pool).await?.rows_affected();
+    if n == 0 { Err(ApiError(StatusCode::NOT_FOUND, "session not found".into())) } else { Ok(StatusCode::NO_CONTENT) }
+}
+
+#[utoipa::path(delete, path = "/v1/users/{username}/sessions", tag = "users", security(("bearer" = [])), params(("username" = String, Path)),
+    responses((status = 204), (status = 404)))]
+pub async fn admin_revoke_sessions(State(st): State<AppState>, Authn(user): Authn, Path(username): Path<String>) -> ApiResult<StatusCode> {
+    user.require_global("users:write")?;
+    let id: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE username = $1").bind(&username).fetch_optional(&st.pool).await?.ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "user not found".into()))?;
+    sqlx::query("DELETE FROM sessions WHERE user_id = $1").bind(id).execute(&st.pool).await?;
+    let mut tx = st.pool.begin().await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &user.username, action: "session.revoke-all", target: Some(&username), outcome: "ok", details: json!({}) }).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

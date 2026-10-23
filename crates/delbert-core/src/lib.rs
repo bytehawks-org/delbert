@@ -12,6 +12,7 @@ pub mod audit_api;
 pub mod auth;
 pub mod openapi;
 pub mod proxies;
+pub mod totp;
 pub mod secrets;
 pub mod bus;
 pub mod bus_auth;
