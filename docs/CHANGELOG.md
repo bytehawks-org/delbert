@@ -8,6 +8,9 @@
 ### Authentication hardening
 - Migration `0013`. Cookie sessions with CSRF (double-submit token stored hashed), idle timeout, listable/revocable sessions; TOTP MFA with sealed secret, replay protection and recovery codes, optional or mandatory (`DELBERT_MFA_REQUIRED`); login throttling per (user, address), address and user; admin reset of MFA/sessions. Tests in `tests/auth.rs`. See [API.md](API.md).
 
+### API tokens
+- Migration `0014`: scoped, expiring, revocable tokens that never exceed their owner (`tests/auth.rs`).
+
 ### Artifact storage
 - Artifact content no longer lives in PostgreSQL (migration `0012` drops `artifacts.content`; development databases must re-upload). New `blobs` module on `object_store` 0.12 (Apache-2.0): local directory or S3-compatible, keys `artifacts/<tenant id>/<sha256>` (content-addressed, idempotent). Content is written before its metadata row; downloads are streamed and hashed on the way out, so a corrupted object aborts instead of being served; the limit rises to 64 MiB. Verified against Garage v2.1.0 in Podman (`tests/blobs.rs` runs against S3 when `S3_TEST_*` is set). See [API.md](API.md).
 

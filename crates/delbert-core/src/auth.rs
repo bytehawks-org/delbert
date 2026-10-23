@@ -109,6 +109,8 @@ pub struct CurrentUser {
     /// Permissions of the assignments scoped to one tenant.
     pub scoped: HashMap<Uuid, HashSet<String>>,
     pub session_id: Uuid,
+    /// Authenticated with an API token (which can never manage tokens, MFA or sessions).
+    pub via_token: bool,
     /// The user has confirmed a second factor.
     pub mfa_enrolled: bool,
     token_hash: Vec<u8>,
@@ -189,6 +191,9 @@ async fn authenticate(parts: &Parts, st: &AppState, need: Need) -> Result<Curren
         _ => return Err(unauthorized()),
     };
     let hash = token_hash(&token);
+    if token.starts_with(TOKEN_PREFIX) {
+        return if need == Need::Full { authenticate_token(st, &hash).await } else { Err(ApiError(StatusCode::FORBIDDEN, "API tokens cannot be used here".into())) };
+    }
     let row: Option<(Uuid, String, Uuid, bool, Option<Vec<u8>>, bool)> = sqlx::query_as(
         "SELECT u.id, u.username, s.id, s.mfa_ok, s.csrf_hash, u.totp_enabled FROM sessions s JOIN users u ON u.id = s.user_id \
          WHERE s.token_hash = $1 AND s.expires_at > now() AND s.last_seen > now() - make_interval(mins => $2) AND u.active",
@@ -212,26 +217,8 @@ async fn authenticate(parts: &Parts, st: &AppState, need: Need) -> Result<Curren
     }
     sqlx::query("UPDATE sessions SET last_seen = now() WHERE id = $1 AND last_seen < now() - interval '1 minute'").bind(session_id).execute(&st.pool).await?;
 
-    let rows: Vec<(Option<Uuid>, String)> = sqlx::query_as(
-        "SELECT ur.tenant_id, unnest(r.permissions) FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1",
-    )
-    .bind(id)
-    .fetch_all(&st.pool)
-    .await?;
-    let mut global = HashSet::new();
-    let mut scoped: HashMap<Uuid, HashSet<String>> = HashMap::new();
-    for (tenant, permission) in rows {
-        match tenant {
-            None => global.insert(permission),
-            Some(t) => scoped.entry(t).or_default().insert(permission),
-        };
-    }
-    // A tenant-scoped assignment without permissions still counts as "has a role there".
-    let empty: Vec<Uuid> = sqlx::query_scalar("SELECT DISTINCT tenant_id FROM user_roles WHERE user_id = $1 AND tenant_id IS NOT NULL").bind(id).fetch_all(&st.pool).await?;
-    for t in empty {
-        scoped.entry(t).or_default();
-    }
-    let user = CurrentUser { id, username, global, scoped, session_id, mfa_enrolled: totp_enabled, token_hash: hash };
+    let (global, scoped) = load_permissions(&st.pool, id).await?;
+    let user = CurrentUser { id, username, global, scoped, session_id, via_token: false, mfa_enrolled: totp_enabled, token_hash: hash };
 
     let must_have_mfa = match st.auth.mfa {
         MfaPolicy::Optional => false,
@@ -242,6 +229,72 @@ async fn authenticate(parts: &Parts, st: &AppState, need: Need) -> Result<Curren
         return Err(ApiError(StatusCode::FORBIDDEN, "multi-factor authentication is required: enroll with POST /v1/me/mfa/enroll".into()));
     }
     Ok(user)
+}
+
+type Permissions = (HashSet<String>, HashMap<Uuid, HashSet<String>>);
+
+/// What the user's role assignments grant: global permissions and per-tenant ones.
+async fn load_permissions(pool: &PgPool, user_id: Uuid) -> ApiResult<Permissions> {
+    let rows: Vec<(Option<Uuid>, String)> = sqlx::query_as(
+        "SELECT ur.tenant_id, unnest(r.permissions) FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    let mut global = HashSet::new();
+    let mut scoped: HashMap<Uuid, HashSet<String>> = HashMap::new();
+    for (tenant, permission) in rows {
+        match tenant {
+            None => global.insert(permission),
+            Some(t) => scoped.entry(t).or_default().insert(permission),
+        };
+    }
+    // A tenant-scoped assignment without permissions still counts as "has a role there".
+    let empty: Vec<Uuid> = sqlx::query_scalar("SELECT DISTINCT tenant_id FROM user_roles WHERE user_id = $1 AND tenant_id IS NOT NULL").bind(user_id).fetch_all(pool).await?;
+    for t in empty {
+        scoped.entry(t).or_default();
+    }
+    Ok((global, scoped))
+}
+
+pub const TOKEN_PREFIX: &str = "dlb_";
+
+/// An API token acts as its owner, reduced to the token's permissions and, if set, to one tenant.
+/// The owner's rights are read at every use, so a token never outlives or exceeds them.
+async fn authenticate_token(st: &AppState, hash: &[u8]) -> Result<CurrentUser, ApiError> {
+    let unauthorized = || ApiError(StatusCode::UNAUTHORIZED, "missing or invalid session".into());
+    let row: Option<(Uuid, Uuid, String, Option<Uuid>, Vec<String>)> = sqlx::query_as(
+        "SELECT t.id, u.id, u.username, t.tenant_id, t.permissions FROM api_tokens t JOIN users u ON u.id = t.user_id \
+         WHERE t.token_hash = $1 AND t.expires_at > now() AND u.active",
+    )
+    .bind(hash)
+    .fetch_optional(&st.pool)
+    .await?;
+    let (token_id, id, username, tenant, allowed) = row.ok_or_else(unauthorized)?;
+    sqlx::query("UPDATE api_tokens SET last_used = now() WHERE id = $1 AND (last_used IS NULL OR last_used < now() - interval '1 minute')").bind(token_id).execute(&st.pool).await?;
+    let allowed: HashSet<String> = allowed.into_iter().collect();
+    let keep = |set: HashSet<String>| -> HashSet<String> { set.into_iter().filter(|p| grants(&allowed, p) || (p == "*" && allowed.contains("*"))).collect() };
+    // A permission survives when the token's list covers it; the owner's wildcards are narrowed
+    // to the token's own entries.
+    let narrow = |set: &HashSet<String>| -> HashSet<String> {
+        if set.contains("*") {
+            allowed.clone()
+        } else {
+            keep(set.clone())
+        }
+    };
+    let (global, scoped) = load_permissions(&st.pool, id).await?;
+    let (global, scoped) = match tenant {
+        None => (narrow(&global), scoped.into_iter().map(|(t, s)| (t, narrow(&s))).collect()),
+        Some(t) => {
+            // Inside one tenant: what the owner holds there, globally or scoped, never a global-only permission.
+            let mut both = narrow(&global);
+            both.extend(scoped.get(&t).map(narrow).unwrap_or_default());
+            both.retain(|p| p == "*" || !GLOBAL_ONLY.contains(&p.as_str()));
+            (HashSet::new(), HashMap::from([(t, both)]))
+        }
+    };
+    Ok(CurrentUser { id, username, global, scoped, session_id: token_id, via_token: true, mfa_enrolled: true, token_hash: hash.to_vec() })
 }
 
 /// Extractor: a valid, unexpired, non-idle session of an active user who completed login.
@@ -992,6 +1045,114 @@ pub async fn admin_revoke_sessions(State(st): State<AppState>, Authn(user): Auth
     sqlx::query("DELETE FROM sessions WHERE user_id = $1").bind(id).execute(&st.pool).await?;
     let mut tx = st.pool.begin().await?;
     audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &user.username, action: "session.revoke-all", target: Some(&username), outcome: "ok", details: json!({}) }).await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// --- API tokens ----------------------------------------------------------------------------
+
+#[derive(Deserialize, ToSchema)]
+pub struct NewToken {
+    pub name: String,
+    /// Permissions the token may use; each must be held by its owner (in the tenant, if given).
+    pub permissions: Vec<String>,
+    /// Restrict the token to one tenant.
+    pub tenant: Option<String>,
+    /// Lifetime in days, 1 to 365 (tokens always expire).
+    pub expires_in_days: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TokenCreated {
+    pub id: String,
+    /// Shown once.
+    pub token: String,
+    pub expires_at: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TokenOut {
+    pub id: String,
+    pub name: String,
+    pub tenant: Option<String>,
+    pub permissions: Vec<String>,
+    pub expires_at: i64,
+    pub last_used: Option<i64>,
+}
+
+#[utoipa::path(post, path = "/v1/me/tokens", tag = "auth", security(("bearer" = [])), request_body = NewToken,
+    responses((status = 201, body = TokenCreated), (status = 403), (status = 409, description = "Name in use"), (status = 422)))]
+pub async fn create_token(State(st): State<AppState>, Authn(user): Authn, Json(body): Json<NewToken>) -> ApiResult<(StatusCode, Json<TokenCreated>)> {
+    if user.via_token {
+        return Err(ApiError(StatusCode::FORBIDDEN, "an API token cannot create tokens".into()));
+    }
+    if !user.can("tokens:manage", None) && !user.scoped.values().any(|s| grants(s, "tokens:manage")) {
+        return Err(forbidden("tokens:manage"));
+    }
+    check_username(&body.name)?;
+    check_permissions(&body.permissions)?;
+    if body.permissions.is_empty() || !(1..=365).contains(&body.expires_in_days) {
+        return Err(ApiError(StatusCode::UNPROCESSABLE_ENTITY, "permissions must not be empty and expires_in_days must be 1-365".into()));
+    }
+    let tenant_id = match &body.tenant {
+        Some(t) => Some(user.tenant(&st.pool, t, "tokens:manage").await?),
+        None => None,
+    };
+    // A token can never exceed its owner: every permission must be held literally (wildcards only if the owner has the same wildcard).
+    for p in &body.permissions {
+        if tenant_id.is_some() && GLOBAL_ONLY.contains(&p.as_str()) {
+            return Err(ApiError(StatusCode::FORBIDDEN, format!("'{p}' is a platform-wide permission: a tenant token cannot carry it")));
+        }
+        let held = match tenant_id {
+            Some(t) => covers(&user, t, p),
+            None => user.global.contains("*") || user.global.contains(p) || (!p.ends_with('*') && grants(&user.global, p)),
+        };
+        if !held {
+            return Err(ApiError(StatusCode::FORBIDDEN, format!("you do not hold '{p}'{}", if tenant_id.is_some() { " in that tenant" } else { " globally" })));
+        }
+    }
+    let token = format!("{TOKEN_PREFIX}{}", random_token());
+    let mut tx = st.pool.begin().await?;
+    let (id, expires_at): (Uuid, i64) = sqlx::query_as(
+        "INSERT INTO api_tokens (user_id, name, token_hash, tenant_id, permissions, expires_at) VALUES ($1, $2, $3, $4, $5, now() + make_interval(days => $6)) \
+         RETURNING id, (EXTRACT(EPOCH FROM expires_at))::bigint",
+    )
+    .bind(user.id)
+    .bind(&body.name)
+    .bind(token_hash(&token))
+    .bind(tenant_id)
+    .bind(&body.permissions)
+    .bind(body.expires_in_days as i32)
+    .fetch_one(&mut *tx)
+    .await?;
+    audit::append(&mut tx, &NewEvent { tenant_id, actor: &user.username, action: "token.create", target: Some(&body.name), outcome: "ok", details: json!({ "permissions": body.permissions, "expires_in_days": body.expires_in_days }) }).await?;
+    tx.commit().await?;
+    Ok((StatusCode::CREATED, Json(TokenCreated { id: id.to_string(), token, expires_at })))
+}
+
+#[utoipa::path(get, path = "/v1/me/tokens", tag = "auth", security(("bearer" = [])), responses((status = 200, body = Vec<TokenOut>)))]
+pub async fn list_tokens(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<Vec<TokenOut>>> {
+    let rows: Vec<(Uuid, String, Option<String>, Vec<String>, i64, Option<i64>)> = sqlx::query_as(
+        "SELECT k.id, k.name, t.name, k.permissions, (EXTRACT(EPOCH FROM k.expires_at))::bigint, (EXTRACT(EPOCH FROM k.last_used))::bigint \
+         FROM api_tokens k LEFT JOIN tenants t ON t.id = k.tenant_id WHERE k.user_id = $1 ORDER BY k.created_at DESC",
+    )
+    .bind(user.id)
+    .fetch_all(&st.pool)
+    .await?;
+    Ok(Json(rows.into_iter().map(|(id, name, tenant, permissions, expires_at, last_used)| TokenOut { id: id.to_string(), name, tenant, permissions, expires_at, last_used }).collect()))
+}
+
+#[utoipa::path(delete, path = "/v1/me/tokens/{id}", tag = "auth", security(("bearer" = [])), params(("id" = String, Path)),
+    responses((status = 204), (status = 404)))]
+pub async fn revoke_token(State(st): State<AppState>, Authn(user): Authn, Path(id): Path<String>) -> ApiResult<StatusCode> {
+    if user.via_token {
+        return Err(ApiError(StatusCode::FORBIDDEN, "an API token cannot revoke tokens".into()));
+    }
+    let id: Uuid = id.parse().map_err(|_| ApiError(StatusCode::NOT_FOUND, "token not found".into()))?;
+    let mut tx = st.pool.begin().await?;
+    let name: Option<String> = sqlx::query_scalar("DELETE FROM api_tokens WHERE id = $1 AND user_id = $2 RETURNING name").bind(id).bind(user.id).fetch_optional(&mut *tx).await?;
+    let name = name.ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "token not found".into()))?;
+    audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &user.username, action: "token.revoke", target: Some(&name), outcome: "ok", details: json!({}) }).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

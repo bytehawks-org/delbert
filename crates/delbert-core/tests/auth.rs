@@ -127,3 +127,64 @@ async fn mfa_can_be_made_mandatory(pool: PgPool) {
     assert_eq!(s, S::CONFLICT, "{b}");
     let _: Value = b;
 }
+
+#[sqlx::test]
+async fn api_tokens_are_scoped_expiring_and_never_exceed_their_owner(pool: PgPool) {
+    let admin = admin_client(state(pool.clone(), vec![Strategy::Error], None)).await;
+    for t in ["acme", "beta"] {
+        assert_eq!(admin.call("POST", "/v1/tenants", Some(json!({ "name": t }))).await.0, S::CREATED);
+    }
+    let pw = "a-long-enough-password";
+    admin.call("POST", "/v1/users", Some(json!({ "username": "tina", "password": pw, "assignments": [{ "role": "tenant-admin", "tenant": "acme" }] }))).await;
+    admin.call("POST", "/v1/users", Some(json!({ "username": "olivia", "password": pw, "assignments": [{ "role": "operator", "tenant": "acme" }] }))).await;
+    let (tina, olivia) = (admin.as_user("tina", pw).await, admin.as_user("olivia", pw).await);
+    let make = |c: &Client, body: Value| {
+        let c = c.clone();
+        async move { c.call("POST", "/v1/me/tokens", Some(body)).await }
+    };
+    let as_token = |t: &Value| Client { token: Some(t["token"].as_str().unwrap().to_owned()), ..admin.clone() };
+
+    // A global token narrows the administrator to the listed permissions.
+    let (s, t) = make(&admin, json!({ "name": "ci-read", "permissions": ["tenants:read", "agents:read"], "expires_in_days": 30 })).await;
+    assert_eq!(s, S::CREATED, "{t}");
+    assert!(t["token"].as_str().unwrap().starts_with("dlb_"));
+    let ci = as_token(&t);
+    assert_eq!(ci.call("GET", "/v1/tenants", None).await.0, S::OK);
+    assert_eq!(ci.call("GET", "/v1/tenants/acme/agents", None).await.0, S::OK);
+    assert_eq!(ci.call("POST", "/v1/tenants/acme/agents", Some(json!({ "name": "a1" }))).await.0, S::FORBIDDEN);
+    assert_eq!(ci.call("POST", "/v1/tenants", Some(json!({ "name": "x" }))).await.0, S::FORBIDDEN);
+    // It cannot manage credentials or sessions.
+    assert_eq!(ci.call("GET", "/v1/me", None).await.0, S::FORBIDDEN);
+    assert_eq!(make(&ci, json!({ "name": "more", "permissions": ["agents:read"], "expires_in_days": 1 })).await.0, S::FORBIDDEN);
+    assert_eq!(make(&admin, json!({ "name": "ci-read", "permissions": ["agents:read"], "expires_in_days": 1 })).await.0, S::CONFLICT);
+
+    // A tenant token only works inside its tenant.
+    let (_, t) = make(&admin, json!({ "name": "acme-writer", "permissions": ["agents:*"], "tenant": "acme", "expires_in_days": 7 })).await;
+    let acme = as_token(&t);
+    assert_eq!(acme.call("POST", "/v1/tenants/acme/agents", Some(json!({ "name": "a1" }))).await.0, S::CREATED);
+    assert_eq!(acme.call("POST", "/v1/tenants/beta/agents", Some(json!({ "name": "a1" }))).await.0, S::NOT_FOUND);
+    assert_eq!(acme.call("PUT", "/v1/tenants/acme/secrets/db", Some(json!({ "value": "x" }))).await.0, S::FORBIDDEN);
+
+    // Never more than the owner holds: not what they lack, not wildcards they do not have, not in other tenants.
+    assert_eq!(make(&olivia, json!({ "name": "tok", "permissions": ["agents:read"], "tenant": "acme", "expires_in_days": 1 })).await.0, S::FORBIDDEN); // no tokens:manage
+    assert_eq!(make(&tina, json!({ "name": "tok", "permissions": ["agents:*"], "tenant": "acme", "expires_in_days": 1 })).await.0, S::FORBIDDEN);
+    assert_eq!(make(&tina, json!({ "name": "tok", "permissions": ["tenants:create"], "tenant": "acme", "expires_in_days": 1 })).await.0, S::FORBIDDEN);
+    assert_eq!(make(&tina, json!({ "name": "tok", "permissions": ["agents:read"], "expires_in_days": 1 })).await.0, S::FORBIDDEN); // global scope
+    assert_eq!(make(&tina, json!({ "name": "tok", "permissions": ["agents:read"], "tenant": "beta", "expires_in_days": 1 })).await.0, S::NOT_FOUND);
+    assert_eq!(make(&tina, json!({ "name": "tok", "permissions": ["agents:read"], "tenant": "acme", "expires_in_days": 400 })).await.0, S::UNPROCESSABLE_ENTITY);
+    let (s, t) = make(&tina, json!({ "name": "tok", "permissions": ["agents:read", "policies:read"], "tenant": "acme", "expires_in_days": 1 })).await;
+    assert_eq!(s, S::CREATED);
+    assert_eq!(as_token(&t).call("GET", "/v1/tenants/acme/policies", None).await.0, S::OK);
+
+    // Listing never shows the secret; expiry, revocation and deactivation of the owner end the token.
+    let (_, list) = admin.call("GET", "/v1/me/tokens", None).await;
+    assert!(list.as_array().unwrap().iter().all(|x| x.get("token").is_none()) && list.as_array().unwrap().len() == 2);
+    sqlx::query("UPDATE api_tokens SET expires_at = now() - interval '1 minute' WHERE name = 'ci-read'").execute(&pool).await.unwrap();
+    assert_eq!(ci.call("GET", "/v1/tenants", None).await.0, S::UNAUTHORIZED);
+    let id = list.as_array().unwrap().iter().find(|x| x["name"] == "acme-writer").unwrap()["id"].as_str().unwrap().to_owned();
+    assert_eq!(admin.call("DELETE", &format!("/v1/me/tokens/{id}"), None).await.0, S::NO_CONTENT);
+    assert_eq!(acme.call("GET", "/v1/tenants/acme/agents", None).await.0, S::UNAUTHORIZED);
+    let tina_token = as_token(&t);
+    assert_eq!(admin.call("PUT", "/v1/users/tina", Some(json!({ "active": false }))).await.0, S::NO_CONTENT);
+    assert_eq!(tina_token.call("GET", "/v1/tenants/acme/policies", None).await.0, S::UNAUTHORIZED);
+}

@@ -73,7 +73,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Artifacts: streaming upload (multipart/range) beyond 64 MiB, garbage collection of unreferenced objects, retention | to-do | 2026-10-23 |
 | Artifacts: lifecycle with Garage in compose and Kubernetes manifests | to-do | 2026-10-23 |
 | Auth hardening: cookie sessions + CSRF, TOTP MFA, login throttling (migration `0013`) | complete | 2026-10-23 |
-| Auth: scoped API tokens / service accounts | to-do | 2026-10-23 |
+| Auth: scoped API tokens (migration `0014`) | complete | 2026-10-23 |
+| Auth: service accounts (users of kind `service` without password) | to-do | 2026-10-23 |
 | Auth: SSO via OIDC (Keycloak, Microsoft Entra ID, ...): authorization code + PKCE, group/claim to (role, scope) mapping, break-glass local account; LDAP/AD later | to-do | 2026-10-23 |
 | Auth: captcha (Turnstile) after repeated failures, WebAuthn, password breach check | to-do | 2026-10-23 |
 | Configuration file for Core and Proxy (TOML/YAML + env override, validated, `--check`), replacing the growing list of environment variables | to-do | 2026-10-23 |

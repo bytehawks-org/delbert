@@ -129,6 +129,8 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/me/mfa/enroll", post(auth::mfa_enroll))
         .route("/v1/me/mfa/confirm", post(auth::mfa_confirm))
         .route("/v1/me/mfa/disable", post(auth::mfa_disable))
+        .route("/v1/me/tokens", get(auth::list_tokens).post(auth::create_token))
+        .route("/v1/me/tokens/{id}", axum::routing::delete(auth::revoke_token))
         .route("/v1/me/sessions", get(auth::my_sessions))
         .route("/v1/me/sessions/{id}", axum::routing::delete(auth::revoke_session))
         .route("/v1/users/{username}/mfa", axum::routing::delete(auth::admin_reset_mfa))
