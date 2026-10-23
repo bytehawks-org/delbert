@@ -44,11 +44,20 @@ pub struct ArtifactOut {
     params(("tenant" = String, Path), ("name" = String, Path)),
     responses((status = 201, description = "New version", body = ArtifactOut), (status = 200, description = "Same content as the latest version", body = ArtifactOut), (status = 413), (status = 422)))]
 pub async fn put_artifact(State(st): State<AppState>, Authn(user): Authn, Path((tenant, name)): Path<(String, String)>, body: Bytes) -> ApiResult<(StatusCode, Json<ArtifactOut>)> {
-    check_name(&name, "artifact")?;
+    let tid = user.tenant(&st.pool, &tenant, "artifacts:write").await?;
+    crate::content::ensure_unowned(&st.pool, tid, "artifact", &name).await?;
+    let (status, out) = store_artifact(&st, tid, &tenant, &name, body, &user.username).await?;
+    Ok((status, Json(out)))
+}
+
+/// Store a new immutable artifact version (a no-op for identical content). Shared by the API and
+/// content-source sync.
+pub(crate) async fn store_artifact(st: &AppState, tid: sqlx::types::Uuid, tenant: &str, name: &str, body: Bytes, actor: &str) -> ApiResult<(StatusCode, ArtifactOut)> {
+    check_name(name, "artifact")?;
     if body.len() > MAX_ARTIFACT_BYTES {
         return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE, "artifact too large (64 MiB at most)".into()));
     }
-    let tid = user.tenant(&st.pool, &tenant, "artifacts:write").await?;
+    let name = name.to_owned();
     let sha: Vec<u8> = Sha256::digest(&body).to_vec();
 
     let mut tx = st.pool.begin().await?;
@@ -57,7 +66,7 @@ pub async fn put_artifact(State(st): State<AppState>, Authn(user): Authn, Path((
     let latest: Option<(i64, Vec<u8>)> = sqlx::query_as("SELECT version, sha256 FROM artifacts WHERE tenant_id = $1 AND name = $2 ORDER BY version DESC LIMIT 1").bind(tid).bind(&name).fetch_optional(&mut *tx).await?;
     if let Some((version, latest_sha)) = &latest {
         if *latest_sha == sha {
-            return Ok((StatusCode::OK, Json(ArtifactOut { name, version: *version, size: body.len() as i64, sha256: hex(&sha) })));
+            return Ok((StatusCode::OK, ArtifactOut { name, version: *version, size: body.len() as i64, sha256: hex(&sha) }));
         }
     }
     let version = latest.map_or(1, |(v, _)| v + 1);
@@ -70,13 +79,13 @@ pub async fn put_artifact(State(st): State<AppState>, Authn(user): Authn, Path((
         .bind(version)
         .bind(&sha)
         .bind(body.len() as i64)
-        .bind(&user.username)
+        .bind(actor)
         .execute(&mut *tx)
         .await?;
-    audit::append(&mut tx, &NewEvent { tenant_id: Some(tid), actor: &user.username, action: "artifact.upload", target: Some(&name), outcome: "ok", details: json!({ "version": version, "size": body.len(), "sha256": hex(&sha) }) }).await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: Some(tid), actor: actor, action: "artifact.upload", target: Some(&name), outcome: "ok", details: json!({ "version": version, "size": body.len(), "sha256": hex(&sha) }) }).await?;
     tx.commit().await?;
-    crate::api::notify_tenant(&st, &tenant, tid).await;
-    Ok((StatusCode::CREATED, Json(ArtifactOut { name, version, size: body.len() as i64, sha256: hex(&sha) })))
+    crate::api::notify_tenant(st, tenant, tid).await;
+    Ok((StatusCode::CREATED, ArtifactOut { name, version, size: body.len() as i64, sha256: hex(&sha) }))
 }
 
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/artifacts", tag = "artifacts", security(("bearer" = [])),

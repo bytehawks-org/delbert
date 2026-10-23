@@ -1,6 +1,6 @@
 # Delbert - Content sources (files and configurations from a repository)
 
-Design for loading policies, artifacts and tenant settings from a repository the operator controls, instead of (or next to) the API and the web UI. Status: **design**, not implemented. Related: [RBAC.md](RBAC.md) (approval workflow), [POLICY.md](POLICY.md), [FRONTEND.md](FRONTEND.md).
+Design for loading policies, artifacts and tenant settings from a repository the operator controls, instead of (or next to) the API and the web UI. Status: **implemented** for `directory` and https `git` sources (see [API.md](API.md)); not yet: SSH remotes and deploy keys, required signed commits/tags, webhooks with their own secret, UI. Related: [RBAC.md](RBAC.md) (approval workflow), [POLICY.md](POLICY.md), [FRONTEND.md](FRONTEND.md).
 
 ## Goals
 

@@ -64,7 +64,7 @@ pub async fn put_settings(State(st): State<AppState>, Authn(user): Authn, Path(t
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn count_submitted(tx: &mut Tx<'_>, tid: Uuid) -> ApiResult<i64> {
+pub(crate) async fn count_submitted(tx: &mut Tx<'_>, tid: Uuid) -> ApiResult<i64> {
     Ok(sqlx::query_scalar(
         "SELECT COUNT(*) FROM policy_versions v JOIN policies p ON p.id = v.policy_id WHERE p.tenant_id = $1 AND \
          (SELECT e.event FROM policy_version_events e WHERE e.policy_id = v.policy_id AND e.version = v.version \

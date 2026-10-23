@@ -181,7 +181,12 @@ async fn main() -> anyhow::Result<()> {
         other => anyhow::bail!("DELBERT_ARTIFACT_STORE must be 'local' or 's3', not '{other}'"),
     };
 
-    let state = AppState { pool, signer: load_signer()?, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, auth: delbert_core::api::AuthConfig {
+    let state = AppState { pool, signer: load_signer()?, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, content: delbert_core::api::ContentConfig {
+        dir: var("DELBERT_CONTENT_DIR").unwrap_or_else(|| "./data/content".into()).into(),
+        allow_tenant_git: var("DELBERT_CONTENT_ALLOW_TENANT_GIT").as_deref() == Some("true"),
+        allow_file: var("DELBERT_CONTENT_ALLOW_FILE").as_deref() == Some("true"),
+        poll: var("DELBERT_CONTENT_POLL").as_deref() != Some("false"),
+    }, auth: delbert_core::api::AuthConfig {
         cookie_secure: var("DELBERT_COOKIE_INSECURE").as_deref() != Some("true"),
         trust_forwarded: var("DELBERT_TRUST_FORWARDED").as_deref() == Some("true"),
         mfa: match var("DELBERT_MFA_REQUIRED").as_deref().unwrap_or("none") {
@@ -198,6 +203,9 @@ async fn main() -> anyhow::Result<()> {
             other => anyhow::bail!("DELBERT_LOCAL_LOGIN must be all or admins, not '{other}'"),
         },
     } };
+    if state.content.poll {
+        tokio::spawn(delbert_core::content::poller(state.clone()));
+    }
     if state.bus.is_some() {
         tokio::spawn(delbert_core::bus::serve(state.clone()));
     }

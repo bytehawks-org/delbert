@@ -21,6 +21,10 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 | `DELBERT_PUBLIC_URL` | Public base URL of the Core (`https://delbert.example.com`); SSO redirect URIs are `<url>/v1/auth/sso/<provider>/callback` |
 | `DELBERT_UI_URL` | Where the browser is sent after SSO (with `?code=`, or `?sso_error=`); default `/` |
 | `DELBERT_LOCAL_LOGIN` | `all` (default) or `admins`: with SSO in charge, only users holding a global role (break-glass administrators) may use a local password |
+| `DELBERT_CONTENT_DIR` | Base directory for content sources: `directory` sources are names under it, git mirrors live in `.git-mirrors` (default `./data/content`, `/var/lib/delbert-core/content` in the image) |
+| `DELBERT_CONTENT_ALLOW_TENANT_GIT` | `true` lets tenant administrators define git sources (the Core then fetches from URLs they choose); default `false` |
+| `DELBERT_CONTENT_ALLOW_FILE` | `true` allows `file://` remotes (air-gapped local repositories, tests); default `false` |
+| `DELBERT_CONTENT_POLL` | `false` disables the background polling of sources with `poll_secs` (default on) |
 | `DELBERT_MFA_REQUIRED` | `none` (default), `admins` (users with a global role) or `all`: who must set up TOTP. Without it such a user only reaches the profile and the enrolment endpoints |
 | `DELBERT_COOKIE_INSECURE` | `true` drops the `Secure` flag of the session cookie (plain-HTTP development only) |
 | `DELBERT_TRUST_FORWARDED` | `true` takes the client address from `X-Forwarded-For` (only behind a trusted reverse proxy); used for login throttling and the session list |
@@ -49,6 +53,10 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 - The last active holder of a global `*` cannot be deleted, deactivated or demoted.
 - Policy lifecycle: with `approval_required` on a tenant, a new version is a draft (`live: false` in the upload answer) until submitted, approved by someone else and activated; without it, an upload goes live at once. The compiler uses `policies.active_version`. New tenants take the default of `DELBERT_APPROVAL_DEFAULT` (`true`/`false`, default `false`).
 - Not done yet: SAML, LDAP/AD, captcha (Turnstile) after failures, WebAuthn ([ROADMAP.md](ROADMAP.md)).
+
+## Content sources
+
+Policies, artifacts and tenant settings can come from a repository instead of the API ([CONTENT.md](CONTENT.md)). Layout: `tenants/<tenant>/{tenant.yaml, policies/<name>.yaml, artifacts/<name>}`; everything else at the top level (README, CI files) is ignored, anything unknown under `tenants/` is an error. A source is a `directory` (a folder under `DELBERT_CONTENT_DIR`; platform only) or `git` (`https://` remote, optional user and access token sealed in the database; `http://` and `file://` only in development/air-gapped setups). It belongs to the platform (may touch any tenant) or to one tenant (only that tenant, and only if `DELBERT_CONTENT_ALLOW_TENANT_GIT` is on for git). A sync reads the snapshot, validates all of it (one bad item rejects everything and applies nothing), diffs it against what the source applied last, and applies through the normal paths: policies become new immutable versions (drafts when the tenant requires approval, authored by `source:<name>@<revision>`), artifacts new artifact versions, `tenant.yaml` sets `approval_required` (never off from a tenant-owned source). Removed items are reported and, only with `prune`, deactivated (artifacts just lose their owner). Items a source applied are **read-only in the API** (409 naming the source). `POST .../sync` (also from a CI job with a scoped token), `poll_secs` (at least 30) and a background poller trigger syncs; git is the `git` program on the Core host with fixed arguments, no shell, hooks off, a private HOME, no prompts, a timeout, and the token passed through the environment. Verified against a local git server (Forgejo 11) with a private repository and a token.
 
 ## Endpoints
 
@@ -81,6 +89,9 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 | `POST .../versions/{v}/submit`, `.../activate` | `policies:write` | Put a draft up for review / make an approved version live |
 | `POST .../versions/{v}/approve`, `.../reject`, `.../rollback` | `policies:approve` | Review (the author and the submitter cannot, nobody is exempt; reject needs a `comment`) / go back to a previously approved older version |
 | `GET /v1/tenants/{t}/agents/{a}/effective` | `agents:preview` | Compile the policies targeting the agent, resolve conflicts, sign: `{token, version, conflicts}` |
+| `GET/POST /v1/content/sources`, `GET/PUT/DELETE .../{name}` | `content:read` / `content:write` (tenant-scoped; global for platform sources) | Content sources |
+| `POST /v1/content/sources/{name}/sync` | `content:sync` | Sync now: `{revision, status (unchanged/applied/rejected/failed), changes[] with diffs, errors}` |
+| `GET .../{name}/snapshots`, `GET .../snapshots/{id}` | `content:read` | History: every applied/rejected snapshot with its changes and diffs |
 | `GET /v1/audit` | `audit:read` (scoped) | Browse the trail, newest first. Filters `tenant`, `actor`, `action` (`policy.*` = prefix), `target`, `outcome`, `from`, `to` (unix seconds); keyset paging with `limit` (max 1000) and `before` = the `next` of the previous page. A tenant-scoped grant sees only its tenants' events |
 | `GET /v1/audit/export` | `audit:export` (scoped) | Same filters, NDJSON oldest first, with `occurred_at_micros`, `prev_hash` and `hash` to recompute the chain offline / feed a SIEM. The export records itself (`audit.export`) |
 | `GET /v1/audit/verify` | `audit:verify` (global) | Recompute the audit hash chain: `{events, first_bad}` |

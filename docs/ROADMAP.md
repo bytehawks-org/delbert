@@ -82,6 +82,7 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Configuration file for the Core (TOML, env override, strict keys, `--check-config`) | complete | 2026-10-23 |
 | Configuration file for the Proxy (clap reads only the environment; needs a shared loader) | to-do | 2026-10-23 |
 | Content sources design: directory or git (local Forgejo component or public remote), diff/version/apply ([CONTENT.md](CONTENT.md)) | complete | 2026-10-23 |
-| Content sources implementation (migrations, directory source, git via the `git` program, sync API, ownership) | to-do | 2026-10-23 |
+| Content sources implementation (directory + https git, sync API, ownership, diffs, poller) | complete | 2026-10-23 |
+| Content sources: SSH remotes / deploy keys with pinned host keys, required signed commits or tags, webhook secret | to-do | 2026-10-23 |
 | Content sources in the web UI (sources, snapshots, diffs, sync now) | to-do | 2026-10-23 |
 | Key rotation beyond agent certificates (which renew with key rotation): policy signing key (trusted-keys overlap), internal CA, NATS issuer key, secrets age key, proxy certificate | to-do | 2026-10-23 |

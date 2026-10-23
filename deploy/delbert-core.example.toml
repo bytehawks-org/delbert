@@ -43,6 +43,11 @@ approval_default = false          # true: new tenants require policy approval
 mfa_required = "admins"           # none | admins | all
 # local_login = "admins"          # with SSO in charge: only break-glass administrators keep a password
 
+[content]
+dir = "/var/lib/delbert-core/content"
+# allow_tenant_git = true         # let tenant admins define git sources
+# poll = false                    # disable background polling
+
 [artifacts]
 store = "local"                   # local | s3
 dir = "/var/lib/delbert-core/artifacts"

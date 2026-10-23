@@ -12,13 +12,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
  && cp target/release/delbert-core target/release/delbert-agent target/release/delbert-sign target/release/delbert-proxy /out/
 
 FROM docker.io/library/debian:13-slim AS core
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+# git: content sources of kind "git" (docs/CONTENT.md). The Core runs it on its own host, never on managed systems.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10001 --no-create-home delbert
 COPY --from=build /out/delbert-core /usr/local/bin/delbert-core
 # Local artifact store (DELBERT_ARTIFACT_STORE=local); mount a volume here, or use s3.
-RUN mkdir -p /var/lib/delbert-core/artifacts && chown -R 10001 /var/lib/delbert-core
-ENV DELBERT_ARTIFACT_DIR=/var/lib/delbert-core/artifacts
+RUN mkdir -p /var/lib/delbert-core/artifacts /var/lib/delbert-core/content && chown -R 10001 /var/lib/delbert-core
+ENV DELBERT_ARTIFACT_DIR=/var/lib/delbert-core/artifacts DELBERT_CONTENT_DIR=/var/lib/delbert-core/content
 VOLUME /var/lib/delbert-core
 USER 10001
 EXPOSE 8080

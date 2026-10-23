@@ -2,6 +2,13 @@
 resolver = "3"
 members = ["crates/delbert-fs", "crates/delbert-policy", "crates/delbert-core", "crates/delbert-agent", "crates/delbert-wire", "crates/delbert-pki", "crates/delbert-natsauth", "crates/delbert-proxy"]
 
+# Integration tests link one binary per file: full debug info made the build cache grow past 30 GB.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [workspace.lints.rust]
 # No unsafe code anywhere; a crate that truly needs an FFI wrapper must opt out explicitly and say why.
 unsafe_code = "forbid"
@@ -38,6 +45,6 @@ tempfile = "3"
 thiserror = "2"
 utoipa = "5"
 utoipa-swagger-ui = { version = "9", features = ["axum", "vendored"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "process"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

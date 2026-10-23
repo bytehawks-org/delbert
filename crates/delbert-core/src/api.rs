@@ -47,8 +47,28 @@ pub struct AppState {
     /// Where artifact content lives (local directory or S3-compatible).
     pub blobs: crate::blobs::Blobs,
     pub auth: AuthConfig,
+    pub content: ContentConfig,
     /// Whether new tenants require policy approval (`DELBERT_APPROVAL_DEFAULT`).
     pub approval_default: bool,
+}
+
+/// Where content sources live and what they may reach.
+#[derive(Clone, Debug)]
+pub struct ContentConfig {
+    /// `directory` sources are names under this directory; git mirrors are kept in `<dir>/.git-mirrors`.
+    pub dir: std::path::PathBuf,
+    /// Tenant administrators may define git sources (the Core then fetches from URLs they choose).
+    pub allow_tenant_git: bool,
+    /// Allow `file://` remotes (tests and air-gapped local repositories).
+    pub allow_file: bool,
+    /// Poll due sources in the background.
+    pub poll: bool,
+}
+
+impl Default for ContentConfig {
+    fn default() -> Self {
+        ContentConfig { dir: std::path::PathBuf::from("./data/content"), allow_tenant_git: false, allow_file: false, poll: false }
+    }
 }
 
 /// Browser-session and login policy (docs/RBAC.md).
@@ -138,6 +158,11 @@ pub fn router(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/auth/logout", post(auth::logout))
+        .route("/v1/content/sources", get(crate::content::list_sources).post(crate::content::create_source))
+        .route("/v1/content/sources/{name}", get(crate::content::get_source).put(crate::content::update_source).delete(crate::content::delete_source))
+        .route("/v1/content/sources/{name}/sync", post(crate::content::sync_now))
+        .route("/v1/content/sources/{name}/snapshots", get(crate::content::list_snapshots))
+        .route("/v1/content/sources/{name}/snapshots/{id}", get(crate::content::get_snapshot))
         .route("/v1/auth/mfa", post(auth::complete_mfa))
         .route("/v1/auth/sso/providers", get(crate::sso::public_providers))
         .route("/v1/auth/sso/exchange", post(crate::sso::exchange))
@@ -446,16 +471,33 @@ pub struct PolicyOut {
     params(("tenant" = String, Path)), responses((status = 201, body = PolicyVersionOut), (status = 404), (status = 422, description = "Invalid policy")))]
 pub async fn create_policy(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>, Json(body): Json<NewPolicy>) -> ApiResult<(StatusCode, Json<PolicyVersionOut>)> {
     let tid = user.tenant(&st.pool, &tenant, "policies:write").await?;
-    let policy = delbert_policy::from_yaml(&body.yaml).map_err(|e| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
+    crate::content::ensure_unowned(&st.pool, tid, "policy", &parse_policy_name(&body.yaml)).await?;
+    Ok((StatusCode::CREATED, Json(store_policy_version(&st, tid, &tenant, &body.yaml, &user.username).await?)))
+}
+
+/// Parse and check a policy for a tenant; returns its name.
+pub(crate) fn validate_policy(yaml: &str, tenant: &str) -> ApiResult<String> {
+    let policy = delbert_policy::from_yaml(yaml).map_err(|e| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
     if policy.metadata.tenant != tenant {
-        return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "metadata.tenant does not match the URL"));
+        return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "metadata.tenant does not match the tenant"));
     }
     check_name(&policy.metadata.name, "policy")?;
     // Fail closed: a conditional policy must not silently apply everywhere.
     if policy.spec.target.when.is_some() {
         return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "target.when is not supported yet"));
     }
-    let name = policy.metadata.name;
+    Ok(policy.metadata.name)
+}
+
+/// The name a policy YAML declares (empty when it does not parse: validation reports that later).
+fn parse_policy_name(yaml: &str) -> String {
+    delbert_policy::from_yaml(yaml).map(|p| p.metadata.name).unwrap_or_default()
+}
+
+/// Validate a policy YAML and store it as a new immutable version (live at once, or a draft when
+/// the tenant requires approval). Shared by the API and content-source sync.
+pub(crate) async fn store_policy_version(st: &AppState, tid: Uuid, tenant: &str, yaml: &str, actor: &str) -> ApiResult<PolicyVersionOut> {
+    let name = validate_policy(yaml, tenant)?;
 
     let mut tx = st.pool.begin().await?;
     let approval_required: bool = sqlx::query_scalar("SELECT approval_required FROM tenants WHERE id = $1").bind(tid).fetch_one(&mut *tx).await?;
@@ -471,20 +513,20 @@ pub async fn create_policy(State(st): State<AppState>, Authn(user): Authn, Path(
     sqlx::query("INSERT INTO policy_versions (policy_id, version, yaml, created_by) VALUES ($1, $2, $3, $4)")
         .bind(pid)
         .bind(version)
-        .bind(&body.yaml)
-        .bind(&user.username)
+        .bind(yaml)
+        .bind(actor)
         .execute(&mut *tx)
         .await?;
     // Without approval the version goes live at once; with it, it is a draft until activated.
     if !approval_required {
-        approval::set_active(&mut tx, pid, version, "activated", &user.username, None).await?;
+        approval::set_active(&mut tx, pid, version, "activated", actor, None).await?;
     }
-    audit::append(&mut tx, &NewEvent { tenant_id: Some(tid), actor: &user.username, action: "policy.create", target: Some(&name), outcome: "ok", details: json!({ "version": version, "live": !approval_required }) }).await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: Some(tid), actor: actor, action: "policy.create", target: Some(&name), outcome: "ok", details: json!({ "version": version, "live": !approval_required }) }).await?;
     tx.commit().await?;
     if !approval_required {
-        notify_tenant(&st, &tenant, tid).await;
+        notify_tenant(st, tenant, tid).await;
     }
-    Ok((StatusCode::CREATED, Json(PolicyVersionOut { name, version, live: !approval_required })))
+    Ok(PolicyVersionOut { name, version, live: !approval_required })
 }
 
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/policies", tag = "policies", security(("bearer" = [])),
@@ -520,6 +562,7 @@ pub async fn get_policy(State(st): State<AppState>, Authn(user): Authn, Path((te
     params(("tenant" = String, Path), ("name" = String, Path)), responses((status = 204), (status = 404)))]
 pub async fn delete_policy(State(st): State<AppState>, Authn(user): Authn, Path((tenant, name)): Path<(String, String)>) -> ApiResult<StatusCode> {
     let tid = user.tenant(&st.pool, &tenant, "policies:write").await?;
+    crate::content::ensure_unowned(&st.pool, tid, "policy", &name).await?;
     let mut tx = st.pool.begin().await?;
     let n = sqlx::query("UPDATE policies SET active = false WHERE tenant_id = $1 AND name = $2 AND active").bind(tid).bind(&name).execute(&mut *tx).await?.rows_affected();
     if n == 0 {

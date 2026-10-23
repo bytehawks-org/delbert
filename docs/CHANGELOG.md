@@ -8,6 +8,10 @@
 ### Authentication hardening
 - Migration `0013`. Cookie sessions with CSRF (double-submit token stored hashed), idle timeout, listable/revocable sessions; TOTP MFA with sealed secret, replay protection and recovery codes, optional or mandatory (`DELBERT_MFA_REQUIRED`); login throttling per (user, address), address and user; admin reset of MFA/sessions. Tests in `tests/auth.rs`. See [API.md](API.md).
 
+### Content sources
+- Migration `0016`; `content.rs`: directory and git sources (platform- or tenant-owned), whole-snapshot validation, diffs, apply through the normal paths, ownership (409 in the API), prune, history, background poller. Policy/artifact writes were factored into `store_policy_version` / `store_artifact`. Tests in `tests/content.rs`, and against Forgejo 11 with a private repo + token. The container image now carries `git`.
+- Build cache: `[profile.dev] debug = "line-tables-only"` (the cargo volume had grown to 36 GB; now ~2 GB).
+
 ### Single sign-on (OIDC)
 - Migration `0015`; providers, group mappings, authorization code + PKCE through `openidconnect` 4 (rustls, no OpenSSL), one-time code exchange, no account takeover by name, `DELBERT_LOCAL_LOGIN=admins` for break-glass. Tested with a mock provider (`tests/sso.rs`: PKCE, nonce, replay, mapping, local-name clash) and end to end against Keycloak 26.4 in Podman.
 
