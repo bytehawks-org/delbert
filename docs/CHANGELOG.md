@@ -5,6 +5,9 @@
 ### Roadmap cleanup
 - `ROADMAP.md` checked against the code: rows that were done but still marked to-do (policy signing, signing-key distribution and rotation, cookie sessions/MFA/throttling, OIDC SSO, CA rotation, secrets-key rotation, proxy renewal, S3 artifact store, per-agent secret encryption) are now complete or split into done and remaining parts; duplicates removed. Newly recorded gaps: the CA is not behind a trait yet (rcgen only), tenant DELETE and general list pagination are missing.
 
+### Frontend M3, third slice: tenant access and approval
+- `web/`: the tenant page gained an **Access and approval** card: the four-eyes approval switch (`tenants:settings`) and the tenant's role assignments (assign, edit, remove; only roles that are not global-only are offered; the Core still limits a delegated administrator to what they hold). The pass-through gained `PUT .../settings` and `PUT .../assignments/{user}`. Playwright: 16 scenarios in total pass.
+
 ### Frontend M3, second slice: profile
 - `web/`: **Profile** (`/profile`, linked from the signed-in name): TOTP set-up (secret and `otpauth://` URI shown, confirmation with a code, recovery codes shown once) and disabling (password plus code); the user's sessions with revocation of the others; API tokens (name, scope global or one tenant, lifetime, permissions limited to what the user holds in that scope, token shown once, revoke). No QR code is rendered: it would add a dependency, and the secret can be typed into any authenticator. The pass-through gained `/v1/me/mfa/*`, `/v1/me/tokens` and `/v1/me/sessions`. Playwright: `e2e/profile.spec.ts` (TOTP helper shared in `e2e/totp.ts`); 15 scenarios in total pass.
 

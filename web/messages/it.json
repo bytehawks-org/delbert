@@ -316,5 +316,19 @@
     "lastUsed": "Ultimo uso",
     "noTokens": "Nessun token.",
     "global": "globale"
+  },
+  "access": {
+    "title": "Accessi e approvazione",
+    "username": "Nome utente",
+    "roles": "Ruoli",
+    "none": "Nessuna assegnazione di ruolo in questo tenant.",
+    "edit": "Modifica",
+    "remove": "Rimuovi",
+    "confirmRemove": "Rimuovere tutti i ruoli di {name} in questo tenant?",
+    "add": "Assegna ruoli a un utente",
+    "save": "Salva",
+    "cancel": "Annulla",
+    "approval": "Approvazione a quattro occhi",
+    "approvalHelp": "le nuove versioni delle policy richiedono che una seconda persona le approvi prima di andare in produzione"
   }
 }

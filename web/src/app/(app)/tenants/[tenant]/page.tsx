@@ -4,6 +4,7 @@ import { getTranslations } from "next-intl/server";
 import { ArtifactUpload } from "@/components/artifact-upload";
 import { EnrollmentKeys } from "@/components/enrollment-keys";
 import { SecretsPanel } from "@/components/secrets-panel";
+import { TenantAccess } from "@/components/tenant-access";
 import { AgentsTable } from "@/components/agents-table";
 import { Badge, Card, Cell, Notice, PageHeader, Row, Table } from "@/components/ui";
 import { core } from "@/lib/core";
@@ -21,16 +22,21 @@ export default async function Tenant({ params }: Props) {
   const tenant = decodeURIComponent((await params).tenant);
   const { me, token } = await requireMe();
   const t = await getTranslations("tenants");
+  const tAccess = await getTranslations("access");
   const api = core(token);
   const p = { params: { path: { tenant } } };
-  const [agents, policies, artifacts, secrets, keys] = await Promise.all([
+  const [agents, policies, artifacts, secrets, keys, assignments, settings, roles] = await Promise.all([
     api.GET("/v1/tenants/{tenant}/agents", p),
     api.GET("/v1/tenants/{tenant}/policies", p),
     api.GET("/v1/tenants/{tenant}/artifacts", p),
     api.GET("/v1/tenants/{tenant}/secrets", p),
     api.GET("/v1/tenants/{tenant}/enrollment-keys", p),
+    api.GET("/v1/tenants/{tenant}/assignments", p),
+    api.GET("/v1/tenants/{tenant}/settings", p),
+    api.GET("/v1/roles"),
   ]);
   const [a, pol, art, sec, ek] = [unwrap(agents), unwrap(policies), unwrap(artifacts), unwrap(secrets), unwrap(keys)];
+  const [asg, cfg, rl] = [unwrap(assignments), unwrap(settings), unwrap(roles)];
   const now = Math.floor(Date.now() / 1000);
   const denied = <Notice>{t("denied")}</Notice>;
 
@@ -69,6 +75,18 @@ export default async function Tenant({ params }: Props) {
           denied
         )}
       </Card>
+      {asg && (
+        <Card id="access" title={tAccess("title")}>
+          <TenantAccess
+            tenant={tenant}
+            assignments={asg}
+            roles={(rl ?? []).filter((r) => r.scope !== "global").map((r) => r.name)}
+            approvalRequired={cfg ? cfg.approval_required : null}
+            canAssign={can(me, "roles:assign", tenant)}
+            canSettings={can(me, "tenants:settings", tenant)}
+          />
+        </Card>
+      )}
       <div className="grid gap-6 md:grid-cols-2">
         <Card id="artifacts" title={t("artifacts")}>
           {art ? (

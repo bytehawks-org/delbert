@@ -316,5 +316,19 @@
     "lastUsed": "Last used",
     "noTokens": "No tokens.",
     "global": "global"
+  },
+  "access": {
+    "title": "Access and approval",
+    "username": "Username",
+    "roles": "Roles",
+    "none": "No role assignments in this tenant.",
+    "edit": "Edit",
+    "remove": "Remove",
+    "confirmRemove": "Remove all roles of {name} in this tenant?",
+    "add": "Assign roles to a user",
+    "save": "Save",
+    "cancel": "Cancel",
+    "approval": "Four-eyes approval",
+    "approvalHelp": "new policy versions need a second person to approve them before they go live"
   }
 }

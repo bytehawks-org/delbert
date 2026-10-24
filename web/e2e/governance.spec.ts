@@ -89,3 +89,32 @@ test("a tenant-scoped user does not get the Users and Roles sections", async ({ 
   await page.goto("/users");
   await expect(page.getByText("Your role does not cover user management.")).toBeVisible();
 });
+
+test("tenant access: roles are assigned and removed on the tenant page, and approval is switched on", async ({ page }) => {
+  const id = Date.now();
+  const tenant = `t${id}`;
+  const user = `member-${id}`;
+  const admin = (await api("/v1/auth/login", "POST", ADMIN)).json.token as string;
+  await api("/v1/tenants", "POST", { name: tenant }, admin);
+  await api("/v1/users", "POST", { username: user, password: PASSWORD, assignments: [] }, admin);
+
+  await signIn(page, ADMIN.username, ADMIN.password);
+  await page.goto(`/tenants/${tenant}`);
+  const access = page.getByRole("region", { name: "Access and approval" });
+
+  await access.getByRole("button", { name: "Assign roles to a user" }).click();
+  await access.getByLabel("Username").fill(user);
+  await access.getByLabel("operator", { exact: true }).check();
+  await access.getByRole("button", { name: "Save" }).click();
+  const row = access.getByRole("row", { name: new RegExp(user) });
+  await expect(row).toContainText("operator");
+  // Only tenant-assignable roles are offered.
+  await expect(access.getByLabel("platform-admin")).toHaveCount(0);
+
+  await access.getByLabel("Four-eyes approval").check();
+  await expect.poll(async () => (await api(`/v1/tenants/${tenant}/settings`, "GET", undefined, admin)).json.approval_required).toBe(true);
+
+  page.once("dialog", (d) => d.accept());
+  await row.getByRole("button", { name: "Remove" }).click();
+  await expect(access.getByRole("row", { name: new RegExp(user) })).toHaveCount(0);
+});
