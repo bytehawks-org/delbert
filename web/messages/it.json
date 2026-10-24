@@ -15,7 +15,8 @@
     "proxies": "Proxy",
     "audit": "Audit",
     "users": "Utenti",
-    "roles": "Ruoli"
+    "roles": "Ruoli",
+    "sso": "Single sign-on"
   },
   "header": {
     "signedInAs": "Accesso come {name}",
@@ -330,5 +331,41 @@
     "cancel": "Annulla",
     "approval": "Approvazione a quattro occhi",
     "approvalHelp": "le nuove versioni delle policy richiedono che una seconda persona le approvi prima di andare in produzione"
+  },
+  "sso": {
+    "title": "Single sign-on",
+    "subtitle": "Provider OpenID Connect e come i loro gruppi si associano ai ruoli. Il login locale resta disponibile secondo la configurazione del Core.",
+    "denied": "Il tuo ruolo non copre le impostazioni di single sign-on.",
+    "none": "Nessun provider.",
+    "name": "Provider",
+    "issuer": "URL issuer",
+    "state": "Stato",
+    "enabled": "attivo",
+    "disabled": "disattivato",
+    "mappings": "Associazioni dei gruppi",
+    "mappingsHelp": "Un utente riceve il ruolo di ogni gruppo a cui appartiene, nel tenant indicato (o globalmente). I ruoli di questa origine vengono sostituiti a ogni accesso; le assegnazioni manuali non vengono toccate.",
+    "redirectUri": "Redirect URI da registrare",
+    "edit": "Modifica",
+    "test": "Verifica",
+    "delete": "Elimina",
+    "confirmDelete": "Digita il nome del provider \"{name}\" per eliminarlo.",
+    "add": "Aggiungi provider",
+    "editing": "Modifica di {name}",
+    "slug": "Nome (slug URL)",
+    "displayName": "Nome visualizzato",
+    "clientId": "Client ID",
+    "clientSecret": "Client secret (solo scrittura)",
+    "secretKept": "invariato",
+    "groupsClaim": "Claim dei gruppi",
+    "scopes": "Scope (separati da spazio, deve includere openid)",
+    "requireMapping": "Rifiuta l'accesso se nessun gruppo corrisponde a un ruolo",
+    "group": "Gruppo",
+    "role": "Ruolo",
+    "scope": "Ambito",
+    "global": "globale",
+    "addMapping": "Aggiungi associazione",
+    "removeMapping": "Rimuovi",
+    "save": "Salva provider",
+    "cancel": "Annulla"
   }
 }

@@ -5,6 +5,9 @@
 ### Roadmap cleanup
 - `ROADMAP.md` checked against the code: rows that were done but still marked to-do (policy signing, signing-key distribution and rotation, cookie sessions/MFA/throttling, OIDC SSO, CA rotation, secrets-key rotation, proxy renewal, S3 artifact store, per-agent secret encryption) are now complete or split into done and remaining parts; duplicates removed. Newly recorded gaps: the CA is not behind a trait yet (rcgen only), tenant DELETE and general list pagination are missing.
 
+### Frontend M3, fourth slice: single sign-on providers
+- `web/`: **Single sign-on** (`/sso`, menu entry for `sso:read`): OIDC providers with issuer, client id, write-only client secret (kept when the field is left empty on edit, never rendered back), scopes, groups claim, "refuse sign-in without a mapped role", enabled flag, and the group to (role, tenant or global) mapping editor; the redirect URI to register is shown; a **Test** button runs the Core's discovery check; delete by typing the name. The pass-through gained the provider calls. Playwright: 17 scenarios in total pass (the issuer in the test is unreachable on purpose: the test button reports a failure instead of breaking the page).
+
 ### Frontend M3, third slice: tenant access and approval
 - `web/`: the tenant page gained an **Access and approval** card: the four-eyes approval switch (`tenants:settings`) and the tenant's role assignments (assign, edit, remove; only roles that are not global-only are offered; the Core still limits a delegated administrator to what they hold). The pass-through gained `PUT .../settings` and `PUT .../assignments/{user}`. Playwright: 16 scenarios in total pass.
 

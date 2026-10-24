@@ -15,7 +15,8 @@
     "proxies": "Proxies",
     "audit": "Audit",
     "users": "Users",
-    "roles": "Roles"
+    "roles": "Roles",
+    "sso": "Single sign-on"
   },
   "header": {
     "signedInAs": "Signed in as {name}",
@@ -330,5 +331,41 @@
     "cancel": "Cancel",
     "approval": "Four-eyes approval",
     "approvalHelp": "new policy versions need a second person to approve them before they go live"
+  },
+  "sso": {
+    "title": "Single sign-on",
+    "subtitle": "OpenID Connect providers and how their groups map to roles. Local sign-in stays available according to the Core configuration.",
+    "denied": "Your role does not cover single sign-on settings.",
+    "none": "No providers.",
+    "name": "Provider",
+    "issuer": "Issuer URL",
+    "state": "State",
+    "enabled": "enabled",
+    "disabled": "disabled",
+    "mappings": "Group mappings",
+    "mappingsHelp": "A user gets the role of every group they belong to, in the tenant given (or globally). Roles from this source are replaced at each sign-in; manual assignments are not touched.",
+    "redirectUri": "Redirect URI to register",
+    "edit": "Edit",
+    "test": "Test",
+    "delete": "Delete",
+    "confirmDelete": "Type the provider name \"{name}\" to delete it.",
+    "add": "Add provider",
+    "editing": "Editing {name}",
+    "slug": "Name (URL slug)",
+    "displayName": "Display name",
+    "clientId": "Client ID",
+    "clientSecret": "Client secret (write-only)",
+    "secretKept": "unchanged",
+    "groupsClaim": "Groups claim",
+    "scopes": "Scopes (space separated, must include openid)",
+    "requireMapping": "Refuse sign-in when no group maps to a role",
+    "group": "Group",
+    "role": "Role",
+    "scope": "Scope",
+    "global": "global",
+    "addMapping": "Add mapping",
+    "removeMapping": "Remove",
+    "save": "Save provider",
+    "cancel": "Cancel"
   }
 }

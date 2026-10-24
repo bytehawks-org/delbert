@@ -96,4 +96,5 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Frontend M3, slice 1: users, roles and the permission matrix (`GET /v1/permissions`) | complete | 2026-10-24 |
 | Frontend M3, slice 2: profile (TOTP set-up, sessions, API tokens) | complete | 2026-10-24 |
 | Frontend M3, slice 3: tenant approval switch and per-tenant role assignments | complete | 2026-10-24 |
-| Frontend M3, remaining: SSO providers, content sources screens | to-do | 2026-10-24 |
+| Frontend M3, slice 4: SSO providers (list, create/edit with group mappings, test, delete) | complete | 2026-10-24 |
+| Frontend M3, remaining: content sources screens (sources, snapshots, diffs, sync now) | to-do | 2026-10-24 |

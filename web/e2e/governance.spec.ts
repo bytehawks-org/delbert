@@ -118,3 +118,50 @@ test("tenant access: roles are assigned and removed on the tenant page, and appr
   await row.getByRole("button", { name: "Remove" }).click();
   await expect(access.getByRole("row", { name: new RegExp(user) })).toHaveCount(0);
 });
+
+test("an administrator adds an OIDC provider with a group mapping; the secret is never shown back; it can be removed", async ({ page }) => {
+  const id = Date.now();
+  const tenant = `o${id}`;
+  const slug = `idp-${id}`;
+  const admin = (await api("/v1/auth/login", "POST", ADMIN)).json.token as string;
+  await api("/v1/tenants", "POST", { name: tenant }, admin);
+
+  await signIn(page, ADMIN.username, ADMIN.password);
+  await page.getByRole("link", { name: "Single sign-on" }).click();
+  await page.getByRole("button", { name: "Add provider" }).click();
+  const form = page.getByRole("region", { name: "Add provider" });
+  await form.getByLabel("Name (URL slug)").fill(slug);
+  await form.getByLabel("Display name").fill("Test IdP");
+  await form.getByLabel("Issuer URL").fill("https://idp.example.com/realms/main");
+  await form.getByLabel("Client ID").fill("delbert");
+  await form.getByLabel(/Client secret/).fill("s3cret-value");
+  await form.getByRole("button", { name: "Add mapping" }).click();
+  await form.getByLabel("Group", { exact: true }).fill("ops");
+  await form.getByLabel("Role", { exact: true }).selectOption("operator");
+  await form.getByLabel("Scope", { exact: true }).selectOption(tenant);
+  await form.getByRole("button", { name: "Save provider" }).click();
+
+  const row = page.getByRole("row", { name: new RegExp(slug) });
+  await expect(row).toContainText("Test IdP");
+  await expect(row).toContainText("/v1/auth/sso/");
+  await expect(page.locator("body")).not.toContainText("s3cret-value");
+  const stored = (await api(`/v1/sso/providers/${slug}`, "GET", undefined, admin)).json;
+  expect(stored.has_client_secret).toBe(true);
+  expect(stored.mappings).toEqual([{ group: "ops", role: "operator", tenant }]);
+
+  // The issuer is unreachable from the stack: the test reports it instead of failing.
+  await row.getByRole("button", { name: "Test" }).click();
+  await expect(row.getByRole("status")).toContainText("✗");
+
+  // Editing without a new secret keeps the stored one.
+  await row.getByRole("button", { name: "Edit" }).click();
+  const edit = page.getByRole("region", { name: new RegExp(`Editing ${slug}`) });
+  await edit.getByLabel("Display name").fill("Renamed IdP");
+  await edit.getByRole("button", { name: "Save provider" }).click();
+  await expect(page.getByRole("row", { name: new RegExp(slug) })).toContainText("Renamed IdP");
+  expect((await api(`/v1/sso/providers/${slug}`, "GET", undefined, admin)).json.has_client_secret).toBe(true);
+
+  page.once("dialog", (d) => d.accept(slug));
+  await page.getByRole("row", { name: new RegExp(slug) }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("row", { name: new RegExp(slug) })).toHaveCount(0);
+});
