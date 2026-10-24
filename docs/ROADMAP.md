@@ -94,4 +94,5 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Quadlet units for single-host Podman; HA of NATS and the Core | to-do | 2026-10-23 |
 | Rotation: proxy renewal verified in a live branch scenario; automatic reload (no restart) of the proxy and its site NATS; CA rotation reaching proxies without waiting for their renewal | to-do | 2026-10-23 |
 | Frontend M3, slice 1: users, roles and the permission matrix (`GET /v1/permissions`) | complete | 2026-10-24 |
-| Frontend M3, remaining: tenant settings (approval) and per-tenant assignments, profile (MFA, sessions, API tokens), SSO providers, content sources | to-do | 2026-10-24 |
+| Frontend M3, slice 2: profile (TOTP set-up, sessions, API tokens) | complete | 2026-10-24 |
+| Frontend M3, remaining: tenant settings (approval) and per-tenant assignments, SSO providers, content sources screens | to-do | 2026-10-24 |

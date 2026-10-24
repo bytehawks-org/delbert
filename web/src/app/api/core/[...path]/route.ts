@@ -16,6 +16,7 @@ const ALLOWED: Record<string, RegExp[]> = {
     new RegExp(`^${T}/policies/${SEG}/versions/\\d+/(submit|approve|reject|activate|rollback)$`),
     new RegExp(`^${T}/enrollment-keys$`),
     new RegExp(`^/v1/(users|roles)$`),
+    new RegExp(`^/v1/me/(mfa/(enroll|confirm|disable)|tokens)$`),
   ],
   PUT: [new RegExp(`^${T}/secrets/${SEG}$`), new RegExp(`^${T}/artifacts/${SEG}$`), new RegExp(`^/v1/(users|roles)/${SEG}$`)],
   DELETE: [
@@ -23,6 +24,7 @@ const ALLOWED: Record<string, RegExp[]> = {
     new RegExp(`^${T}/secrets/${SEG}$`),
     new RegExp(`^/v1/(users|roles)/${SEG}$`),
     new RegExp(`^/v1/users/${SEG}/(mfa|sessions)$`),
+    new RegExp(`^/v1/me/(tokens|sessions)/${SEG}$`),
   ],
 };
 

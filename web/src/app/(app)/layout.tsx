@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { MainNav } from "@/components/nav";
@@ -22,9 +23,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="flex flex-wrap items-center gap-4">
             <LocaleSwitcher />
             <ThemeToggle />
-            <span className="text-sm text-muted" data-testid="signed-in-as">
-              {t("header.signedInAs", { name: me.username })}
-            </span>
+            <Link href="/profile" className="text-sm text-muted hover:text-fg">
+              <span data-testid="signed-in-as">{t("header.signedInAs", { name: me.username })}</span>
+            </Link>
             <form method="post" action="/api/auth/logout">
               <button type="submit" className="rounded-md border border-border px-3 py-1.5 text-sm">
                 {t("header.logout")}
