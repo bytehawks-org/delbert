@@ -205,6 +205,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/me", get(auth::me))
         .route("/v1/users", get(auth::list_users).post(auth::create_user))
         .route("/v1/users/{username}", put(auth::update_user).delete(auth::delete_user))
+        .route("/v1/permissions", get(auth::list_permissions))
         .route("/v1/roles", get(auth::list_roles).post(auth::create_role))
         .route("/v1/roles/{name}", put(auth::update_role).delete(auth::delete_role))
         .route("/v1/tenants/{tenant}/assignments", get(auth::list_tenant_assignments))

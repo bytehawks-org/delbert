@@ -13,7 +13,9 @@
     "tenants": "Tenant",
     "agents": "Agent",
     "proxies": "Proxy",
-    "audit": "Audit"
+    "audit": "Audit",
+    "users": "Utenti",
+    "roles": "Ruoli"
   },
   "header": {
     "signedInAs": "Accesso come {name}",
@@ -223,5 +225,61 @@
     "nameOptional": "Nome (predefinito: nome del file)",
     "upload": "Carica",
     "uploading": "Caricamento…"
+  },
+  "users": {
+    "title": "Utenti",
+    "subtitle": "Account locali e single sign-on, e i ruoli che detengono per tenant.",
+    "denied": "Il tuo ruolo non copre la gestione utenti.",
+    "none": "Nessun utente.",
+    "username": "Nome utente",
+    "password": "Password (almeno 12 caratteri)",
+    "role": "Ruolo",
+    "noRole": "Ancora nessun ruolo",
+    "scope": "Ambito",
+    "global": "globale",
+    "create": "Crea utente",
+    "state": "Stato",
+    "active": "attivo",
+    "inactive": "disattivato",
+    "assignments": "Assegnazioni",
+    "editAssignments": "Modifica ruoli",
+    "addAssignment": "Aggiungi",
+    "removeAssignment": "Rimuovi {what}",
+    "saveAssignments": "Salva ruoli",
+    "cancel": "Annulla",
+    "activate": "Attiva",
+    "deactivate": "Disattiva",
+    "setPassword": "Imposta password",
+    "newPassword": "Nuova password (almeno 12 caratteri)",
+    "resetMfa": "Reimposta MFA",
+    "revokeSessions": "Disconnetti ovunque",
+    "delete": "Elimina",
+    "confirmDelete": "Digita il nome utente \"{name}\" per eliminarlo."
+  },
+  "roles": {
+    "title": "Ruoli",
+    "subtitle": "I ruoli predefiniti sono fissi; quelli personalizzati si compongono dalla matrice dei permessi.",
+    "denied": "Il tuo ruolo non copre la gestione dei ruoli.",
+    "none": "Nessun ruolo.",
+    "name": "Nome",
+    "scope": "Ambito",
+    "permissions": "Permessi",
+    "builtin": "predefinito",
+    "edit": "Modifica",
+    "delete": "Elimina",
+    "confirmDelete": "Digita il nome del ruolo \"{name}\" per eliminarlo.",
+    "newRole": "Nuovo ruolo personalizzato",
+    "editing": "Modifica di {name}",
+    "matrix": "Matrice dei permessi",
+    "matrixHelp": "Seleziona le azioni concesse dal ruolo; \"tutte\" concede ogni azione della risorsa, comprese quelle future. I ruoli di tenant non possono contenere permessi a livello di piattaforma.",
+    "resource": "Risorsa",
+    "all": "tutte",
+    "save": "Salva ruolo",
+    "cancel": "Annulla",
+    "scopes": {
+      "tenant": "tenant",
+      "global": "globale",
+      "any": "qualsiasi"
+    }
   }
 }

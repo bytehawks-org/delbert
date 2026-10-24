@@ -806,12 +806,31 @@ fn check_permissions(permissions: &[String]) -> ApiResult<()> {
     }
 }
 
-#[utoipa::path(get, path = "/v1/roles", tag = "roles", security(("bearer" = [])), responses((status = 200, body = Vec<RoleOut>)))]
-pub async fn list_roles(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<Vec<RoleOut>>> {
-    // Delegated administrators need the list to pick roles for their tenant.
+/// Delegated administrators need the role and permission lists to pick roles for their tenant.
+fn require_role_catalog(user: &CurrentUser) -> ApiResult<()> {
     if !user.can("roles:read", None) && !user.scoped.values().any(|set| grants(set, "roles:assign")) {
         return Err(forbidden("roles:read"));
     }
+    Ok(())
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PermissionOut {
+    /// `resource:action`.
+    pub permission: String,
+    /// Only a global assignment can grant it.
+    pub global_only: bool,
+}
+
+#[utoipa::path(get, path = "/v1/permissions", tag = "roles", security(("bearer" = [])), responses((status = 200, body = Vec<PermissionOut>)))]
+pub async fn list_permissions(Authn(user): Authn) -> ApiResult<Json<Vec<PermissionOut>>> {
+    require_role_catalog(&user)?;
+    Ok(Json(PERMISSIONS.iter().map(|p| PermissionOut { permission: (*p).into(), global_only: GLOBAL_ONLY.contains(p) }).collect()))
+}
+
+#[utoipa::path(get, path = "/v1/roles", tag = "roles", security(("bearer" = [])), responses((status = 200, body = Vec<RoleOut>)))]
+pub async fn list_roles(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<Vec<RoleOut>>> {
+    require_role_catalog(&user)?;
     let rows: Vec<(String, Vec<String>, bool, String)> = sqlx::query_as("SELECT name, permissions, builtin, scope FROM roles ORDER BY name").fetch_all(&st.pool).await?;
     Ok(Json(rows.into_iter().map(|(name, permissions, builtin, scope)| RoleOut { name, permissions, builtin, scope }).collect()))
 }

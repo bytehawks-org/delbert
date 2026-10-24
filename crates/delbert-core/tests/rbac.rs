@@ -52,6 +52,14 @@ async fn roles_are_scoped_to_tenants(pool: PgPool) {
     assert_eq!(me["tenants"]["acme"].as_array().unwrap().contains(&json!("agents:write")), true);
     assert_eq!(me["permissions"], json!([]));
 
+    // The permission catalog follows the role list's gate and marks the global-only ones.
+    assert_eq!(status(&olivia, "GET", "/v1/permissions", None).await, FORBIDDEN);
+    let (code, catalog) = admin.call("GET", "/v1/permissions", None).await;
+    assert_eq!(code, OK);
+    let entry = |p: &str| catalog.as_array().unwrap().iter().find(|e| e["permission"] == p).unwrap().clone();
+    assert_eq!(entry("users:write")["global_only"], json!(true));
+    assert_eq!(entry("agents:write")["global_only"], json!(false));
+
     // A global viewer reads every tenant and writes nothing.
     assert_eq!(status(&vera, "GET", "/v1/tenants/beta/agents", None).await, OK);
     assert_eq!(status(&vera, "GET", "/v1/proxies", None).await, OK);

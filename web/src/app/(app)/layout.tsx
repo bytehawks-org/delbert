@@ -3,6 +3,7 @@ import { LocaleSwitcher } from "@/components/locale-switcher";
 import { MainNav } from "@/components/nav";
 import { ThemeToggle } from "@/components/theme";
 import { requireMe } from "@/lib/me";
+import { canGlobal } from "@/lib/perm";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { me } = await requireMe();
@@ -16,7 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-6">
             <span className="text-lg font-semibold tracking-tight">{t("app.name")}</span>
-            <MainNav />
+            <MainNav granted={[canGlobal(me, "users:read") && "users", canGlobal(me, "roles:read") && "roles"].filter((x): x is string => !!x)} />
           </div>
           <div className="flex flex-wrap items-center gap-4">
             <LocaleSwitcher />

@@ -1,5 +1,17 @@
 # Delbert - Changelog
 
+## 2026-10-24
+
+### Roadmap cleanup
+- `ROADMAP.md` checked against the code: rows that were done but still marked to-do (policy signing, signing-key distribution and rotation, cookie sessions/MFA/throttling, OIDC SSO, CA rotation, secrets-key rotation, proxy renewal, S3 artifact store, per-agent secret encryption) are now complete or split into done and remaining parts; duplicates removed. Newly recorded gaps: the CA is not behind a trait yet (rcgen only), tenant DELETE and general list pagination are missing.
+
+### Frontend M3, first slice: users and roles
+- Core: `GET /v1/permissions` lists every permission and whether it is global-only (same gate as the role list); the UI builds the permission matrix from it instead of hard-coding it. `web/openapi.json` and the generated client regenerated.
+- `web/`: **Users** (`/users`: create with an optional first assignment, edit role assignments per tenant or global, activate/deactivate, set password, reset MFA, revoke sessions, delete by typing the name) and **Roles** (`/roles`: built-in roles read-only; custom roles edited in a resource-by-action matrix with a per-resource "all" (`resource:*`); global-only permissions are disabled for tenant-scoped roles). The menu entries appear only for users holding `users:read` / `roles:read` globally; the Core enforces everything regardless. The allow-listed pass-through gained the user and role calls. Playwright: `e2e/governance.spec.ts` (13 scenarios in total pass against the live stack; the pass-through test now uses `/v1/proxies` as its example of a refused call).
+
+### CI
+- `.github/workflows/ci.yml`: jobs run in Alpine containers (`rust:1.99-alpine`, `node:22-alpine`, `postgres:17-alpine`; the hosted runner itself stays Ubuntu). The whole workspace test suite and the web build were verified on Alpine/musl locally. Rust job (PostgreSQL 17 service, `nats-server` from Alpine with JetStream, `cargo clippy --workspace --all-targets`, `cargo test --workspace`), web job (`npm ci`, typecheck, production build), image job (Containerfile targets `core`, `agent`, `proxy`, `tools`, `web`; build only, no push). Clippy warnings are reported but not fatal (about 50 existing, none of them errors); `cargo fmt --check` is not enforced because the tree was never formatted with rustfmt (a mass reformat is a separate decision). Not run on GitHub yet.
+
 ## 2026-10-23
 
 ### Design

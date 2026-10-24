@@ -15,9 +15,15 @@ const ALLOWED: Record<string, RegExp[]> = {
     new RegExp(`^${T}/policies(/validate)?$`),
     new RegExp(`^${T}/policies/${SEG}/versions/\\d+/(submit|approve|reject|activate|rollback)$`),
     new RegExp(`^${T}/enrollment-keys$`),
+    new RegExp(`^/v1/(users|roles)$`),
   ],
-  PUT: [new RegExp(`^${T}/secrets/${SEG}$`), new RegExp(`^${T}/artifacts/${SEG}$`)],
-  DELETE: [new RegExp(`^${T}/enrollment-keys/${SEG}$`), new RegExp(`^${T}/secrets/${SEG}$`)],
+  PUT: [new RegExp(`^${T}/secrets/${SEG}$`), new RegExp(`^${T}/artifacts/${SEG}$`), new RegExp(`^/v1/(users|roles)/${SEG}$`)],
+  DELETE: [
+    new RegExp(`^${T}/enrollment-keys/${SEG}$`),
+    new RegExp(`^${T}/secrets/${SEG}$`),
+    new RegExp(`^/v1/(users|roles)/${SEG}$`),
+    new RegExp(`^/v1/users/${SEG}/(mfa|sessions)$`),
+  ],
 };
 
 async function forward(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {

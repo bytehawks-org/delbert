@@ -116,7 +116,7 @@ test("the pass-through to the Core only allows what the UI needs", async ({ page
   await signIn(page, ADMIN.username, ADMIN.password);
   const origin = new URL(page.url()).origin;
   const post = (path: string, from: string) => page.request.post(path, { headers: { origin: from, "content-type": "application/json" }, data: "{}" });
-  expect((await post("/api/core/v1/users", origin)).status()).toBe(404);
+  expect((await post("/api/core/v1/proxies", origin)).status()).toBe(404);
   expect((await post("/api/core/v1/tenants", origin)).status()).toBe(404);
   expect((await post("/api/core/v1/tenants/x/enrollment-keys", "https://evil.example.com")).status()).toBe(403);
 });

@@ -423,6 +423,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_permissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/pki/ca": {
         parameters: {
             query?: never;
@@ -1397,6 +1413,12 @@ export interface components {
             assignments?: components["schemas"]["Assignment"][];
             password: string;
             username: string;
+        };
+        PermissionOut: {
+            /** @description Only a global assignment can grant it. */
+            global_only: boolean;
+            /** @description `resource:action`. */
+            permission: string;
         };
         PolicyCheck: {
             /** @description A save creates a draft that needs approval (otherwise it goes live at once). */
@@ -2627,6 +2649,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_permissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionOut"][];
+                };
             };
         };
     };

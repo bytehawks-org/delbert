@@ -1182,6 +1182,34 @@
         ]
       }
     },
+    "/v1/permissions": {
+      "get": {
+        "tags": [
+          "roles"
+        ],
+        "operationId": "list_permissions",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PermissionOut"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/pki/ca": {
       "get": {
         "tags": [
@@ -4540,6 +4568,23 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "PermissionOut": {
+        "type": "object",
+        "required": [
+          "permission",
+          "global_only"
+        ],
+        "properties": {
+          "global_only": {
+            "type": "boolean",
+            "description": "Only a global assignment can grant it."
+          },
+          "permission": {
+            "type": "string",
+            "description": "`resource:action`."
           }
         }
       },

@@ -13,7 +13,9 @@
     "tenants": "Tenants",
     "agents": "Agents",
     "proxies": "Proxies",
-    "audit": "Audit"
+    "audit": "Audit",
+    "users": "Users",
+    "roles": "Roles"
   },
   "header": {
     "signedInAs": "Signed in as {name}",
@@ -223,5 +225,61 @@
     "nameOptional": "Name (default: file name)",
     "upload": "Upload",
     "uploading": "Uploading…"
+  },
+  "users": {
+    "title": "Users",
+    "subtitle": "Local and single sign-on accounts, and the roles they hold per tenant.",
+    "denied": "Your role does not cover user management.",
+    "none": "No users.",
+    "username": "Username",
+    "password": "Password (12+ characters)",
+    "role": "Role",
+    "noRole": "No role yet",
+    "scope": "Scope",
+    "global": "global",
+    "create": "Create user",
+    "state": "State",
+    "active": "active",
+    "inactive": "inactive",
+    "assignments": "Assignments",
+    "editAssignments": "Edit roles",
+    "addAssignment": "Add",
+    "removeAssignment": "Remove {what}",
+    "saveAssignments": "Save roles",
+    "cancel": "Cancel",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "setPassword": "Set password",
+    "newPassword": "New password (12+ characters)",
+    "resetMfa": "Reset MFA",
+    "revokeSessions": "Sign out everywhere",
+    "delete": "Delete",
+    "confirmDelete": "Type the user name \"{name}\" to delete it."
+  },
+  "roles": {
+    "title": "Roles",
+    "subtitle": "Built-in roles are fixed; custom roles are composed from the permission matrix.",
+    "denied": "Your role does not cover role management.",
+    "none": "No roles.",
+    "name": "Name",
+    "scope": "Scope",
+    "permissions": "Permissions",
+    "builtin": "built-in",
+    "edit": "Edit",
+    "delete": "Delete",
+    "confirmDelete": "Type the role name \"{name}\" to delete it.",
+    "newRole": "New custom role",
+    "editing": "Editing {name}",
+    "matrix": "Permission matrix",
+    "matrixHelp": "Tick the actions the role grants; \"all\" grants every action of the resource, including future ones. Tenant roles cannot hold platform-wide permissions.",
+    "resource": "Resource",
+    "all": "all",
+    "save": "Save role",
+    "cancel": "Cancel",
+    "scopes": {
+      "tenant": "tenant",
+      "global": "global",
+      "any": "any"
+    }
   }
 }
