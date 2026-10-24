@@ -35,6 +35,7 @@ pub const KEYS: &[(&str, &str, bool)] = &[
     ("nats.public_url", "DELBERT_PUBLIC_NATS_URL", false),
     ("pki.ca_cert_file", "DELBERT_CA_CERT_FILE", false),
     ("pki.ca_key_file", "DELBERT_CA_KEY_FILE", false),
+    ("pki.ca_backend", "DELBERT_CA_BACKEND", false),
     ("pki.agent_cert_days", "DELBERT_AGENT_CERT_DAYS", false),
     ("pki.extra_ca_files", "DELBERT_CA_EXTRA_FILES", false),
     ("pki.retire_ca", "DELBERT_CA_RETIRE", false),
@@ -127,6 +128,7 @@ impl Config {
         one_of("DELBERT_MFA_REQUIRED", &["none", "admins", "all"], &mut out);
         one_of("DELBERT_ARTIFACT_STORE", &["local", "s3"], &mut out);
         one_of("DELBERT_LOCAL_LOGIN", &["all", "admins"], &mut out);
+        one_of("DELBERT_CA_BACKEND", delbert_pki::BACKENDS, &mut out);
         if self.get("DATABASE_URL").is_none() {
             out.push("database.url (DATABASE_URL) is required".into());
         }
@@ -173,9 +175,9 @@ mod tests {
 
     #[test]
     fn problems_and_masking() {
-        let c = Config::from_toml("[database]\nurl = \"postgres://u:pw@h/d\"\n[auth]\nmfa_required = \"sometimes\"\n[artifacts]\nstore = \"s3\"\n[policy]\nttl_secs = \"x\"\n[pki]\nca_cert_file = \"/nope\"\n").unwrap();
+        let c = Config::from_toml("[database]\nurl = \"postgres://u:pw@h/d\"\n[auth]\nmfa_required = \"sometimes\"\n[artifacts]\nstore = \"s3\"\n[policy]\nttl_secs = \"x\"\n[pki]\nca_cert_file = \"/nope\"\nca_backend = \"openssl\"\n").unwrap();
         let p = c.problems().join("\n");
-        for needle in ["DELBERT_MFA_REQUIRED", "S3_ENDPOINT", "S3_SECRET_KEY", "not a number", "file '/nope' not found"] {
+        for needle in ["DELBERT_MFA_REQUIRED", "S3_ENDPOINT", "S3_SECRET_KEY", "not a number", "file '/nope' not found", "DELBERT_CA_BACKEND: 'openssl' is not one of rcgen"] {
             assert!(p.contains(needle), "{needle} in {p}");
         }
         let shown = c.effective();

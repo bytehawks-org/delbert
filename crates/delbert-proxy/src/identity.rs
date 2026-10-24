@@ -178,6 +178,7 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
 
 #[cfg(test)]
 mod tests {
+    use delbert_pki::CertificateAuthority as _;
     use super::*;
 
     #[test]
@@ -204,7 +205,7 @@ mod tests {
 
     #[test]
     fn renewal_is_due_late_in_the_life_and_never_right_after_issuing() {
-        let ca = delbert_pki::Ca::create("Test CA", 30).unwrap();
+        let ca = delbert_pki::RcgenCa::create("Test CA", 30).unwrap();
         let (_, csr) = delbert_pki::new_identity("branch").unwrap();
         let cert = ca.sign_proxy_csr(&csr, "branch", &["branch.example.com".into()], 30).unwrap().cert_pem;
         let (not_before, not_after) = delbert_pki::cert_validity(&cert).unwrap();

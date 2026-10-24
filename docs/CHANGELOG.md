@@ -2,6 +2,10 @@
 
 ## 2026-10-24 (continued)
 
+### Certificate authority behind a trait
+- `delbert-pki`: new trait `CertificateAuthority` (`cert_pem`, `issue_server`, `issue_client`, `sign_csr`, `sign_proxy_csr`) and `load_backend(name, cert, key)`; the previous `Ca` struct is now the `rcgen` backend, `RcgenCa` (module `rcgen_ca`). `ca::conformance::check` is the checklist any backend must pass (subject and identity chosen by the caller, not the CSR; leaf only; Ed25519 only; authority key identifier; EKU per role; proxy certificates serve both ways; broken, foreign and non-Ed25519 CSRs refused). A test proves the checklist is not vacuous: a backend that lets the CSR decide the identity fails it.
+- Core: `AppState.pki` is `Option<Arc<dyn CertificateAuthority>>`; `DELBERT_CA_BACKEND` / `[pki] ca_backend` (default `rcgen`, validated by `--check-config`). No behaviour change for existing installations. The decision on the roadmap row "PKI backend" is: rcgen now; an OpenSSL backend is **not written** (it would add a system library and, on Alpine/musl, a build dependency) and can be added without touching the Core.
+
 ### Per-action audit events from agents
 - Agents now record what they **do**, not only how the host looks: `resource.changed`, `resource.failed`, `policy.applied`, `policy.rejected`, `events.dropped` (new `delbert-agent` module `events.rs`). Failures that repeat every cycle are recorded once (memo in `state.json`), a missing Core is not an event, details carry attribute names only. At-least-once delivery: a spool directory on the agent (crash-safe files, 2000 at most, oldest discarded with an `events.dropped` event) is emptied by `delbert.event.<t>.<a>` requests that the Core acknowledges after the events are in the audit trail.
 - Core: `agent_events.rs`, migration `0019` (`agent_event_ids` for idempotent re-delivery), `delbert.event.*.*` and `delbert.proxy.*.event` responders. Each event becomes an `agent.<kind>` audit event, actor `agent:<tenant>/<agent>`, inside the hash chain. The batch proof covers the events (a proxy cannot alter or add any); 100 events per batch, 1000 per agent per hour. NATS permissions extended in `delbert-natsauth`.

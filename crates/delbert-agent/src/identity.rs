@@ -102,11 +102,12 @@ fn write_private(path: &Path, data: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use delbert_pki::CertificateAuthority as _;
     use super::*;
 
     #[test]
     fn renewal_threshold_and_override() {
-        let ca = delbert_pki::Ca::create("CA", 365).unwrap();
+        let ca = delbert_pki::RcgenCa::create("CA", 365).unwrap();
         let (_, csr) = delbert_pki::new_identity("a").unwrap();
         let cert = ca.sign_csr(&csr, "a", "urn:delbert:agent:t:a", 30).unwrap().cert_pem;
         let (_, not_after) = delbert_pki::cert_validity(&cert).unwrap();

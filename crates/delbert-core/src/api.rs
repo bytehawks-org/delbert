@@ -39,7 +39,7 @@ pub struct AppState {
     /// Core key that seals tenant secrets at rest; `None` disables the secret store.
     pub secrets_key: Option<Arc<crate::secrets::SecretsKeys>>,
     /// Internal CA for enrollment; `None` disables enrollment.
-    pub pki: Option<Arc<delbert_pki::Ca>>,
+    pub pki: Option<Arc<dyn delbert_pki::CertificateAuthority>>,
     /// Validity of agent certificates, in days.
     pub agent_cert_days: i64,
     /// NATS URL handed to agents at enrollment.

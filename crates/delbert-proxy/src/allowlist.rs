@@ -98,12 +98,13 @@ impl AllowList {
 
 #[cfg(test)]
 mod tests {
+    use delbert_pki::CertificateAuthority as _;
     use super::*;
     use serde_json::json;
 
-    fn setup() -> (AllowList, String, Vec<u8>, delbert_pki::Ca, tempfile::TempDir) {
+    fn setup() -> (AllowList, String, Vec<u8>, delbert_pki::RcgenCa, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let ca = delbert_pki::Ca::create("CA", 30).unwrap();
+        let ca = delbert_pki::RcgenCa::create("CA", 30).unwrap();
         let (_, proxy_csr) = delbert_pki::new_identity("branch").unwrap();
         let own = ca.sign_proxy_csr(&proxy_csr, "branch", &["x".into()], 30).unwrap();
         let list = AllowList::load(dir.path().join("agents.json"), "branch", own.public_key.clone());

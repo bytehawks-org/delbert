@@ -80,11 +80,11 @@ fn pem(der: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Ca;
+    use crate::{CertificateAuthority, RcgenCa};
 
     #[test]
     fn rotation_with_overlap() {
-        let (ca1, ca2) = (Ca::create("CA one", 30).unwrap(), Ca::create("CA two", 30).unwrap());
+        let (ca1, ca2) = (RcgenCa::create("CA one", 30).unwrap(), RcgenCa::create("CA two", 30).unwrap());
         let (fp1, fp2) = (fingerprints(ca1.cert_pem()).remove(0), fingerprints(ca2.cert_pem()).remove(0));
         assert_ne!(fp1, fp2);
         let leaf1 = ca1.issue_server("core", &["core".into()], 30).unwrap().cert_pem;
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn only_ca_certificates_are_accepted() {
-        let ca = Ca::create("CA", 30).unwrap();
+        let ca = RcgenCa::create("CA", 30).unwrap();
         let leaf = ca.issue_server("core", &["core".into()], 30).unwrap().cert_pem;
         assert!(is_ca_certificate(ca.cert_pem()));
         assert!(!is_ca_certificate(&leaf), "a leaf is not a CA");

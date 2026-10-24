@@ -29,6 +29,8 @@ session_secs = 900
 [pki]
 ca_cert_file = "/etc/delbert/ca.pem"
 ca_key_file = "/etc/delbert/ca.key"
+# Certificate authority implementation (only "rcgen" is built; see crates/delbert-pki/src/ca.rs).
+ca_backend = "rcgen"
 secrets_key_file = "/etc/delbert/secrets.key"
 agent_cert_days = 365
 

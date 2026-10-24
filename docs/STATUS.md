@@ -8,7 +8,7 @@ Snapshot for whoever continues the work (updated 2026-10-24). Design lives in [A
 |-------|------|-------|
 | `delbert-policy` | YAML policy model, JSON Schema, validation | verbs: `file`, `copy`, `template`, `line_in_file`, `package`, `service` |
 | `delbert-wire` | effective policy, JCS (RFC 8785), Ed25519 JWS sign/verify, signing-key rotation (`trust` updates) | `delbert-sign` CLI |
-| `delbert-pki` | internal CA (Ed25519), CSR signing, agent request proofs | `delbert-pki` CLI |
+| `delbert-pki` | internal CA behind a trait (rcgen backend), Ed25519 CSR signing, agent request proofs | `delbert-pki` CLI |
 | `delbert-natsauth` | NATS authorization-callout building blocks | shared by Core and Proxy |
 | `delbert-fs` | crash-safe file replacement | used by agent, proxy, PKI CLI |
 | `delbert-core` | REST API, PostgreSQL via SQLx (migrations 0001-0019), NATS bus + callout | RBAC v2 (tenant-scoped), approval workflow, sessions/CSRF/MFA/throttling, API tokens, OIDC SSO, content sources (directory/git), artifacts in local dir or S3, audit browse/export, config file |
@@ -50,7 +50,7 @@ See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI at milestone M3 
 ## Next steps
 
 1. Frontend M4 ([FRONTEND.md](FRONTEND.md)): SSE for live status, accessibility audit, performance budget, visual regression. M0-M3 are in `web/` (governance and management screens included); a tenant "delete" is an archive.
-2. CA behind a trait (rcgen or OpenSSL); Kubernetes Operator; Windows agent study. (Per-action audit events from agents are done, also through the proxy: [API.md](API.md) "Agent audit events".)
+2. Kubernetes Operator; Windows agent study. (The CA is behind a trait, rcgen backend only: [API.md](API.md) `DELBERT_CA_BACKEND`.) (Per-action audit events from agents are done, also through the proxy: [API.md](API.md) "Agent audit events".)
 3. Proxy config file and live branch check of proxy renewal; SSH remotes and signed commits for content sources; Entra ID check against a real tenant.
 
 ## Working agreements

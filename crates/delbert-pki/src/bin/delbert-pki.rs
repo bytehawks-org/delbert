@@ -7,7 +7,7 @@
 use std::{fs, path::{Path, PathBuf}};
 
 use clap::{Parser, Subcommand};
-use delbert_pki::Ca;
+use delbert_pki::{CertificateAuthority, RcgenCa};
 
 #[derive(Parser)]
 #[command(name = "delbert-pki", version, about = "Delbert internal CA tool")]
@@ -62,10 +62,10 @@ fn write(path: &Path, data: &str, private: bool) -> anyhow::Result<()> {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let (cert, key) = (cli.dir.join("ca.pem"), cli.dir.join("ca.key"));
-    let load = || -> anyhow::Result<Ca> { Ok(Ca::load(&fs::read_to_string(&cert)?, &fs::read_to_string(&key)?)?) };
+    let load = || -> anyhow::Result<RcgenCa> { Ok(RcgenCa::load(&fs::read_to_string(&cert)?, &fs::read_to_string(&key)?)?) };
     match cli.command {
         Cmd::Init { name, days } => {
-            let ca = Ca::create(&name, days)?;
+            let ca = RcgenCa::create(&name, days)?;
             write(&cert, ca.cert_pem(), false)?;
             write(&key, ca.key_pem(), true)?;
         }

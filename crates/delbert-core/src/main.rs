@@ -139,10 +139,13 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let pki = match (var("DELBERT_CA_CERT_FILE"), var("DELBERT_CA_KEY_FILE")) {
-        (Some(cert), Some(key)) => Some(Arc::new(
-            delbert_pki::Ca::load(&fs::read_to_string(&cert).with_context(|| format!("reading {cert}"))?, &fs::read_to_string(&key).with_context(|| format!("reading {key}"))?)
-                .context("loading the CA")?,
-        )),
+        (Some(cert), Some(key)) => {
+            let backend = var("DELBERT_CA_BACKEND").unwrap_or_else(|| "rcgen".into());
+            Some(
+                delbert_pki::load_backend(&backend, &fs::read_to_string(&cert).with_context(|| format!("reading {cert}"))?, &fs::read_to_string(&key).with_context(|| format!("reading {key}"))?)
+                    .with_context(|| format!("loading the CA (backend '{backend}')"))?,
+            )
+        }
         _ => {
             tracing::warn!("DELBERT_CA_CERT_FILE / DELBERT_CA_KEY_FILE not set: agent enrollment is disabled");
             None

@@ -14,6 +14,7 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 |----------|---------|
 | `DELBERT_TLS_CERT_FILE`, `DELBERT_TLS_KEY_FILE` | Serve the API over HTTPS (required in production: enrollment keys and artifacts travel here); without them plain HTTP with a warning |
 | `DELBERT_CA_CERT_FILE`, `DELBERT_CA_KEY_FILE` | The Delbert CA (create with `delbert-pki init`); without it enrollment is disabled |
+| `DELBERT_CA_BACKEND` | CA implementation behind the `CertificateAuthority` trait: `rcgen` (default, the only one built; pure Rust). A backend such as OpenSSL is one trait implementation plus a conformance test away (`crates/delbert-pki/src/ca.rs`) |
 | `DELBERT_AGENT_CERT_DAYS` | Validity of agent certificates, default 365; agents renew on their own |
 | `DELBERT_SECRETS_KEY_FILE` | age identity that seals tenant secrets at rest (`delbert-pki secrets-key`); without it the secret store is disabled |
 | `NATS_CA_FILE`, `NATS_CLIENT_CERT_FILE`, `NATS_CLIENT_KEY_FILE` | mTLS towards NATS (client certificate from `delbert-pki issue-client core-nats`) |

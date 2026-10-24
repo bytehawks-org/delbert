@@ -93,7 +93,8 @@ async fn secrets_key_rotation_reseals_everything(pool: PgPool) {
 #[sqlx::test]
 async fn ca_rotation_is_announced_and_readiness_is_reported(pool: PgPool) {
     use delbert_pki::bundle::fingerprints;
-    let ca2 = delbert_pki::Ca::create("Second CA", 30).unwrap();
+    let ca2 = delbert_pki::RcgenCa::create("Second CA", 30).unwrap();
+    use delbert_pki::CertificateAuthority as _;
     let mut st = state(pool.clone(), vec![Strategy::Error], None);
     let fp1 = fingerprints(st.pki.as_ref().unwrap().cert_pem()).remove(0);
     let fp2 = fingerprints(ca2.cert_pem()).remove(0);

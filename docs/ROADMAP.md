@@ -35,13 +35,14 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | CRL/OCSP for the HTTPS endpoints, intermediate CAs for Proxies | to-do | 2026-10-23 |
 | Secrets: per-agent age encryption, write-only store, sealed at rest | complete | 2026-10-23 |
 | Secrets: rotation of the Core secrets key (reseal) | complete | 2026-10-24 |
-| Secrets: external KMS/Vault | to-do | 2026-10-23 |
+| Secrets: external KMS/Vault (superseded by the external key and secret providers rows below) | to-do | 2026-10-23 |
 | Artifacts: Core store, SHA-256 pinning, verified download by agents | complete | 2026-10-23 |
 | Artifacts: retention and garbage collection (S3 store itself is done, see below) | to-do | 2026-10-23 |
 | Service verb: test on a systemd host (container run covers everything else) | to-do | 2026-10-23 |
 | Containers: end-to-end run in Podman (Core + 2 agents) | complete | 2026-10-23 |
 | Conflict handling: design (strategies, resource keys, resolution records) | complete | 2026-10-23 |
-| PKI backend: rcgen in use; CA behind a trait so rcgen/OpenSSL are swappable (no trait yet) | partial | 2026-10-24 |
+| PKI backend: rcgen in use; CA behind the `CertificateAuthority` trait with a conformance suite and `DELBERT_CA_BACKEND` | complete | 2026-10-24 |
+| PKI: an OpenSSL backend (only if a deployment needs it; implement the trait, pass `ca::conformance::check`) | to-do | 2026-10-24 |
 | Policy format: declarative YAML | complete | 2026-10-23 |
 | YAML resource schema: verb vocabulary and structure draft ([POLICY.md](POLICY.md)) | partial | 2026-10-23 |
 | YAML resource schema: JSON Schema generation and typed validation (6 verbs: `file`, `copy`, `template`, `line_in_file`, `package`, `service`) | partial | 2026-10-24 |
@@ -102,3 +103,7 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Frontend M3, slice 4: SSO providers (list, create/edit with group mappings, test, delete) | complete | 2026-10-24 |
 | Frontend M3, slice 5: content sources (sources, history, diffs, sync now) | complete | 2026-10-24 |
 | Frontend M3: complete | complete | 2026-10-24 |
+| External providers, design: three seams (`KeyWrapper` for secrets at rest, remote `Signer` for the policy-signing key and the CA key, `SecretSource` for values that stay in an external store); OpenBao/Vault, PKCS#11 HSM, AWS/Azure/GCP | to-do | 2026-10-24 |
+| External providers, first backend: OpenBao/Vault (Transit wrap and Ed25519 signing, PKI sign-CSR, KV references) | to-do | 2026-10-24 |
+| External providers: PKCS#11 (Thales Luna, Utimaco, CloudHSM, SoftHSM2 for tests) | to-do | 2026-10-24 |
+| External providers: AWS KMS/Secrets Manager, Azure Key Vault/Managed HSM, Google Cloud KMS/Secret Manager | to-do | 2026-10-24 |

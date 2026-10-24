@@ -62,11 +62,11 @@ pub fn check(public_key: &[u8], kind: &str, tenant: &str, agent: &str, body: &Va
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Ca, new_identity};
+    use crate::{CertificateAuthority, RcgenCa, new_identity};
     use serde_json::json;
 
     fn identity() -> (String, Vec<u8>) {
-        let ca = Ca::create("CA", 1).unwrap();
+        let ca = RcgenCa::create("CA", 1).unwrap();
         let (key, csr) = new_identity("a").unwrap();
         let signed = ca.sign_csr(&csr, "a1", "urn:x", 1).unwrap();
         (key, signed.public_key)
