@@ -1,0 +1,77 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Jobs run in Alpine containers (the hosted runner itself is Ubuntu; only a self-hosted runner can change that).
+  rust:
+    runs-on: ubuntu-24.04
+    container: docker.io/library/rust:1.99-alpine
+    services:
+      postgres:
+        image: docker.io/library/postgres:17-alpine
+        env:
+          POSTGRES_USER: delbert
+          POSTGRES_PASSWORD: delbert-dev
+          POSTGRES_DB: delbert
+        options: >-
+          --health-cmd "pg_isready -U delbert" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://delbert:delbert-dev@postgres:5432/delbert
+      NATS_URL: nats://localhost:4222
+    steps:
+      # git for the checkout and the content-source tests, tar/zstd for the cache, nats-server with JetStream
+      # (a service container cannot take command-line flags).
+      - run: apk add --no-cache git tar zstd nats-server
+      - uses: actions/checkout@v4
+      - name: Start NATS with JetStream
+        run: |
+          nats-server -js -sd /tmp/nats -m 8222 > /tmp/nats.log 2>&1 &
+          for _ in $(seq 30); do
+            wget -qO- http://localhost:8222/healthz && exit 0
+            sleep 1
+          done
+          cat /tmp/nats.log
+          exit 1
+      - run: rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
+      # Warnings are reported, not fatal: the existing backlog is tracked in docs/ROADMAP.md.
+      - run: cargo clippy --workspace --all-targets
+      - run: cargo test --workspace
+
+  web:
+    runs-on: ubuntu-24.04
+    container: docker.io/library/node:22-alpine
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      # The build never needs the real secret: pages are rendered on demand.
+      - run: npm run build
+        env:
+          WEB_SESSION_SECRET: build-time-placeholder-not-used
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  images:
+    runs-on: ubuntu-24.04
+    needs: [rust, web]
+    strategy:
+      matrix:
+        target: [core, agent, proxy, tools, web]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target ${{ matrix.target }} -t delbert-${{ matrix.target }}:ci -f Containerfile .
