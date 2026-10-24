@@ -13,3 +13,9 @@ export function can(me: Grants, permission: string, tenant: string): boolean {
 export function canGlobal(me: Grants, permission: string): boolean {
   return me.permissions.includes("*") || me.permissions.includes(permission) || me.permissions.includes(`${permission.split(":")[0]}:*`);
 }
+
+/** A permission held globally or in at least one tenant (for sections whose rows are tenant-scoped). */
+export function canAnywhere(me: Grants, permission: string): boolean {
+  const has = (list: string[]) => list.includes("*") || list.includes(permission) || list.includes(`${permission.split(":")[0]}:*`);
+  return has(me.permissions) || Object.values(me.tenants).some(has);
+}

@@ -12,6 +12,7 @@ const items = [
   { href: "/users", key: "users", needs: "users" },
   { href: "/roles", key: "roles", needs: "roles" },
   { href: "/sso", key: "sso", needs: "sso" },
+  { href: "/content", key: "content", needs: "content" },
   { href: "/audit", key: "audit" },
 ] as const;
 

@@ -63,3 +63,16 @@ export function Notice({ children }: { children: React.ReactNode }) {
     </p>
   );
 }
+
+/** A unified diff, one coloured line per row. Plain text, never HTML. */
+export function UnifiedDiff({ text }: { text: string }) {
+  return (
+    <pre className="max-h-96 overflow-auto rounded-md border border-border bg-bg p-3 font-mono text-xs leading-relaxed">
+      {text.split("\n").map((l, i) => (
+        <div key={i} className={l.startsWith("+") && !l.startsWith("+++") ? "text-ok" : l.startsWith("-") && !l.startsWith("---") ? "text-danger" : "text-muted"}>
+          {l || " "}
+        </div>
+      ))}
+    </pre>
+  );
+}

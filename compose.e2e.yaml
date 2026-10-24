@@ -73,6 +73,7 @@ services:
       DELBERT_NATS_ACCOUNT: APP
       DELBERT_NATS_SESSION_SECS: "60"      # short on purpose: revocation is visible within a minute
       DELBERT_AGENT_CERT_DAYS: "1"
+      DELBERT_CONTENT_ALLOW_TENANT_GIT: "true"        # web e2e: a tenant-owned source must be creatable (off by default)
       DELBERT_PUBLIC_URL: https://localhost:8080      # single sign-on redirect URIs
       DELBERT_UI_URL: http://localhost:3000/auth/callback
     ports:

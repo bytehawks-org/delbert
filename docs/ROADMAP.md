@@ -85,7 +85,7 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Content sources design: directory or git (local Forgejo component or public remote), diff/version/apply ([CONTENT.md](CONTENT.md)) | complete | 2026-10-23 |
 | Content sources implementation (directory + https git, sync API, ownership, diffs, poller) | complete | 2026-10-23 |
 | Content sources: SSH remotes / deploy keys with pinned host keys, required signed commits or tags, webhook secret | to-do | 2026-10-23 |
-| Content sources in the web UI (sources, snapshots, diffs, sync now) | to-do | 2026-10-23 |
+| Content sources in the web UI (sources, snapshots, diffs, sync now) | complete | 2026-10-24 |
 | Key rotation: policy signing key with overlap (in-band trust update, readiness API) | complete | 2026-10-23 |
 | Key rotation: internal CA, NATS issuer, secrets age key, proxy certificate ([ROTATION.md](ROTATION.md)) | complete | 2026-10-23 |
 | Quickstart and installation guides ([quickstart.md](quickstart.md), [install.md](install.md)) | complete | 2026-10-23 |
@@ -97,4 +97,5 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Frontend M3, slice 2: profile (TOTP set-up, sessions, API tokens) | complete | 2026-10-24 |
 | Frontend M3, slice 3: tenant approval switch and per-tenant role assignments | complete | 2026-10-24 |
 | Frontend M3, slice 4: SSO providers (list, create/edit with group mappings, test, delete) | complete | 2026-10-24 |
-| Frontend M3, remaining: content sources screens (sources, snapshots, diffs, sync now) | to-do | 2026-10-24 |
+| Frontend M3, slice 5: content sources (sources, history, diffs, sync now) | complete | 2026-10-24 |
+| Frontend M3: complete | complete | 2026-10-24 |
