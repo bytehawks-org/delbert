@@ -891,6 +891,7 @@ dependencies = [
  "delbert-wire",
  "futures",
  "minijinja",
+ "rand_core 0.6.4",
  "regex",
  "reqwest 0.13.5",
  "rustls",

@@ -3,6 +3,7 @@
 //! The Core never executes commands on managed systems: it stores, validates,
 //! compiles and signs desired state; only agents act (docs/ABSTRACT.md §3).
 
+pub mod agent_events;
 pub mod api;
 pub mod approval;
 pub mod artifacts;

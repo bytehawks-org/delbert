@@ -42,6 +42,8 @@ use crate::{
 
 /// Reports older than this are not accepted from a proxy's queue.
 const MAX_REPORT_AGE_SECS: i64 = 14 * 24 * 3600;
+/// Event batches are audit evidence: a proxy may hold them through a long outage.
+const MAX_EVENT_AGE_SECS: i64 = 30 * 24 * 3600;
 const ENROLL_KEY_HOURS: i32 = 24;
 
 fn now() -> i64 {
@@ -355,6 +357,33 @@ pub(crate) async fn forwarded_reports(state: &AppState, site: &str, payload: &[u
             accepted += 1;
         } else {
             tracing::warn!("forwarded report of {tenant}/{agent} with an invalid proof dropped");
+        }
+    }
+    json!({ "accepted": accepted })
+}
+
+/// Event batches queued by the proxy: `{proof, inner: {batches: [{tenant, agent, received_at, envelope}]}}` where
+/// `envelope` is the agent's `{proof, events}`. Answers `{"accepted": n}` (batches stored, duplicates included).
+pub(crate) async fn forwarded_events(state: &AppState, site: &str, payload: &[u8]) -> Value {
+    let Ok(req) = serde_json::from_slice::<Value>(payload) else { return json!({ "error": "malformed" }) };
+    let proof: Option<Proof> = serde_json::from_value(req["proof"].clone()).ok();
+    let inner = &req["inner"];
+    let Some(proxy_id) = proxy_proven(state, site, "proxy-event", inner, proof.as_ref()).await else {
+        tracing::warn!("event batch with an invalid proof from proxy {site} dropped");
+        return json!({ "error": "unauthorized" });
+    };
+    let mut accepted = 0;
+    let current = now();
+    for item in inner["batches"].as_array().into_iter().flatten() {
+        let (Some(tenant), Some(agent), Some(received_at)) = (item["tenant"].as_str(), item["agent"].as_str(), item["received_at"].as_i64()) else { continue };
+        if received_at > current + authn::MAX_SKEW_SECS || received_at < current - MAX_EVENT_AGE_SECS || !serves(state, proxy_id, tenant, agent).await {
+            continue; // dropped for good, like reports
+        }
+        // The agent's proof is judged as of the moment the proxy received it.
+        if crate::agent_events::ingest(state, tenant, agent, &item["envelope"], received_at).await.is_some() {
+            accepted += 1;
+        } else {
+            tracing::warn!("forwarded events of {tenant}/{agent} with an invalid proof dropped");
         }
     }
     json!({ "accepted": accepted })

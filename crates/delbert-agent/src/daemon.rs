@@ -22,6 +22,7 @@ use serde_json::{Value, json};
 
 use crate::{
     engine::{Ctx, Mode, Report, Status, run},
+    events,
     identity::Identity,
     state::State,
 };
@@ -42,6 +43,8 @@ pub struct DaemonConfig {
 }
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+/// Event batches sent in one cycle (a long backlog drains over several cycles).
+const MAX_BATCHES_PER_CYCLE: usize = 10;
 /// Never renew twice within this time: a threshold longer than the certificates the Core
 /// issues would otherwise make the agent renew on every cycle.
 const MIN_RENEWAL_GAP: Duration = Duration::from_secs(3600);
@@ -281,6 +284,7 @@ impl Agent<'_> {
         };
 
         let has_policy = outcome.is_ok();
+        let events: Vec<events::Event>;
         let payload = match outcome {
             Ok(policy) => {
                 if !from_cache {
@@ -288,7 +292,7 @@ impl Agent<'_> {
                         let _ = write_atomic(&cache_path, t.as_bytes());
                     }
                 }
-                state.versions.insert(policy.name.clone(), policy.version);
+                let previous = state.versions.insert(policy.name.clone(), policy.version);
                 let _ = state.save(&state_path);
 
                 let secrets = match self.decrypt_secrets(&policy) {
@@ -309,6 +313,7 @@ impl Agent<'_> {
                 let report = tokio::task::spawn_blocking(move || run(&resources, &ctx, Mode::Apply)).await;
                 match report {
                     Ok(report) => {
+                        events = events::derive(&events::Outcome::Applied { policy: &policy.name, version: policy.version, previous, report: &report }, now(), &mut state.events);
                         tracing::info!(
                             "applied policy v{} ({} resources, compliant: {})",
                             policy.version,
@@ -317,14 +322,33 @@ impl Agent<'_> {
                         );
                         report_json(Some(&report), Some(policy.version), from_cache.then_some("Core unreachable, applied cached policy").filter(|_| false), &self.trusted_kids())
                     }
-                    Err(e) => report_json(None, Some(policy.version), Some(&format!("apply task failed: {e}")), &self.trusted_kids()),
+                    Err(e) => {
+                        let error = format!("apply task failed: {e}");
+                        events = events::derive(&events::Outcome::ApplyCrashed { policy: &policy.name, version: policy.version, error: &error }, now(), &mut state.events);
+                        report_json(None, Some(policy.version), Some(&error), &self.trusted_kids())
+                    }
                 }
             }
             Err(e) => {
                 tracing::error!("no valid policy: {e:#}");
-                report_json(None, None, Some(&format!("{e:#}")), &self.trusted_kids())
+                // A policy that arrived and was refused is an event; not reaching the Core is not.
+                let reason = format!("{e:#}");
+                let outcome = if token.is_some() { events::Outcome::Rejected { reason: &reason } } else { events::Outcome::NoPolicy };
+                events = events::derive(&outcome, now(), &mut state.events);
+                report_json(None, None, Some(&reason), &self.trusted_kids())
             }
         };
+        // The failure memo lives in the state file; the events go to the spool and are sent below.
+        let _ = state.save(&state_path);
+        let spool = events::Spool::new(self.cfg.state_dir.join("events"));
+        match &spool {
+            Ok(spool) => {
+                if let Err(e) = spool.push(&events) {
+                    tracing::error!("cannot spool {} audit events: {e:#}", events.len());
+                }
+            }
+            Err(e) => tracing::error!("cannot open the event spool: {e:#}"),
+        }
 
         let mut payload = payload;
         let (trusted_cas, cert_issuer) = self.ca_report();
@@ -341,7 +365,42 @@ impl Agent<'_> {
             }
             Err(e) => tracing::error!("cannot sign the report: {e}"),
         }
+        if let Ok(spool) = &spool {
+            self.send_events(spool).await;
+        }
         has_policy
+    }
+
+    /// Send what is in the spool, oldest first, and forget what the Core (or the site proxy)
+    /// acknowledges. Anything unacknowledged stays for the next cycle.
+    async fn send_events(&self, spool: &events::Spool) {
+        let meta = &self.cfg.identity.meta;
+        let subject = format!("delbert.event.{}.{}", meta.tenant, meta.agent);
+        for _ in 0..MAX_BATCHES_PER_CYCLE {
+            let (batch, paths) = spool.pending(events::BATCH);
+            if batch.is_empty() {
+                return;
+            }
+            let events = Value::Array(batch);
+            let sent = async {
+                let proof = delbert_pki::authn::prove(&self.key_pem, "event", &meta.tenant, &meta.agent, &events, now())?;
+                let payload = json!({ "proof": proof, "events": events });
+                let reply = tokio::time::timeout(REQUEST_TIMEOUT, self.client.request(subject.clone(), payload.to_string().into())).await.context("timeout")?.context("request failed")?;
+                let body: Value = serde_json::from_slice(&reply.payload).context("malformed reply")?;
+                match body["error"].as_str() {
+                    Some(e) => anyhow::bail!("refused: {e}"),
+                    None => Ok(()),
+                }
+            }
+            .await;
+            match sent {
+                Ok(()) => spool.ack(&paths),
+                Err(e) => {
+                    tracing::warn!("cannot deliver {} audit events ({e:#}); {} waiting", paths.len(), spool.len());
+                    return;
+                }
+            }
+        }
     }
 }
 

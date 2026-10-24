@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct State {
     pub versions: BTreeMap<String, u64>,
+    /// Last failure recorded per resource and for the policy, so that a failure repeating every
+    /// cycle becomes one audit event (see `events.rs`). Losing it costs one repeated event.
+    #[serde(default)]
+    pub events: BTreeMap<String, String>,
 }
 
 impl State {

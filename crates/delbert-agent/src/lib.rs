@@ -6,6 +6,7 @@
 
 pub mod daemon;
 pub mod engine;
+pub mod events;
 pub mod fsutil;
 pub mod identity;
 pub mod runner;

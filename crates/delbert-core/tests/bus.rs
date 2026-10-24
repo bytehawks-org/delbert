@@ -16,12 +16,16 @@ mod common;
 
 use common::{admin_client, enroll_agent, signing_key, state};
 
+/// The Core subscribes in the queue group `core`: two tests sharing one NATS server would steal each other's messages.
+static ONE_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn unix_now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
 }
 
 #[sqlx::test]
 async fn notify_pull_and_report_over_nats(pool: PgPool) {
+    let _serial = ONE_AT_A_TIME.lock().await;
     let Ok(url) = std::env::var("NATS_URL") else {
         eprintln!("NATS_URL not set: skipping");
         return;
@@ -116,4 +120,65 @@ async fn notify_pull_and_report_over_nats(pool: PgPool) {
     assert!(ask("agent-1", proof(&new_key, "req", "agent-1", &Value::Null)).await["token"].is_string());
     assert_eq!(ask("agent-1", proof(&key_pem, "req", "agent-1", &Value::Null)).await["error"], "unauthorized");
     assert_eq!(seen["reported_version"], 1);
+    client.drain().await.ok(); // leave the queue group before the next test joins it
+}
+
+#[sqlx::test]
+async fn agent_events_reach_the_audit_trail_once_and_only_when_authentic(pool: PgPool) {
+    let _serial = ONE_AT_A_TIME.lock().await;
+    let Ok(url) = std::env::var("NATS_URL") else {
+        eprintln!("NATS_URL not set: skipping");
+        return;
+    };
+    let client = async_nats::connect(&url).await.expect("NATS reachable");
+    let app_state = state(pool, vec![Strategy::Error], Some(Bus::from_client(client.clone())));
+    tokio::spawn(bus::serve(app_state.clone()));
+    let c = admin_client(app_state).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    c.call("POST", "/v1/tenants", Some(json!({ "name": "acme" }))).await;
+    let key = enroll_agent(&c, "acme", "agent-1").await.key_pem;
+    let other = enroll_agent(&c, "acme", "agent-2").await.key_pem;
+    let send = |agent: &str, batch: Value| {
+        let client = client.clone();
+        let subject = format!("delbert.event.acme.{agent}");
+        async move {
+            let reply = tokio::time::timeout(Duration::from_secs(5), client.request(subject, batch.to_string().into())).await.unwrap().unwrap();
+            serde_json::from_slice::<Value>(&reply.payload).unwrap()
+        }
+    };
+    let batch = |key: &str, events: Value| {
+        let proof = delbert_pki::authn::prove(key, "event", "acme", "agent-1", &events, unix_now()).unwrap();
+        json!({ "proof": proof, "events": events })
+    };
+    let events = json!([
+        { "id": "evt-0000000001", "kind": "resource.changed", "at": 1700000000, "resource": "motd", "version": 3, "detail": "content, mode" },
+        { "id": "evt-0000000002", "kind": "resource.failed", "at": 1700000001, "resource": "svc", "version": 3, "detail": "unit not found" },
+        { "id": "evt-0000000003", "kind": "made.up", "at": 1700000002 },
+    ]);
+
+    // Authentic: the two known events are stored; the unknown kind is ignored.
+    let first = send("agent-1", batch(&key, events.clone())).await;
+    assert_eq!(first["stored"], 2, "{first}");
+    // The same events again (a retry after a lost acknowledgement) add nothing.
+    assert_eq!(send("agent-1", batch(&key, events.clone())).await["stored"], 0);
+    // Another agent's key, and a batch altered after it was proven, are refused.
+    assert_eq!(send("agent-1", batch(&other, json!([{ "id": "evt-0000000009", "kind": "resource.changed", "at": 1 }]))).await["error"], "unauthorized");
+    let mut forged = batch(&key, json!([{ "id": "evt-0000000010", "kind": "resource.changed", "at": 1, "resource": "a" }]));
+    forged["events"][0]["resource"] = json!("b");
+    assert_eq!(send("agent-1", forged).await["error"], "unauthorized");
+    // An oversized batch is refused whole.
+    let many: Vec<Value> = (0..101).map(|i| json!({ "id": format!("evt-big-{i:06}"), "kind": "resource.changed", "at": 1 })).collect();
+    assert_eq!(send("agent-1", batch(&key, json!(many))).await["error"], "unauthorized");
+
+    let (_, page) = c.call("GET", "/v1/audit?action=agent.*", None).await;
+    // (`agent.*` also matches the enrollment events; the ones sent by the agent carry an event id.)
+    let trail: Vec<&Value> = page["events"].as_array().unwrap().iter().filter(|e| e["details"]["event_id"].is_string()).collect();
+    assert_eq!(trail.len(), 2, "{page}");
+    let failed = trail.iter().find(|e| e["action"] == "agent.resource.failed").unwrap();
+    assert_eq!((failed["actor"].as_str(), failed["target"].as_str(), failed["outcome"].as_str()), (Some("agent:acme/agent-1"), Some("svc"), Some("failed")));
+    assert_eq!(failed["details"]["detail"], "unit not found");
+    assert_eq!(failed["details"]["event_id"], "evt-0000000002");
+    assert_eq!(c.call("GET", "/v1/audit/verify", None).await.1["first_bad"], Value::Null);
+    client.drain().await.ok(); // leave the queue group before the next test joins it
 }

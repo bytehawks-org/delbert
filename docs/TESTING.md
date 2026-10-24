@@ -99,6 +99,8 @@ Scenarios run on 2026-10-23 (all passed):
 
 Findings from this run, fixed: the NATS clients took 91 s to notice a dead link (default ping settings) - proxy and agent now ping every 10 s, recovery takes about 9 s; an agent that started before the proxy was ready waited a whole interval - without a policy it now retries after 5 s (a fresh branch converges in 7 s instead of 40 s).
 
+Per-action audit events, run on 2026-10-24 (Core, NATS, one agent; then the branch with the proxy): a policy with a file and a failing service produced `agent.policy.applied`, `agent.resource.changed` and `agent.resource.failed` in the trail, and the next cycles added nothing (the failure is recorded once). **Core stopped**, host drifted: the change waited in the agent's spool (`/var/lib/delbert/events`), and after the restart it was delivered once (spool empty, chain verifies). **Branch, proxy-Core link cut** (`podman network disconnect delbert_default <proxy>`): the event sat in the proxy's `events/` queue while the agent's spool was already empty, and reached the trail after reconnecting.
+
 Not covered: proxy certificate renewal, several proxies sharing agents, a proxy restart under load.
 
 ## SSO against Keycloak

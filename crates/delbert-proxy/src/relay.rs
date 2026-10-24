@@ -11,7 +11,7 @@ use tokio::sync::Notify;
 use crate::{
     allowlist::AllowList,
     hub::{Hub, now},
-    queue::ReportQueue,
+    queue::{EventQueue, ReportQueue},
 };
 
 pub struct Relay {
@@ -21,11 +21,17 @@ pub struct Relay {
     pub local: Client,
     pub allow: AllowList,
     pub queue: ReportQueue,
+    /// Audit events of the agents, kept until the Core acknowledges them.
+    pub events: EventQueue,
     /// Last policy answer per agent, served when the Core cannot be reached.
     pub cache_dir: PathBuf,
     sync_now: Notify,
     flush_now: Notify,
 }
+
+/// Same limits as the Core applies to a direct batch.
+const MAX_EVENTS_PER_BATCH: usize = 100;
+const MAX_EVENT_BYTES: usize = 256 * 1024;
 
 /// `delbert.<kind>.<tenant>.<agent>...` -> (tenant, agent)
 fn agent_of(subject: &str) -> Option<(&str, &str)> {
@@ -36,9 +42,9 @@ fn agent_of(subject: &str) -> Option<(&str, &str)> {
 }
 
 impl Relay {
-    pub fn new(site: String, hub: Hub, local: Client, allow: AllowList, queue: ReportQueue, cache_dir: PathBuf) -> Result<Arc<Self>> {
+    pub fn new(site: String, hub: Hub, local: Client, allow: AllowList, queue: ReportQueue, events: EventQueue, cache_dir: PathBuf) -> Result<Arc<Self>> {
         fs::create_dir_all(&cache_dir)?;
-        Ok(Arc::new(Relay { site, hub, local, allow, queue, cache_dir, sync_now: Notify::new(), flush_now: Notify::new() }))
+        Ok(Arc::new(Relay { site, hub, local, allow, queue, events, cache_dir, sync_now: Notify::new(), flush_now: Notify::new() }))
     }
 
     fn cache_file(&self, tenant: &str, agent: &str) -> PathBuf {
@@ -121,8 +127,53 @@ impl Relay {
         }
     }
 
+    /// A batch of audit events of an agent of the site. The agent is told they are safe only once
+    /// they are on this proxy's disk; until the Core acknowledges them they stay there.
+    async fn event_batch(&self, msg: &Message) {
+        let Some((tenant, agent)) = agent_of(msg.subject.as_str()) else { return };
+        let unauthorized = json!({ "error": "unauthorized" });
+        let Ok(envelope) = serde_json::from_slice::<Value>(&msg.payload) else { return self.reply(msg, unauthorized).await };
+        let well_formed = envelope["events"].as_array().is_some_and(|e| e.len() <= MAX_EVENTS_PER_BATCH) && msg.payload.len() <= MAX_EVENT_BYTES;
+        let proven = well_formed && serde_json::from_value(envelope["proof"].clone()).is_ok_and(|p| self.allow.verify("event", tenant, agent, &envelope["events"], &p));
+        if !proven {
+            tracing::warn!("dropped an event batch of {tenant}/{agent} with an invalid proof");
+            return self.reply(msg, unauthorized).await;
+        }
+        match self.events.push(tenant, agent, now(), &envelope) {
+            Ok(()) => {
+                self.flush_now.notify_one();
+                self.reply(msg, json!({ "stored": envelope["events"].as_array().map_or(0, Vec::len) })).await;
+            }
+            Err(e) => {
+                tracing::error!("cannot queue the events of {tenant}/{agent}: {e:#}");
+                self.reply(msg, json!({ "error": "the proxy cannot keep the events now" })).await; // the agent keeps its spool
+            }
+        }
+    }
+
     /// Send what is queued; keep it if the Core does not acknowledge.
     pub async fn flush(&self) {
+        loop {
+            let batch = self.events.pending(50);
+            if batch.is_empty() {
+                break;
+            }
+            let items = batch.iter().map(|(_, item)| item.clone()).collect();
+            match self.hub.forward_events(items).await {
+                Ok(n) => {
+                    tracing::debug!("forwarded {} event batches ({n} stored)", batch.len());
+                    self.events.ack(&batch);
+                }
+                Err(e) => {
+                    tracing::warn!("cannot forward {} queued event batches ({e:#}); will retry", self.events.len());
+                    break;
+                }
+            }
+        }
+        self.flush_reports().await;
+    }
+
+    async fn flush_reports(&self) {
         loop {
             let batch = self.queue.pending(100);
             if batch.is_empty() {
@@ -147,8 +198,9 @@ impl Relay {
         let mut effective = self.local.subscribe("delbert.req.*.*.effective").await?;
         let mut renewals = self.local.subscribe("delbert.req.*.*.renew").await?;
         let mut reports = self.local.subscribe("delbert.report.*.*").await?;
+        let mut events = self.local.subscribe("delbert.event.*.*").await?;
         let (mut notifications, mut sync_hints) = self.hub.subscribe_notifications().await?;
-        tracing::info!("relay running for site {} ({} agents known, {} reports queued)", self.site, self.allow.len(), self.queue.len());
+        tracing::info!("relay running for site {} ({} agents known, {} reports and {} event batches queued)", self.site, self.allow.len(), self.queue.len(), self.events.len());
 
         let me = self.clone();
         tokio::spawn(async move {
@@ -166,6 +218,12 @@ impl Relay {
         tokio::spawn(async move {
             while let Some(msg) = reports.next().await {
                 me.report(&msg);
+            }
+        });
+        let me = self.clone();
+        tokio::spawn(async move {
+            while let Some(msg) = events.next().await {
+                me.event_batch(&msg).await;
             }
         });
         // Notifications for our agents are passed on locally; for anyone else they are ignored.

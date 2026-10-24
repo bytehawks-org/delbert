@@ -118,16 +118,31 @@ Errors are `{"error": "..."}` with 401, 403, 404, 409 (duplicate or in use), 422
 | `delbert.notify.<t>.<a>` | Core to agent | "pull again" hint after policy, group, secret or artifact changes (no content) |
 | `delbert.req.<t>.<a>.effective` | agent to Core, request/reply | Fetch the signed effective policy (`{token, version}` or `{error}`); payload is the agent's proof |
 | `delbert.report.<t>.<a>` | agent to Core | `{proof, report}`; stored as the latest report of the agent |
-| `delbert.proxy.<s>.relay`, `.agents`, `.report`, `.notify` | proxy to Core (and back) | relay of an agent request, the proxy's agent list, forwarded reports (acknowledged), "refresh" hint; see [PROXY.md](PROXY.md) |
+| `delbert.event.<t>.<a>` | agent to Core (request/reply) | `{proof, events}` (at most 100, 256 KiB); each event is appended to the audit trail as `agent.<kind>`; the reply `{"stored": n}` acknowledges the batch. See "Agent audit events" below |
+| `delbert.proxy.<s>.relay`, `.agents`, `.report`, `.event`, `.notify` | proxy to Core (and back) | relay of an agent request, the proxy's agent list, forwarded reports and event batches (acknowledged), "refresh" hint; see [PROXY.md](PROXY.md) |
 
 Tenant and agent names contain no dots, so they are safe subject tokens.
+
+### Agent audit events
+
+The compliance report is a state view (the latest one replaces the previous). The **event log** is separate: after every cycle the agent says what it did, and the Core appends each event to the hash-chained audit trail (actor `agent:<tenant>/<agent>`, `target` = the resource, `details` = `{event_id, at, version, detail}`; `at` is the agent's clock, the trail's own timestamp is the Core's).
+
+| Action | Outcome | When |
+|--------|---------|------|
+| `agent.resource.changed` | ok | a resource was changed (`detail` lists the attributes, for example `content, mode`; never values) |
+| `agent.resource.failed` | failed | a resource failed; repeated only when the failure changes |
+| `agent.policy.applied` | ok | a policy version was applied for the first time |
+| `agent.policy.rejected` | denied | a policy was refused (signature, expiry, rollback); repeated only when the reason changes |
+| `agent.events.dropped` | failed | the agent's spool overflowed and the oldest events were discarded |
+
+Delivery is **at least once**: the agent keeps events in a spool directory (one crash-safe file each, at most 2000) until the Core, or its site proxy, acknowledges them; a proxy keeps every batch (up to 5000) until the Core acknowledges. Each event carries an id chosen by the agent and a second delivery is dropped (`agent_event_ids`, migration `0019`). The batch proof (kind `event`) covers the whole `events` array, so a proxy cannot alter or add events; a proxy forwards only for its own agents, and batches older than 30 days are refused. A Core outage does not lose events; losing an agent's spool directory loses only what was not delivered yet. Limits: an agent may add 1000 events per hour (the rest of a batch is acknowledged and dropped, with a warning in the Core log), details are cut at 500 characters. Browse them with `GET /v1/audit?action=agent.*` (note: `agent.enroll` and `agent.renew`, written by the Core, match too).
 
 Security layers: (1) NATS requires TLS with a client certificate issued by the Delbert CA; (2) an **authorization callout** served by the Core (`bus_auth.rs`) reads the identity from the certificate, checks that it is still the one on record and returns a short-lived user JWT that confines the connection to its own subjects (below); (3) every request and report carries a proof (`delbert_pki::authn`: Ed25519 over kind, tenant, agent, timestamp, nonce and the hash of the canonical body) checked against the certified public key, valid for 60 seconds; (4) policies are signed; (5) secrets are encrypted to the target agent.
 
 | Who | May publish | May subscribe |
 |-----|-------------|---------------|
-| agent `t/a` | `delbert.req.t.a.effective`, `delbert.req.t.a.renew`, `delbert.report.t.a` | `delbert.notify.t.a`, `_INBOX.t.a.>` (the agent uses that inbox prefix) |
-| the Core | `delbert.notify.*.*`, `_INBOX.>` | `delbert.req.*.*.effective`, `delbert.req.*.*.renew`, `delbert.report.*.*` |
+| agent `t/a` | `delbert.req.t.a.effective`, `delbert.req.t.a.renew`, `delbert.report.t.a`, `delbert.event.t.a` | `delbert.notify.t.a`, `_INBOX.t.a.>` (the agent uses that inbox prefix) |
+| the Core | `delbert.notify.*.*`, `_INBOX.>` | `delbert.req.*.*.effective`, `delbert.req.*.*.renew`, `delbert.report.*.*`, `delbert.event.*.*` |
 
 Anything else is refused by the NATS server (`Permissions Violation`). A certificate whose key is not the one on record (deleted agent, rotated key, forged name) is not authorized at all. Not done: encryption of the callout messages with an xkey (they travel inside the TLS-protected NATS connection), immediate disconnection on revocation (it takes effect within `DELBERT_NATS_SESSION_SECS`).
 

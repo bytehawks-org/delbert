@@ -7,8 +7,10 @@
 //! | `delbert.notify.<t>.<a>` | Core → agent | "pull again" hint, no secrets |
 //! | `delbert.req.<t>.<a>.{effective,renew}` | agent → Core (request/reply) | fetch the signed policy / renew the certificate |
 //! | `delbert.report.<t>.<a>` | agent → Core | latest compliance report |
+//! | `delbert.event.<t>.<a>` | agent → Core (request/reply) | a batch of per-action audit events, acknowledged once stored |
 //! | `delbert.proxy.<s>.relay` | proxy → Core (request/reply) | an agent request relayed by the proxy of its site |
 //! | `delbert.proxy.<s>.report` | proxy → Core | a stored report forwarded by the proxy |
+//! | `delbert.proxy.<s>.event` | proxy → Core (request/reply) | stored event batches forwarded by the proxy |
 //! | `delbert.proxy.<s>.agents` | proxy → Core (request/reply) | the agents (and keys) the proxy serves |
 //! | `delbert.proxy.<s>.notify` | Core → proxy | "refresh your agent list" |
 //!
@@ -147,6 +149,12 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
         let (tenant, agent) = parse_subject(msg.subject.as_str(), "req")?;
         Some(renew(&state, tenant, agent, &msg.payload).await)
     });
+    // Events are acknowledged after they are in the audit trail: the agent keeps its spool until then.
+    let sub = client.queue_subscribe("delbert.event.*.*", "core".into()).await?;
+    respond(client.clone(), state.clone(), sub, |state, msg| async move {
+        let (tenant, agent) = parse_subject(msg.subject.as_str(), "event")?;
+        Some(events_reply(&state, tenant, agent, &msg.payload).await)
+    });
     let mut reports = client.subscribe("delbert.report.*.*").await?;
     let report_state = state.clone();
     tokio::spawn(async move {
@@ -180,7 +188,7 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
     });
     // The reply acknowledges the batch: the proxy keeps its queue until it has it.
     let sub = client.queue_subscribe("delbert.proxy.*.report", "core".into()).await?;
-    respond(client.clone(), state, sub, |state, msg| async move {
+    respond(client.clone(), state.clone(), sub, |state, msg| async move {
         let (site, _) = parse_proxy_subject(msg.subject.as_str())?;
         if msg.payload.len() > MAX_REPORT_BYTES * 4 {
             tracing::warn!("oversized report batch from proxy {site} dropped");
@@ -188,7 +196,32 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
         }
         Some(crate::proxies::forwarded_reports(&state, site, &msg.payload).await)
     });
+    // Same for the batches a proxy stored for its agents.
+    let sub = client.queue_subscribe("delbert.proxy.*.event", "core".into()).await?;
+    respond(client.clone(), state, sub, |state, msg| async move {
+        let (site, _) = parse_proxy_subject(msg.subject.as_str())?;
+        if msg.payload.len() > MAX_REPORT_BYTES * 8 {
+            tracing::warn!("oversized event batch from proxy {site} dropped");
+            return Some(json!({ "error": "too large" }));
+        }
+        Some(crate::proxies::forwarded_events(&state, site, &msg.payload).await)
+    });
     Ok(())
+}
+
+/// An agent's event batch sent directly to the Core: `{proof, events}`.
+async fn events_reply(state: &AppState, tenant: &str, agent: &str, payload: &[u8]) -> Value {
+    if payload.len() > MAX_REPORT_BYTES {
+        return json!({ "error": "too large" });
+    }
+    let Ok(batch) = serde_json::from_slice::<Value>(payload) else { return json!({ "error": "malformed" }) };
+    match crate::agent_events::ingest(state, tenant, agent, &batch, now()).await {
+        Some(stored) => json!({ "stored": stored }),
+        None => {
+            tracing::warn!("event batch from {tenant}/{agent} rejected");
+            json!({ "error": "unauthorized" })
+        }
+    }
 }
 
 /// Verify the agent's proof on a report envelope (`{proof, report}`) as of `at`, and store it.

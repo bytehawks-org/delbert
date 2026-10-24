@@ -24,7 +24,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Proxy / relay: local callout, request relay with cache, report store-and-forward, enrollment relay, artifact cache ([PROXY.md](PROXY.md)) | complete | 2026-10-23 |
 | Proxy: certificate renewal (migration `0017`) | complete | 2026-10-24 |
 | Proxy: high availability (shared queue), rate limits, leaf-node transport option | to-do | 2026-10-23 |
-| Per-action audit events from agents (the report queue is a state view, not an event log) | to-do | 2026-10-23 |
+| Per-action audit events from agents (changed/failed resources, applied/rejected policies; spool, proxy queue, idempotent, hash-chained) | complete | 2026-10-24 |
+| Agent events: per-agent rate limit is a fixed 1000/hour; configurable limits, event for command output (when `command` exists), UI view of an agent's events | to-do | 2026-10-24 |
 | Core API over HTTPS (axum-server/rustls) | complete | 2026-10-23 |
 | Onboarding: PSK + CSR enrollment, internal CA, mTLS to NATS, signed request/report proofs | complete | 2026-10-23 |
 | NATS per-agent subject permissions (auth callout) | complete | 2026-10-23 |

@@ -14,6 +14,9 @@ use delbert_core::{
 use serde_json::{Value, json};
 use sqlx::PgPool;
 
+/// The Core subscribes in the queue group `core`: tests sharing one NATS server would steal each other's messages.
+static ONE_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn unix_now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
 }
@@ -98,6 +101,7 @@ async fn proxy_enrolls_agents_and_assignment_is_visible(pool: PgPool) {
 
 #[sqlx::test]
 async fn relay_allow_list_reports_and_artifacts_over_nats(pool: PgPool) {
+    let _serial = ONE_AT_A_TIME.lock().await;
     let Ok(url) = std::env::var("NATS_URL") else {
         eprintln!("NATS_URL not set: skipping");
         return;
@@ -227,6 +231,7 @@ async fn relay_allow_list_reports_and_artifacts_over_nats(pool: PgPool) {
     assert_eq!(fetch(&branch, "branch", "acme", &sha).await.0, StatusCode::NOT_FOUND);
     assert_eq!(fetch(&rival, "branch", "acme", &real).await.0, StatusCode::UNAUTHORIZED, "proof from another proxy");
     assert_eq!(fetch(&branch, "rival", "acme", &real).await.0, StatusCode::UNAUTHORIZED, "path names another proxy");
+    client.drain().await.ok(); // leave the queue group before the next test joins it
 }
 
 #[sqlx::test]
@@ -264,4 +269,61 @@ async fn proxy_renews_its_certificate_with_a_new_key(pool: PgPool) {
     assert!(bus_auth::decide(&pool, &new_cert).await.is_ok());
     let (_, trail) = admin.call("GET", "/v1/audit?action=proxy.renew", None).await;
     assert_eq!(trail["events"].as_array().unwrap().len(), 1);
+}
+
+#[sqlx::test]
+async fn event_batches_forwarded_by_a_proxy_are_stored_once_and_only_when_authentic(pool: PgPool) {
+    let Ok(url) = std::env::var("NATS_URL") else {
+        eprintln!("NATS_URL not set: skipping");
+        return;
+    };
+    let _serial = ONE_AT_A_TIME.lock().await;
+    let client = async_nats::connect(&url).await.expect("NATS reachable");
+    let app_state = state(pool, vec![Strategy::Error], Some(Bus::from_client(client.clone())));
+    bus::serve(app_state.clone()).await.unwrap();
+    let admin = admin_client(app_state).await;
+    admin.call("POST", "/v1/tenants", Some(json!({ "name": "acme" }))).await;
+    let branch = enroll_proxy(&admin, "branch").await;
+    let rival = enroll_proxy(&admin, "rival").await;
+    let a1 = enroll_agent_via(&admin, &branch, "acme", "agent-1").await;
+    let direct = common::enroll_agent(&admin, "acme", "agent-2").await; // served by no proxy
+
+    // What the proxy queued: the agent's own batch, proven as of the time the proxy received it.
+    let received_at = unix_now() - 3600; // held through an hour-long outage
+    let events = |id: &str| json!([{ "id": id, "kind": "resource.changed", "at": received_at, "resource": "motd", "version": 1, "detail": "content" }]);
+    let item = |key: &str, agent: &str, events: Value, proof_ts: i64, at: i64| {
+        let proof = delbert_pki::authn::prove(key, "event", "acme", agent, &events, proof_ts).unwrap();
+        json!({ "tenant": "acme", "agent": agent, "received_at": at, "envelope": { "proof": proof, "events": events } })
+    };
+    let forward = |p: &common::EnrolledProxy, items: Vec<Value>| {
+        let client = client.clone();
+        let inner = json!({ "batches": items });
+        let payload = json!({ "proof": p.proof("proxy-event", &inner), "inner": inner });
+        let subject = format!("delbert.proxy.{}.event", p.site);
+        async move {
+            let reply = tokio::time::timeout(Duration::from_secs(5), client.request(subject, payload.to_string().into())).await.unwrap().unwrap();
+            serde_json::from_slice::<Value>(&reply.payload).unwrap()
+        }
+    };
+    let stored = || async {
+        let (_, page) = admin.call("GET", "/v1/audit?action=agent.resource.changed", None).await;
+        page["events"].as_array().unwrap().len()
+    };
+
+    // Forged (another agent's key), too old, and an agent this proxy does not serve: dropped.
+    let old = unix_now() - 40 * 86_400;
+    let refused = forward(&branch, vec![item(&direct.key_pem, "agent-1", events("evt-forged-0001"), received_at, received_at), item(&a1.key_pem, "agent-1", events("evt-old-000001"), old, old), item(&direct.key_pem, "agent-2", events("evt-foreign-001"), received_at, received_at)]).await;
+    assert_eq!(refused["accepted"], 0, "{refused}");
+    // Another proxy cannot forward for this site.
+    assert_eq!(forward(&rival, vec![item(&a1.key_pem, "agent-1", events("evt-rival-0001"), received_at, received_at)]).await["accepted"], 0);
+    assert_eq!(stored().await, 0);
+
+    // Authentic: stored, and a re-delivery (the proxy lost the acknowledgement) adds nothing.
+    let good = item(&a1.key_pem, "agent-1", events("evt-good-00001"), received_at, received_at);
+    assert_eq!(forward(&branch, vec![good.clone()]).await["accepted"], 1);
+    assert_eq!(forward(&branch, vec![good]).await["accepted"], 1, "acknowledged again");
+    assert_eq!(stored().await, 1);
+    let (_, page) = admin.call("GET", "/v1/audit?action=agent.resource.changed", None).await;
+    assert_eq!(page["events"][0]["actor"], "agent:acme/agent-1");
+    client.drain().await.ok(); // leave the queue group before the next test joins it
 }

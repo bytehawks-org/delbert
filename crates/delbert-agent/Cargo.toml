@@ -18,6 +18,7 @@ tracing-subscriber.workspace = true
 clap.workspace = true
 age.workspace = true
 base64.workspace = true
+rand_core.workspace = true
 delbert-pki = { path = "../delbert-pki" }
 delbert-policy = { path = "../delbert-policy" }
 delbert-wire = { path = "../delbert-wire" }

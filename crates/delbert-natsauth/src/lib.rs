@@ -10,10 +10,10 @@
 //!
 //! | Who | May publish | May subscribe |
 //! |-----|-------------|---------------|
-//! | agent `t/a` | `delbert.req.t.a.{effective,renew}`, `delbert.report.t.a` | `delbert.notify.t.a`, `_INBOX.t.a.>` |
-//! | the Core | `delbert.notify.*.*`, `delbert.proxy.*.notify`, `_INBOX.>` | `delbert.req.*.*.{effective,renew}`, `delbert.report.*.*`, `delbert.proxy.*.{relay,report,agents}` |
-//! | proxy `s` towards the Core | `delbert.proxy.s.{relay,report,agents}` | `delbert.notify.*.*`, `delbert.proxy.s.notify`, `_INBOX.proxy.s.>` |
-//! | proxy `s` on its own site | `delbert.notify.*.*`, `_INBOX.>` | `delbert.req.*.*.{effective,renew}`, `delbert.report.*.*` |
+//! | agent `t/a` | `delbert.req.t.a.{effective,renew}`, `delbert.report.t.a`, `delbert.event.t.a` | `delbert.notify.t.a`, `_INBOX.t.a.>` |
+//! | the Core | `delbert.notify.*.*`, `delbert.proxy.*.notify`, `_INBOX.>` | `delbert.req.*.*.{effective,renew}`, `delbert.report.*.*`, `delbert.event.*.*`, `delbert.proxy.*.{relay,report,event,agents}` |
+//! | proxy `s` towards the Core | `delbert.proxy.s.{relay,report,event,agents}` | `delbert.notify.*.*`, `delbert.proxy.s.notify`, `_INBOX.proxy.s.>` |
+//! | proxy `s` on its own site | `delbert.notify.*.*`, `_INBOX.>` | `delbert.req.*.*.{effective,renew}`, `delbert.report.*.*`, `delbert.event.*.*` |
 
 use std::{future::Future, sync::Arc};
 
@@ -74,7 +74,7 @@ pub fn jwt_claims(token: &str) -> Option<Value> {
 
 pub fn agent_permissions(tenant: &str, agent: &str) -> Permissions {
     Permissions {
-        publish: vec![format!("delbert.req.{tenant}.{agent}.effective"), format!("delbert.req.{tenant}.{agent}.renew"), format!("delbert.report.{tenant}.{agent}")],
+        publish: vec![format!("delbert.req.{tenant}.{agent}.effective"), format!("delbert.req.{tenant}.{agent}.renew"), format!("delbert.report.{tenant}.{agent}"), format!("delbert.event.{tenant}.{agent}")],
         // The inbox prefix is per agent; the agent configures it on its connection.
         subscribe: vec![format!("delbert.notify.{tenant}.{agent}"), format!("_INBOX.{tenant}.{agent}.>")],
     }
@@ -87,8 +87,10 @@ pub fn core_permissions() -> Permissions {
             "delbert.req.*.*.effective".into(),
             "delbert.req.*.*.renew".into(),
             "delbert.report.*.*".into(),
+            "delbert.event.*.*".into(),
             "delbert.proxy.*.relay".into(),
             "delbert.proxy.*.report".into(),
+            "delbert.proxy.*.event".into(),
             "delbert.proxy.*.agents".into(),
         ],
     }
@@ -97,7 +99,7 @@ pub fn core_permissions() -> Permissions {
 /// A proxy's connection to the Core: only its own relay subjects.
 pub fn proxy_hub_permissions(site: &str) -> Permissions {
     Permissions {
-        publish: vec![format!("delbert.proxy.{site}.relay"), format!("delbert.proxy.{site}.report"), format!("delbert.proxy.{site}.agents")],
+        publish: vec![format!("delbert.proxy.{site}.relay"), format!("delbert.proxy.{site}.report"), format!("delbert.proxy.{site}.event"), format!("delbert.proxy.{site}.agents")],
         subscribe: vec!["delbert.notify.*.*".into(), format!("delbert.proxy.{site}.notify"), format!("_INBOX.proxy.{site}.>")],
     }
 }
@@ -106,7 +108,7 @@ pub fn proxy_hub_permissions(site: &str) -> Permissions {
 pub fn proxy_site_permissions() -> Permissions {
     Permissions {
         publish: vec!["delbert.notify.*.*".into(), "_INBOX.>".into()],
-        subscribe: vec!["delbert.req.*.*.effective".into(), "delbert.req.*.*.renew".into(), "delbert.report.*.*".into()],
+        subscribe: vec!["delbert.req.*.*.effective".into(), "delbert.req.*.*.renew".into(), "delbert.report.*.*".into(), "delbert.event.*.*".into()],
     }
 }
 

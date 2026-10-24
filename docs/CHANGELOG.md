@@ -1,5 +1,14 @@
 # Delbert - Changelog
 
+## 2026-10-24 (continued)
+
+### Per-action audit events from agents
+- Agents now record what they **do**, not only how the host looks: `resource.changed`, `resource.failed`, `policy.applied`, `policy.rejected`, `events.dropped` (new `delbert-agent` module `events.rs`). Failures that repeat every cycle are recorded once (memo in `state.json`), a missing Core is not an event, details carry attribute names only. At-least-once delivery: a spool directory on the agent (crash-safe files, 2000 at most, oldest discarded with an `events.dropped` event) is emptied by `delbert.event.<t>.<a>` requests that the Core acknowledges after the events are in the audit trail.
+- Core: `agent_events.rs`, migration `0019` (`agent_event_ids` for idempotent re-delivery), `delbert.event.*.*` and `delbert.proxy.*.event` responders. Each event becomes an `agent.<kind>` audit event, actor `agent:<tenant>/<agent>`, inside the hash chain. The batch proof covers the events (a proxy cannot alter or add any); 100 events per batch, 1000 per agent per hour. NATS permissions extended in `delbert-natsauth`.
+- Proxy: `EventQueue` keeps every batch (up to 5000) until the Core acknowledges it, and tells the agent "stored" only after the write; forwards in order with `delbert.proxy.<s>.event`.
+- Tests: agent unit tests (derivation, de-duplication, ordering, spool bounds), proxy queue test, Core `bus.rs` (authentic once, duplicate, other agent's key, altered batch, oversized batch) and `proxies.rs` (forwarded batches: forged, too old, foreign agent, other proxy, re-delivery). NATS tests that share the queue group `core` are now serialized and drain their connection (one of them failed 1 run in 4 when run in parallel). Found while testing: events written in the same millisecond were ordered by random id, now by a counter.
+- Verified live (Core, NATS and an agent in containers; then a branch with proxy): events reach the trail; a repeated failure is recorded once; with the Core stopped the event waits in the agent's spool and arrives after the restart without duplicates; with the proxy-Core link cut it waits in the proxy's queue (the agent's spool is already empty) and arrives when the link returns; `GET /v1/audit/verify` stays clean. Full suite passes.
+
 ## 2026-10-24
 
 ### Roadmap cleanup

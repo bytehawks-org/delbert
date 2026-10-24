@@ -11,7 +11,7 @@ Snapshot for whoever continues the work (updated 2026-10-24). Design lives in [A
 | `delbert-pki` | internal CA (Ed25519), CSR signing, agent request proofs | `delbert-pki` CLI |
 | `delbert-natsauth` | NATS authorization-callout building blocks | shared by Core and Proxy |
 | `delbert-fs` | crash-safe file replacement | used by agent, proxy, PKI CLI |
-| `delbert-core` | REST API, PostgreSQL via SQLx (migrations 0001-0018), NATS bus + callout | RBAC v2 (tenant-scoped), approval workflow, sessions/CSRF/MFA/throttling, API tokens, OIDC SSO, content sources (directory/git), artifacts in local dir or S3, audit browse/export, config file |
+| `delbert-core` | REST API, PostgreSQL via SQLx (migrations 0001-0019), NATS bus + callout | RBAC v2 (tenant-scoped), approval workflow, sessions/CSRF/MFA/throttling, API tokens, OIDC SSO, content sources (directory/git), artifacts in local dir or S3, audit browse/export, config file |
 | `delbert-agent` | engine + daemon + CLI | enrollment, renewal with key rotation, trust updates |
 | `delbert-proxy` | branch-office relay | see [PROXY.md](PROXY.md) |
 | `web/` (Next.js) | administration UI, milestones M0-M3 | backend-for-frontend, see [web/README.md](../web/README.md) |
@@ -45,12 +45,12 @@ Optional environment for the real-system tests: `S3_TEST_*` (Garage), `GIT_TEST_
 
 ## Known limits
 
-See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI at milestone M3 (M4: SSE, accessibility audit, performance budget; [FRONTEND.md](FRONTEND.md)); no Kubernetes Operator; no Windows agent; `service` only tested with a fake runner; no per-action audit events from agents; no CRL/OCSP; proxy renewal not run live in a branch scenario ([ROTATION.md](ROTATION.md)); the Kubernetes manifests were never run on a cluster; no published images/packages; the proxy has no configuration file and its certificate does not renew.
+See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI at milestone M3 (M4: SSE, accessibility audit, performance budget; [FRONTEND.md](FRONTEND.md)); no Kubernetes Operator; no Windows agent; `service` only tested with a fake runner; no CRL/OCSP; proxy renewal not run live in a branch scenario ([ROTATION.md](ROTATION.md)); the Kubernetes manifests were never run on a cluster; no published images/packages; the proxy has no configuration file and its certificate does not renew.
 
 ## Next steps
 
 1. Frontend M4 ([FRONTEND.md](FRONTEND.md)): SSE for live status, accessibility audit, performance budget, visual regression. M0-M3 are in `web/` (governance and management screens included); a tenant "delete" is an archive.
-2. Per-action audit events from agents (also through the proxy); Kubernetes Operator; Windows agent study.
+2. CA behind a trait (rcgen or OpenSSL); Kubernetes Operator; Windows agent study. (Per-action audit events from agents are done, also through the proxy: [API.md](API.md) "Agent audit events".)
 3. Proxy config file and live branch check of proxy renewal; SSH remotes and signed commits for content sources; Entra ID check against a real tenant.
 
 ## Working agreements

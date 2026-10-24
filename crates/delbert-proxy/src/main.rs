@@ -9,7 +9,7 @@ use delbert_proxy::{
     allowlist::AllowList,
     hub::{Hub, ProofMaker},
     identity::{self, Identity},
-    queue::ReportQueue,
+    queue::{EventQueue, ReportQueue},
     relay::Relay,
     web::{self, Web},
 };
@@ -133,7 +133,7 @@ async fn run(a: RunArgs) -> Result<()> {
         .context("connecting to the site's NATS")?;
     let hub_url = a.hub_nats_url.clone().or_else(|| id.meta.hub_nats_url.clone()).context("no NATS URL of the Core: enroll against a Core that publishes one or pass --hub-nats-url")?;
     let hub = Hub::connect(&id, &hub_url).await?;
-    let relay = Relay::new(id.meta.site.clone(), hub, local, allow.clone(), ReportQueue::new(a.state_dir.join("reports"))?, a.state_dir.join("policies"))?;
+    let relay = Relay::new(id.meta.site.clone(), hub, local, allow.clone(), ReportQueue::new(a.state_dir.join("reports"))?, EventQueue::new(a.state_dir.join("events"))?, a.state_dir.join("policies"))?;
 
     // 3. HTTPS for the agents: enrollment relay and artifact cache. Same certificate, also valid for servers.
     let ca_pem = fs::read(&ca)?;

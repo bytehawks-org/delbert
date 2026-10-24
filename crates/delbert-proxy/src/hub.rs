@@ -98,4 +98,11 @@ impl Hub {
         let reply = self.request("report", json!({ "proof": self.proofs.prove("proxy-report", &inner)?, "inner": inner })).await?;
         reply["accepted"].as_u64().context("reply without a count")
     }
+
+    /// Forward queued event batches; returns how many batches the Core took. The caller keeps the queue until this succeeds.
+    pub async fn forward_events(&self, batches: Vec<Value>) -> Result<u64> {
+        let inner = json!({ "batches": batches });
+        let reply = self.request("event", json!({ "proof": self.proofs.prove("proxy-event", &inner)?, "inner": inner })).await?;
+        reply["accepted"].as_u64().context("reply without a count")
+    }
 }
