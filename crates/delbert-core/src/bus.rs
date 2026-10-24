@@ -323,6 +323,12 @@ async fn store_report(state: &AppState, tenant: &str, agent: &str, report: &serd
     .bind(report)
     .execute(&state.pool)
     .await?;
+    sqlx::query("SELECT pg_notify($3, json_build_object('t', t.id, 'k', 'report')::text) FROM tenants t WHERE t.name = $1 AND EXISTS (SELECT 1 FROM agents a WHERE a.tenant_id = t.id AND a.name = $2)")
+        .bind(tenant)
+        .bind(agent)
+        .bind(crate::stream::CHANNEL)
+        .execute(&state.pool)
+        .await?;
     Ok(())
 }
 

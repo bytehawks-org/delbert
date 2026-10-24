@@ -32,6 +32,8 @@ podman run --rm --network delbert_default -e WEB_URL=http://web:3000 -e CORE_URL
 | `WEB_CORE_PUBLIC_URL` | where the browser reaches the Core, for single sign-on redirects (default: `DELBERT_CORE_URL`) |
 | `WEB_SESSION_SECRET` | 32 bytes, base64url: encrypts the session cookie (required in production) |
 | `WEB_PUBLIC_URL` | the UI's public URL, when behind a reverse proxy that does not forward `Host`/`X-Forwarded-*` |
+| `WEB_STALE_MINUTES` | dashboard: an agent or proxy silent for longer than this is shown as silent (default 10) |
+| `WEB_JS_BUDGET` | performance test: JavaScript bytes on the wire per screen (default 200000) |
 | `WEB_INSECURE_COOKIES` | `true` drops the `Secure` flag (plain-HTTP development only) |
 
 For single sign-on set the Core's `DELBERT_UI_URL` to `<UI URL>/auth/callback` and `DELBERT_PUBLIC_URL` to the Core's public address.

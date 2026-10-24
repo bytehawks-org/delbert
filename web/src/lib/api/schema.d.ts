@@ -423,6 +423,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/permissions": {
         parameters: {
             query?: never;
@@ -678,6 +694,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["test_provider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["events"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1185,6 +1217,17 @@ export interface components {
             role: string;
             tenant?: string | null;
         };
+        AttentionAgent: {
+            name: string;
+            /**
+             * Format: int64
+             * @description Unix seconds of the last report.
+             */
+            reported_at?: number | null;
+            /** @description `drifted` (reported, not compliant) or `silent` (never reported, or not for a while). */
+            state: string;
+            tenant: string;
+        };
         AuditEvent: {
             action: string;
             actor: string;
@@ -1434,6 +1477,20 @@ export interface components {
             assignments?: components["schemas"]["Assignment"][];
             password: string;
             username: string;
+        };
+        Overview: {
+            /** Format: int64 */
+            agents: number;
+            /** @description Drifted agents first, then the silent ones (longest silent first); at most 20. */
+            attention: components["schemas"]["AttentionAgent"][];
+            /** Format: int64 */
+            compliant: number;
+            /** Format: int64 */
+            drifted: number;
+            /** Format: int64 */
+            silent: number;
+            /** Format: int64 */
+            tenants: number;
         };
         PermissionOut: {
             /** @description Only a global assignment can grant it. */
@@ -2673,6 +2730,28 @@ export interface operations {
             };
         };
     };
+    overview: {
+        parameters: {
+            query?: {
+                /** @description An agent whose last report is older than this many seconds counts as silent (default 600, at least 30). */
+                stale_secs?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Overview"];
+                };
+            };
+        };
+    };
     list_permissions: {
         parameters: {
             query?: never;
@@ -3313,6 +3392,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    events: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-Sent Events: `data: {"kind": "audit" | "report" | "resync"}` whenever something visible to the caller changed; a comment line every 15 s keeps the connection open */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
             };
         };
     };

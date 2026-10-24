@@ -60,3 +60,18 @@ test("state-changing requests from another origin are refused", async ({ request
   const res = await request.post("/api/auth/login", { data: { username: USER, password: PASSWORD }, headers: { origin: "https://evil.example" } });
   expect(res.status()).toBe(403);
 });
+
+test("a login submitted before the page is interactive never puts the password in the URL", async ({ browser }) => {
+  // Without JavaScript the form behaves as it does before hydration: it must do nothing.
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto("/login");
+  await page.locator("#username").fill("admin");
+  await page.locator("#password").fill("secret-that-must-stay-out-of-the-url");
+  await expect(page.getByRole("button", { name: /sign in/i })).toBeDisabled();
+  await page.locator("#password").press("Enter");
+  await page.waitForTimeout(500);
+  expect(page.url()).not.toContain("secret-that-must-stay-out-of-the-url");
+  expect(page.url()).not.toContain("password=");
+  await context.close();
+});

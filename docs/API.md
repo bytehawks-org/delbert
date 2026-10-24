@@ -81,6 +81,8 @@ Policies, artifacts and tenant settings can come from a repository instead of th
 | `GET /v1/tenants/{t}/assignments`, `PUT .../assignments/{username}` | `roles:assign` in the tenant | Delegated administration: who holds which role in the tenant; set a user's roles there |
 | `POST /v1/tenants`, `GET /v1/tenants` | `tenants:create` (global) / `tenants:read` | Tenants (the list is limited to reachable tenants) |
 | `DELETE /v1/tenants/{t}` | `tenants:delete` (global) | **Archives** the tenant (migration `0018`): refused with 409 while it has agents; revokes its enrollment keys, tenant-scoped API tokens and role assignments, stops its tenant-owned content sources; the tenant vanishes from every API and its name stays reserved. Audit events and policy versions are append-only and are kept |
+| `GET /v1/stream` | any session | Server-Sent Events: `data: {"kind": "audit" \| "report" \| "resync"}` when something the caller may see changed (tenant-scoped; nothing about the content). Fed by PostgreSQL `LISTEN/NOTIFY` after commit; a comment line every 15 s keeps it open |
+| `GET /v1/overview?stale_secs=` | `agents:read` (tenant-scoped) | Totals and the agents needing attention in one query: `tenants`, `agents`, `compliant`, `drifted`, `silent` (no report for `stale_secs`, default 600), `attention` (at most 20, drifted first) |
 | `GET /v1/permissions` | same gate as the role list | Every permission with `global_only`, for building roles |
 | `POST/GET /v1/tenants/{t}/agents` | `agents:write` / `agents:read` | Create / list agents (`name`, `groups`; list includes the last report) |
 | `PUT/DELETE /v1/tenants/{t}/agents/{a}` | `agents:write` | Change groups / delete |

@@ -1182,6 +1182,43 @@
         ]
       }
     },
+    "/v1/overview": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "overview",
+        "parameters": [
+          {
+            "name": "stale_secs",
+            "in": "query",
+            "description": "An agent whose last report is older than this many seconds counts as silent (default 600, at least 30).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Overview"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/permissions": {
       "get": {
         "tags": [
@@ -1957,6 +1994,27 @@
           },
           "404": {
             "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/stream": {
+      "get": {
+        "tags": [
+          "status"
+        ],
+        "operationId": "events",
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events: `data: {\"kind\": \"audit\" | \"report\" | \"resync\"}` whenever something visible to the caller changed; a comment line every 15 s keeps the connection open",
+            "content": {
+              "text/event-stream": {}
+            }
           }
         },
         "security": [
@@ -3833,6 +3891,34 @@
           }
         }
       },
+      "AttentionAgent": {
+        "type": "object",
+        "required": [
+          "tenant",
+          "name",
+          "state"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "reported_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix seconds of the last report."
+          },
+          "state": {
+            "type": "string",
+            "description": "`drifted` (reported, not compliant) or `silent` (never reported, or not for a while)."
+          },
+          "tenant": {
+            "type": "string"
+          }
+        }
+      },
       "AuditEvent": {
         "type": "object",
         "required": [
@@ -4606,6 +4692,46 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "Overview": {
+        "type": "object",
+        "required": [
+          "tenants",
+          "agents",
+          "compliant",
+          "drifted",
+          "silent",
+          "attention"
+        ],
+        "properties": {
+          "agents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "attention": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttentionAgent"
+            },
+            "description": "Drifted agents first, then the silent ones (longest silent first); at most 20."
+          },
+          "compliant": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "drifted": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "silent": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tenants": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -5777,6 +5903,9 @@
     },
     {
       "name": "content"
+    },
+    {
+      "name": "status"
     },
     {
       "name": "system"

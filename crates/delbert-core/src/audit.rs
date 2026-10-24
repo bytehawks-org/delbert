@@ -89,6 +89,8 @@ pub async fn append(tx: &mut Transaction<'_, Postgres>, ev: &NewEvent<'_>) -> Re
     .bind(hash)
     .fetch_one(&mut **tx)
     .await?;
+    // Delivered when the transaction commits: the live status stream (stream.rs).
+    sqlx::query(&crate::stream::notify_sql("audit")).bind(ev.tenant_id).execute(&mut **tx).await?;
     Ok(seq)
 }
 

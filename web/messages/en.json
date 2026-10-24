@@ -65,8 +65,34 @@
     "tenants": "Tenants you can reach",
     "agents": "Agents",
     "compliant": "compliant",
-    "drifted": "drifted or unknown",
-    "needsAttention": "need attention"
+    "drifted": "drifted",
+    "needsAttention": "need attention",
+    "silent": "no recent report",
+    "limited": "Counts cover the first {count} tenants.",
+    "attention": "Needs attention",
+    "agent": "Agent",
+    "state": "State",
+    "lastReport": "Last report",
+    "allGood": "Every agent is compliant and reporting.",
+    "drift": "drifted",
+    "silentState": "no recent report",
+    "allAttention": "All {count} agents that need attention",
+    "recent": "Recent activity",
+    "when": "When",
+    "who": "Who",
+    "what": "What",
+    "noActivity": "Nothing recorded yet.",
+    "noAudit": "Your role does not cover the audit trail.",
+    "openAudit": "Open the audit trail",
+    "proxies": "Proxies",
+    "name": "Name",
+    "lastSeen": "Last seen",
+    "noProxies": "No proxies.",
+    "proxyPending": "waiting for enrollment",
+    "proxyUp": "online",
+    "proxyDown": "silent",
+    "failingSources": "Content sources with errors",
+    "setUp": "Set up"
   },
   "tenants": {
     "title": "Tenants",
@@ -439,5 +465,10 @@
     "delete": "Delete",
     "confirmDelete": "Type the agent name \"{name}\" to delete it. The host will no longer be served.",
     "none": "No agents."
+  },
+  "live": {
+    "connecting": "connecting…",
+    "live": "live",
+    "polling": "updating every 30 s"
   }
 }

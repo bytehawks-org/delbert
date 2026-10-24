@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
+import { LiveRefresh } from "@/components/live-refresh";
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { MainNav } from "@/components/nav";
 import { ThemeToggle } from "@/components/theme";
@@ -21,6 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <MainNav granted={[canGlobal(me, "users:read") && "users", canGlobal(me, "roles:read") && "roles", canGlobal(me, "sso:read") && "sso", canAnywhere(me, "content:read") && "content"].filter((x): x is string => !!x)} />
           </div>
           <div className="flex flex-wrap items-center gap-4">
+            <LiveRefresh />
             <LocaleSwitcher />
             <ThemeToggle />
             <Link href="/profile" className="text-sm text-muted hover:text-fg">

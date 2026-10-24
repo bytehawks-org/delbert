@@ -87,6 +87,7 @@ test("a tenant-scoped administrator gets agent management but no tenant creation
   await page.getByLabel(/username/i).fill(user);
   await page.getByLabel(/password/i).fill("a-long-enough-password");
   await page.getByRole("button", { name: /sign in/i }).click();
+  await expect(page).toHaveURL(/\/$/); // signed in before navigating on
   await page.goto("/tenants");
   await expect(page.getByLabel("New tenant")).toHaveCount(0);
   await page.goto(`/tenants/${tenant}`);

@@ -25,6 +25,8 @@ export function proxy(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   if (!PUBLIC.some((re) => re.test(path)) && !request.cookies.has(COOKIE)) {
+    // Programmatic callers (the pass-through, the live stream) get a status, not a login page.
+    if (path.startsWith("/api/")) return new NextResponse(JSON.stringify({ error: "not signed in" }), { status: 401, headers: { "content-type": "application/json", "Cache-Control": "no-store" } });
     const to = request.nextUrl.clone();
     to.pathname = "/login";
     to.search = "";

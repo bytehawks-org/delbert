@@ -65,8 +65,34 @@
     "tenants": "Tenant raggiungibili",
     "agents": "Agent",
     "compliant": "conformi",
-    "drifted": "non conformi o sconosciuti",
-    "needsAttention": "da controllare"
+    "drifted": "in drift",
+    "needsAttention": "da controllare",
+    "silent": "senza report recenti",
+    "limited": "I conteggi riguardano i primi {count} tenant.",
+    "attention": "Richiedono attenzione",
+    "agent": "Agent",
+    "state": "Stato",
+    "lastReport": "Ultimo report",
+    "allGood": "Tutti gli agent sono conformi e attivi.",
+    "drift": "in drift",
+    "silentState": "nessun report recente",
+    "allAttention": "Tutti i {count} agent che richiedono attenzione",
+    "recent": "Attività recente",
+    "when": "Quando",
+    "who": "Chi",
+    "what": "Cosa",
+    "noActivity": "Ancora nulla di registrato.",
+    "noAudit": "Il tuo ruolo non copre l'audit trail.",
+    "openAudit": "Apri l'audit trail",
+    "proxies": "Proxy",
+    "name": "Nome",
+    "lastSeen": "Ultimo contatto",
+    "noProxies": "Nessun proxy.",
+    "proxyPending": "in attesa di enrollment",
+    "proxyUp": "online",
+    "proxyDown": "silenzioso",
+    "failingSources": "Sorgenti di contenuto con errori",
+    "setUp": "Configura"
   },
   "tenants": {
     "title": "Tenant",
@@ -439,5 +465,10 @@
     "delete": "Elimina",
     "confirmDelete": "Digita il nome dell'agent \"{name}\" per eliminarlo. L'host non sarà più servito.",
     "none": "Nessun agent."
+  },
+  "live": {
+    "connecting": "connessione…",
+    "live": "in tempo reale",
+    "polling": "aggiornamento ogni 30 s"
   }
 }

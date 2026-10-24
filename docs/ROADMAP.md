@@ -63,14 +63,16 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | RBAC v2: tenant-scoped assignments, `resource:action` permissions, built-in roles, delegated tenant administration (migration `0010`) | complete | 2026-10-23 |
 | RBAC v2: approval workflow (`approval_required`, `active_version`, `policy_version_events`, migration `0011`) | complete | 2026-10-23 |
 | Approval: version diff, impact preview before approving, emergency path | to-do | 2026-10-23 |
-| Core API for the UI: audit search/export, policy versions/validate done; general pagination/filters, SSE status to-do | partial | 2026-10-24 |
+| Core API for the UI: audit search/export, policy versions/validate, SSE stream, fleet overview done; general pagination/filters to-do | partial | 2026-10-24 |
 | Frontend design ([FRONTEND.md](FRONTEND.md)) | complete | 2026-10-23 |
 | Frontend M0 (Next.js BFF, generated client, login with MFA/SSO, i18n, theme, Playwright) | complete | 2026-10-23 |
 | Frontend M1 (read-only: dashboard, tenants, agents, policies and versions, proxies, audit) | complete | 2026-10-23 |
 | Frontend M2 (policy editor with dry-run validation and diff, version steps, enrollment keys, secrets, artifacts) | complete | 2026-10-23 |
 | Frontend M2 leftovers: tenant create/archive, agent and proxy management | complete | 2026-10-24 |
-| Frontend: CodeMirror highlighting for the policy editor | to-do | 2026-10-24 |
-| Frontend M3-M4 (governance, hardening) | to-do | 2026-10-23 |
+| Frontend: syntax highlighting in the policy editor (deferred: cosmetic, CSP and test cost; validation and diff already live) | to-do | 2026-10-24 |
+| CI: web end-to-end job (compose stack with PKI, Playwright) | to-do | 2026-10-24 |
+| Frontend: manual accessibility review with a screen reader (axe covers only part of WCAG) | to-do | 2026-10-24 |
+| Frontend M4: live status (SSE), dashboard with overview endpoint, axe accessibility audit, performance budget, visual regression | complete | 2026-10-24 |
 | `git init` | complete | 2026-10-24 |
 | CI pipeline (tests, clippy, fmt, image build) | partial | 2026-10-24 |
 | Audit browse and export API (`GET /v1/audit`, `/v1/audit/export`) | complete | 2026-10-23 |
@@ -103,7 +105,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Frontend M3, slice 4: SSO providers (list, create/edit with group mappings, test, delete) | complete | 2026-10-24 |
 | Frontend M3, slice 5: content sources (sources, history, diffs, sync now) | complete | 2026-10-24 |
 | Frontend M3: complete | complete | 2026-10-24 |
-| External providers, design: three seams (`KeyWrapper` for secrets at rest, remote `Signer` for the policy-signing key and the CA key, `SecretSource` for values that stay in an external store); OpenBao/Vault, PKCS#11 HSM, AWS/Azure/GCP | to-do | 2026-10-24 |
-| External providers, first backend: OpenBao/Vault (Transit wrap and Ed25519 signing, PKI sign-CSR, KV references) | to-do | 2026-10-24 |
+| Decision (2026-10-24): local management of secrets, keys and certificates stays complete and the default (age-sealed store, key files, internal CA); external providers are an optional extra layer of protection behind the same seams, never a requirement. Nothing in the product may need a provider to work | complete | 2026-10-24 |
+| External providers, design: seams `KeyWrapper` (secrets at rest), remote `Signer` (policy-signing key, CA key), `SecretSource` (values kept in an external store); each backend optional (cargo feature, one crate per family) | to-do | 2026-10-24 |
+| External providers, first backend (optional): OpenBao/Vault (Transit wrap and Ed25519 signing, PKI sign-CSR, KV references). Check Ed25519 support per provider before choosing; HSM via PKCS#11 needs an isolated FFI crate (`unsafe_code` exception) | to-do | 2026-10-24 |
 | External providers: PKCS#11 (Thales Luna, Utimaco, CloudHSM, SoftHSM2 for tests) | to-do | 2026-10-24 |
 | External providers: AWS KMS/Secrets Manager, Azure Key Vault/Managed HSM, Google Cloud KMS/Secret Manager | to-do | 2026-10-24 |

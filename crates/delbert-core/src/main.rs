@@ -256,7 +256,8 @@ async fn main() -> anyhow::Result<()> {
             "admins" => delbert_core::api::LocalLogin::Admins,
             other => anyhow::bail!("DELBERT_LOCAL_LOGIN must be all or admins, not '{other}'"),
         },
-    } };
+    }, changes: delbert_core::stream::channel() };
+    delbert_core::stream::spawn_listener(state.pool.clone(), state.changes.clone());
     if state.content.poll {
         tokio::spawn(delbert_core::content::poller(state.clone()));
     }

@@ -57,6 +57,8 @@ pub struct AppState {
     pub content: ContentConfig,
     /// Whether new tenants require policy approval (`DELBERT_APPROVAL_DEFAULT`).
     pub approval_default: bool,
+    /// Hints that something changed, for the live status stream (`stream.rs`).
+    pub changes: tokio::sync::broadcast::Sender<crate::stream::Change>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -202,6 +204,8 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/me/sessions/{id}", axum::routing::delete(auth::revoke_session))
         .route("/v1/users/{username}/mfa", axum::routing::delete(auth::admin_reset_mfa))
         .route("/v1/users/{username}/sessions", axum::routing::delete(auth::admin_revoke_sessions))
+        .route("/v1/stream", get(crate::stream::events))
+        .route("/v1/overview", get(crate::overview::overview))
         .route("/v1/me", get(auth::me))
         .route("/v1/users", get(auth::list_users).post(auth::create_user))
         .route("/v1/users/{username}", put(auth::update_user).delete(auth::delete_user))

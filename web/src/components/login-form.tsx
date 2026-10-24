@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Step = "password" | "mfa";
 const KNOWN = ["invalid", "throttled", "invalidCode", "unavailable", "expired"] as const;
@@ -16,6 +16,10 @@ export function LoginForm({ providers, initialError }: { providers: { name: stri
   const [step, setStep] = useState<Step>("password");
   const [error, setError] = useState<string | undefined>(initialError);
   const [busy, setBusy] = useState(false);
+  // Until the page is interactive the form must not be submittable: a native submit would put the
+  // password in the URL. (The button stays disabled, which also blocks submitting with Enter.)
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
 
   async function post(url: string, body: object): Promise<{ ok: boolean; data: { error?: string; mfaRequired?: boolean } }> {
     try {
@@ -49,7 +53,7 @@ export function LoginForm({ providers, initialError }: { providers: { name: stri
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">{step === "password" ? t("title") : t("mfaTitle")}</h1>
-      <form onSubmit={submit} className="space-y-4" noValidate>
+      <form onSubmit={submit} method="post" className="space-y-4" noValidate>
         {step === "password" ? (
           <>
             <div className="space-y-1">
@@ -71,7 +75,7 @@ export function LoginForm({ providers, initialError }: { providers: { name: stri
         <p role="alert" aria-live="polite" className="min-h-5 text-sm text-danger">
           {error ? (error.startsWith("sso:") ? t("errors.sso", { reason: error.slice(4) }) : t(`errors.${error}`)) : null}
         </p>
-        <button type="submit" disabled={busy} className={buttonClass}>
+        <button type="submit" disabled={busy || !ready} className={buttonClass}>
           {step === "password" ? (busy ? t("submitting") : t("submit")) : t("mfaSubmit")}
         </button>
       </form>

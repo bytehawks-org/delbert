@@ -25,7 +25,7 @@ impl Modify for BearerAuth {
 #[openapi(
     info(title = "Delbert Core API", description = "Configuration management and state enforcement. See docs/API.md."),
     paths(
-        api::healthz, auth::login, auth::logout, auth::me, auth::complete_mfa,
+        api::healthz, crate::stream::events, crate::overview::overview, auth::login, auth::logout, auth::me, auth::complete_mfa,
         auth::create_token, auth::list_tokens, auth::revoke_token, auth::mfa_enroll, auth::mfa_confirm, auth::mfa_disable, auth::admin_reset_mfa, auth::my_sessions, auth::revoke_session, auth::admin_revoke_sessions,
         auth::list_users, auth::create_user, auth::update_user, auth::delete_user,
         auth::list_permissions, auth::list_roles, auth::create_role, auth::update_role, auth::delete_role,
@@ -50,7 +50,7 @@ impl Modify for BearerAuth {
     modifiers(&BearerAuth),
     tags(
         (name = "auth"), (name = "users"), (name = "roles"), (name = "tenants"),
-        (name = "agents"), (name = "enrollment"), (name = "proxies"), (name = "secrets"), (name = "artifacts"), (name = "policies"), (name = "audit"), (name = "sso"), (name = "content"), (name = "system")
+        (name = "agents"), (name = "enrollment"), (name = "proxies"), (name = "secrets"), (name = "artifacts"), (name = "policies"), (name = "audit"), (name = "sso"), (name = "content"), (name = "status"), (name = "system")
     )
 )]
 pub struct ApiDoc;

@@ -28,7 +28,7 @@ pub fn signing_key() -> SigningKey {
 }
 
 pub fn state(pool: PgPool, strategies: Vec<Strategy>, bus: Option<Bus>) -> AppState {
-    AppState { pool, signer: Some(Arc::new(Signer::new(signing_key(), "k1"))), ttl_secs: 3600, strategies: Arc::new(strategies), bus, docs: true, secrets_key: Some(Arc::new(delbert_core::secrets::SecretsKeys::new(age::x25519::Identity::generate(), vec![]))), pki: Some(Arc::new(delbert_pki::RcgenCa::create("Test CA", 30).unwrap())), agent_cert_days: 30, public_nats_url: None, approval_default: false, auth: Default::default(), trust: None, ca_rotation: Default::default(), published_keys: vec![], content: Default::default(), blobs: delbert_core::blobs::Blobs::memory() }
+    AppState { pool, signer: Some(Arc::new(Signer::new(signing_key(), "k1"))), ttl_secs: 3600, strategies: Arc::new(strategies), bus, docs: true, secrets_key: Some(Arc::new(delbert_core::secrets::SecretsKeys::new(age::x25519::Identity::generate(), vec![]))), pki: Some(Arc::new(delbert_pki::RcgenCa::create("Test CA", 30).unwrap())), agent_cert_days: 30, public_nats_url: None, approval_default: false, auth: Default::default(), trust: None, ca_rotation: Default::default(), published_keys: vec![], content: Default::default(), blobs: delbert_core::blobs::Blobs::memory(), changes: delbert_core::stream::channel() }
 }
 
 /// An HTTP client against the router, authenticated as `token` (if any).
