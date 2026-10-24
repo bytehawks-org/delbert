@@ -891,6 +891,201 @@
         }
       }
     },
+    "/v1/globals/artifacts": {
+      "get": {
+        "tags": [
+          "artifacts"
+        ],
+        "operationId": "list_global_artifacts",
+        "responses": {
+          "200": {
+            "description": "Latest version of each global artifact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ArtifactOut"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/globals/artifacts/{name}": {
+      "put": {
+        "tags": [
+          "artifacts"
+        ],
+        "operationId": "put_global_artifact",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Same content as the latest version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactOut"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "New version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/globals/variables": {
+      "get": {
+        "tags": [
+          "variables"
+        ],
+        "operationId": "list_global",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VariableOut"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/globals/variables/{name}": {
+      "put": {
+        "tags": [
+          "variables"
+        ],
+        "operationId": "put_global",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewVariable"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "variables"
+        ],
+        "operationId": "delete_global",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/me": {
       "get": {
         "tags": [
@@ -2360,6 +2555,99 @@
         ]
       }
     },
+    "/v1/tenants/{tenant}/agents/{agent}/render": {
+      "get": {
+        "tags": [
+          "variables"
+        ],
+        "summary": "Render every template resource of the agent's effective policy the way the agent will, except\nthat secrets are masked and the host facts are placeholders (the Core does not know them). The\nCore only renders text here; it never applies anything.",
+        "operationId": "render",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preview"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/tenants/{tenant}/agents/{agent}/variables": {
+      "get": {
+        "tags": [
+          "variables"
+        ],
+        "operationId": "resolved",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Variables as this agent receives them, with their origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resolved"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/tenants/{tenant}/artifacts": {
       "get": {
         "tags": [
@@ -2378,7 +2666,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Latest version of each artifact",
+            "description": "Latest version of each artifact the tenant can use: its own and the inherited global ones",
             "content": {
               "application/json": {
                 "schema": {
@@ -3573,6 +3861,175 @@
         ]
       }
     },
+    "/v1/tenants/{tenant}/variables": {
+      "get": {
+        "tags": [
+          "variables"
+        ],
+        "operationId": "list_variables",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The tenant's own variables (tenant, group and agent level) and the inherited global ones",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VariableOut"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/tenants/{tenant}/variables/{name}": {
+      "put": {
+        "tags": [
+          "variables"
+        ],
+        "operationId": "put_variable",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "`tenant` (default), `group` or `agent`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "description": "The group or agent name; required for those scopes.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewVariable"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "409": {
+            "description": "A constant above cannot be overridden"
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "variables"
+        ],
+        "operationId": "delete_variable",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "`tenant` (default), `group` or `agent`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "description": "The group or agent name; required for those scopes.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/users": {
       "get": {
         "tags": [
@@ -3854,14 +4311,24 @@
           "name",
           "version",
           "size",
-          "sha256"
+          "sha256",
+          "origin",
+          "shadows_global"
         ],
         "properties": {
           "name": {
             "type": "string"
           },
+          "origin": {
+            "type": "string",
+            "description": "`tenant` or `global` (inherited from the platform)."
+          },
           "sha256": {
             "type": "string"
+          },
+          "shadows_global": {
+            "type": "boolean",
+            "description": "A tenant artifact that hides a global one of the same name."
           },
           "size": {
             "type": "integer",
@@ -4695,6 +5162,18 @@
           }
         }
       },
+      "NewVariable": {
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "locked": {
+            "type": "boolean"
+          },
+          "value": {}
+        }
+      },
       "Overview": {
         "type": "object",
         "required": [
@@ -4846,6 +5325,27 @@
           "version": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "Preview": {
+        "type": "object",
+        "required": [
+          "templates",
+          "notes"
+        ],
+        "properties": {
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Rendered"
+            }
           }
         }
       },
@@ -5127,6 +5627,96 @@
               "type": "string"
             },
             "description": "Shown once; each works one time in place of a TOTP code."
+          }
+        }
+      },
+      "Rendered": {
+        "type": "object",
+        "required": [
+          "resource",
+          "dest"
+        ],
+        "properties": {
+          "dest": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why rendering failed (for example an undefined variable)."
+          },
+          "output": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The rendering, with secrets masked; absent when rendering failed."
+          },
+          "resource": {
+            "type": "string",
+            "description": "The template resource (`<policy>/<id>`)."
+          }
+        }
+      },
+      "Resolution": {
+        "type": "object",
+        "description": "One variable as an agent sees it, and where it comes from.",
+        "required": [
+          "name",
+          "value",
+          "locked",
+          "source",
+          "overrides",
+          "ignored"
+        ],
+        "properties": {
+          "ignored": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Higher layers that tried to override a constant and were ignored."
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "overrides": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Lower layers that define the same name and lose to `source`."
+          },
+          "source": {
+            "type": "string",
+            "description": "`global`, `tenant`, `group:<name>` or `agent:<name>`."
+          },
+          "value": {}
+        }
+      },
+      "Resolved": {
+        "type": "object",
+        "required": [
+          "variables",
+          "conflicts"
+        ],
+        "properties": {
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conflict"
+            }
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Resolution"
+            }
           }
         }
       },
@@ -5772,6 +6362,44 @@
           }
         }
       },
+      "VariableOut": {
+        "type": "object",
+        "required": [
+          "scope",
+          "target",
+          "name",
+          "value",
+          "locked",
+          "updated_by",
+          "updated_at"
+        ],
+        "properties": {
+          "locked": {
+            "type": "boolean",
+            "description": "A constant: lower layers cannot override it."
+          },
+          "name": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "description": "`global`, `tenant`, `group` or `agent`."
+          },
+          "target": {
+            "type": "string",
+            "description": "The group or agent name; empty for `global` and `tenant`."
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds."
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "value": {}
+        }
+      },
       "Verification": {
         "type": "object",
         "required": [
@@ -5891,6 +6519,9 @@
     },
     {
       "name": "artifacts"
+    },
+    {
+      "name": "variables"
     },
     {
       "name": "policies"

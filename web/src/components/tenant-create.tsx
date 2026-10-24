@@ -27,7 +27,7 @@ export function TenantCreate() {
           <span className="text-muted">{t("newTenant")}</span>
           <input name="name" required pattern="[A-Za-z0-9._\-]{1,128}" className="w-56 rounded-md border border-border bg-surface px-2 py-1.5" />
         </label>
-        <button type="submit" className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-fg">
+        <button type="submit" className="rounded-md bg-action px-3 py-1.5 font-medium text-action-fg">
           {t("create")}
         </button>
       </form>

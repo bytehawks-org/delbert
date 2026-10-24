@@ -1,7 +1,8 @@
 {
   "app": {
     "name": "Delbert",
-    "tagline": "Configuration management and state enforcement"
+    "tagline": "Configuration management and state enforcement",
+    "by": "ByteHawks"
   },
   "common": {
     "loading": "Loading…",
@@ -17,7 +18,14 @@
     "users": "Users",
     "roles": "Roles",
     "sso": "Single sign-on",
-    "content": "Content"
+    "content": "Content",
+    "shared": "Shared",
+    "groups": {
+      "overview": "Overview",
+      "fleet": "Fleet",
+      "content": "Content",
+      "administration": "Administration"
+    }
   },
   "header": {
     "signedInAs": "Signed in as {name}",
@@ -26,7 +34,9 @@
     "theme": "Theme",
     "themeLight": "Light",
     "themeDark": "Dark",
-    "themeSystem": "System"
+    "themeSystem": "System",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
   },
   "login": {
     "title": "Sign in",
@@ -122,7 +132,12 @@
     "dangerZone": "Archive",
     "archive": "Archive tenant",
     "archiveHelp": "The tenant disappears from the console and the API, its enrollment keys, tokens and role assignments are revoked, and its tenant-owned content sources stop. It must have no agents. The audit trail and policy history are kept and the name stays reserved.",
-    "confirmArchive": "Type the tenant name \"{name}\" to archive it."
+    "confirmArchive": "Type the tenant name \"{name}\" to archive it.",
+    "origin": "Origin",
+    "inherited": "inherited",
+    "overrides": "overrides shared",
+    "own": "own",
+    "variables": "Variables"
   },
   "agents": {
     "title": "Agents",
@@ -176,6 +191,9 @@
     "dnsNames": "DNS names (comma separated)",
     "keyOnce": "Enrollment key for {name} (shown once, valid 24 hours, single use):",
     "delete": "Delete",
+    "actions": "Actions",
+    "config": "Configuration",
+    "configProxy": "Configuration of proxy {name}",
     "deleteProxy": "Delete proxy {name}",
     "confirmDelete": "Type the proxy name \"{name}\" to delete it."
   },
@@ -204,6 +222,8 @@
     "targetCol": "Target",
     "tenantCol": "Tenant",
     "outcomeCol": "Outcome",
+    "detailsCol": "Details",
+    "show": "Show",
     "none": "No events match.",
     "older": "Older events"
   },
@@ -470,5 +490,47 @@
     "connecting": "connecting…",
     "live": "live",
     "polling": "updating every 30 s"
+  },
+  "shared": {
+    "title": "Shared content",
+    "subtitle": "Artifacts and variables every tenant inherits. A tenant overrides an artifact by uploading one with the same name.",
+    "denied": "Your roles do not cover shared content.",
+    "artifacts": "Shared artifacts",
+    "artifactsNote": "Policies reference them as artifact://name like their own. A new version moves every agent that uses it.",
+    "noArtifacts": "No shared artifacts.",
+    "variables": "Shared variables"
+  },
+  "variables": {
+    "title": "Variables",
+    "noteGlobal": "Layers, general to specific: shared, tenant, group, agent. A constant cannot be overridden below. Values are visible: keep secrets in Secrets.",
+    "noteTenant": "Tenant, group and agent layers; shared ones are inherited and read-only here. A number, true/false or JSON is stored as such, anything else as text.",
+    "scope": "Layer",
+    "scopes": {
+      "global": "shared",
+      "tenant": "tenant",
+      "group": "group",
+      "agent": "agent"
+    },
+    "group": "Group",
+    "agent": "Agent",
+    "name": "Name",
+    "value": "Value",
+    "constant": "Constant",
+    "variable": "variable",
+    "kind": "Kind",
+    "updatedBy": "Updated by",
+    "save": "Save variable",
+    "delete": "Delete",
+    "deleteVariable": "Delete variable {name}",
+    "confirmDelete": "Delete the variable {name}?",
+    "none": "No variables.",
+    "resolvedTitle": "Variables as this agent receives them",
+    "resolvedNote": "Most specific layer wins, constants always. Policy defaults sit below all layers.",
+    "source": "Comes from",
+    "hides": "Hides",
+    "ignored": "ignored",
+    "renderTitle": "Template preview",
+    "renderNote": "Templates rendered as the agent will, with secrets masked and host facts as placeholders.",
+    "noTemplates": "No templates apply to this agent."
   }
 }

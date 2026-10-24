@@ -25,6 +25,13 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Proxy: certificate renewal (migration `0017`) | complete | 2026-10-24 |
 | Proxy: high availability (shared queue), rate limits, leaf-node transport option | to-do | 2026-10-23 |
 | Per-action audit events from agents (changed/failed resources, applied/rejected policies; spool, proxy queue, idempotent, hash-chained) | complete | 2026-10-24 |
+| Audit events carry the subject, the drift found and the duration (drift correction readable in the trail) | complete | 2026-10-24 |
+| Global (platform-owned) artifacts inherited by tenants (tenant first, then platform; `globals:*`; agents move when a shared file changes) | complete | 2026-10-24 |
+| Four-eyes approval for changes to shared artifacts and to variables (today authenticated, authorized and audited, but live at once) | to-do | 2026-10-24 |
+| Template variables and constants: layers shared, tenant, group, agent; locked constants; resolved by the Core into the signed policy; "render for agent" preview | complete | 2026-10-24 |
+| Variables: undefined `vars.x` is caught by the preview, not yet at policy save; inline `copy.content` is not templated | partial | 2026-10-24 |
+| "ByteHawks" theme applied to this console (tokens, fonts, logo, sidebar layout) | complete | 2026-10-24 |
+| Shared "ByteHawks" theme for all admin dashboards: extract the tokens, fonts and base components (`ui/`, shell, nav) into a package other dashboards import | to-do | 2026-10-24 |
 | Agent events: per-agent rate limit is a fixed 1000/hour; configurable limits, event for command output (when `command` exists), UI view of an agent's events | to-do | 2026-10-24 |
 | Core API over HTTPS (axum-server/rustls) | complete | 2026-10-23 |
 | Onboarding: PSK + CSR enrollment, internal CA, mTLS to NATS, signed request/report proofs | complete | 2026-10-23 |

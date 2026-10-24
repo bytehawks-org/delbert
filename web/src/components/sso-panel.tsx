@@ -122,13 +122,13 @@ export function SsoPanel({ providers, roles, tenants, canWrite }: { providers: P
       </Table>
 
       {canWrite && !draft && (
-        <button type="button" className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg" onClick={() => open(empty, true)}>
+        <button type="button" className="rounded-md bg-action px-3 py-1.5 text-sm font-medium text-action-fg" onClick={() => open(empty, true)}>
           {t("add")}
         </button>
       )}
 
       {canWrite && draft && (
-        <section aria-labelledby="provider-form" className="space-y-4 rounded-lg border border-border bg-surface p-5 text-sm">
+        <section aria-labelledby="provider-form" className="space-y-4 rounded-xl border border-border bg-surface p-5 text-sm">
           <h2 id="provider-form" className="text-lg font-medium">
             {isNew ? t("add") : t("editing", { name: draft.name })}
           </h2>
@@ -206,7 +206,7 @@ export function SsoPanel({ providers, roles, tenants, canWrite }: { providers: P
           </fieldset>
 
           <div className="flex gap-2">
-            <button type="button" onClick={save} disabled={!draft.name.trim() || !draft.issuer.trim() || !draft.client_id.trim()} className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-fg disabled:opacity-50">
+            <button type="button" onClick={save} disabled={!draft.name.trim() || !draft.issuer.trim() || !draft.client_id.trim()} className="rounded-md bg-action px-3 py-1.5 font-medium text-action-fg disabled:opacity-50">
               {t("save")}
             </button>
             <button type="button" onClick={() => setDraft(null)} className={button}>

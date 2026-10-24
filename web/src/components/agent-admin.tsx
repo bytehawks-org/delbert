@@ -41,7 +41,7 @@ export function AgentAdmin({ tenant, agents }: { tenant: string; agents: { name:
           <span className="text-muted">{t("groups")}</span>
           <input name="groups" placeholder="web, db" className={`w-44 ${field}`} />
         </label>
-        <button type="submit" className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-fg">
+        <button type="submit" className="rounded-md bg-action px-3 py-1.5 font-medium text-action-fg">
           {t("add")}
         </button>
       </form>

@@ -49,7 +49,7 @@ export default async function Policy({ params, searchParams }: Props) {
     <div className="space-y-6">
       <PageHeader title={name} back={{ href: `/tenants/${encodeURIComponent(tenant)}`, label: tenant }} />
       {can(me, "policies:write", tenant) && shown && (
-        <Link href={`/tenants/${encodeURIComponent(tenant)}/policies/${encodeURIComponent(name)}/edit?version=${shown.version}`} className="inline-block rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg">
+        <Link href={`/tenants/${encodeURIComponent(tenant)}/policies/${encodeURIComponent(name)}/edit?version=${shown.version}`} className="inline-block rounded-md bg-action px-3 py-1.5 text-sm font-medium text-action-fg">
           {t("editFrom", { version: shown.version })}
         </Link>
       )}

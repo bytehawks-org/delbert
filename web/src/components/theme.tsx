@@ -37,11 +37,11 @@ export function ThemeToggle() {
 
   return (
     <label className="flex items-center gap-2 text-sm text-muted">
-      <span>{t("theme")}</span>
+      <span className="sr-only">{t("theme")}</span>
       <select
         value={mode}
         onChange={(e) => choose(e.target.value as Mode)}
-        className="rounded-md border border-border bg-surface px-2 py-1 text-fg"
+        className="rounded-md border border-border bg-surface px-1.5 py-1.5 text-xs text-fg sm:px-2 sm:text-sm"
       >
         <option value="system">{t("themeSystem")}</option>
         <option value="light">{t("themeLight")}</option>

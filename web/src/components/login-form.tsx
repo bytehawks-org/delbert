@@ -8,7 +8,7 @@ type Step = "password" | "mfa";
 const KNOWN = ["invalid", "throttled", "invalidCode", "unavailable", "expired"] as const;
 
 const inputClass = "w-full rounded-md border border-border bg-surface px-3 py-2 text-fg placeholder:text-muted";
-const buttonClass = "w-full rounded-md bg-accent px-3 py-2 font-medium text-accent-fg disabled:opacity-60";
+const buttonClass = "w-full rounded-md bg-action px-3 py-2 font-medium text-action-fg disabled:opacity-60";
 
 export function LoginForm({ providers, initialError }: { providers: { name: string; display_name: string }[]; initialError?: string }) {
   const t = useTranslations("login");

@@ -86,6 +86,30 @@ pub enum Status {
 pub struct ResourceReport {
     pub id: String,
     pub status: Status,
+    /// What the resource acts on, for the audit trail: `copy /etc/app/db.conf`, `service nginx`.
+    pub subject: String,
+    /// Time spent checking and, in apply mode, converging the resource.
+    pub ms: u64,
+}
+
+/// Verb and target of a resource, e.g. `file /etc/app`. Names only, never contents.
+fn subject(r: &Resource) -> String {
+    let target = if let Some(x) = &r.file {
+        &x.path
+    } else if let Some(x) = &r.copy {
+        &x.dest
+    } else if let Some(x) = &r.template {
+        &x.dest
+    } else if let Some(x) = &r.line_in_file {
+        &x.path
+    } else if let Some(x) = &r.package {
+        &x.name
+    } else if let Some(x) = &r.service {
+        &x.name
+    } else {
+        return r.id.clone();
+    };
+    format!("{} {target}", r.verbs().first().copied().unwrap_or("resource"))
 }
 
 #[derive(Debug, Default)]
@@ -183,11 +207,13 @@ pub fn run(resources: &[Resource], ctx: &Ctx, mode: Mode) -> Report {
     let mut report = Report::default();
     let mut notified: HashSet<&str> = HashSet::new();
 
-    let record = |r: &Resource, s: Status, report: &mut Report| {
-        report.resources.push(ResourceReport { id: r.id.clone(), status: s });
+    let record = |r: &Resource, s: Status, started: std::time::Instant, report: &mut Report| {
+        let ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        report.resources.push(ResourceReport { id: r.id.clone(), status: s, subject: subject(r), ms });
     };
 
     for r in order(resources) {
+        let started = std::time::Instant::now();
         let blocked = r.depends_on.iter().find(|d| {
             matches!(
                 status.get(d.as_str()),
@@ -210,16 +236,17 @@ pub fn run(resources: &[Resource], ctx: &Ctx, mode: Mode) -> Report {
             notified.extend(r.notify.iter().map(String::as_str));
         }
         status.insert(r.id.as_str(), s.clone());
-        record(r, s, &mut report);
+        record(r, s, started, &mut report);
     }
 
     for r in resources.iter().filter(|r| r.handler) {
+        let started = std::time::Instant::now();
         let s = match (notified.contains(r.id.as_str()), mode) {
             (false, _) => Status::Idle,
             (true, Mode::Check) => Status::Drifted(vec!["notified".into()]),
             (true, Mode::Apply) => run_one(r, ctx, mode),
         };
-        record(r, s, &mut report);
+        record(r, s, started, &mut report);
     }
     report
 }

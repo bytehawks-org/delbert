@@ -9,6 +9,27 @@ import { requireMe } from "@/lib/me";
 const FILTERS = ["tenant", "actor", "action", "target", "outcome"] as const;
 type Search = Partial<Record<(typeof FILTERS)[number] | "before", string>>;
 
+/** The event's details, one line per field. Agent events lead with what was acted on, what was found and how long it took. */
+function Details({ details, label }: { details: unknown; label: string }) {
+  if (details == null || typeof details !== "object") return null;
+  const entries = Object.entries(details as Record<string, unknown>).filter(([, v]) => v != null && v !== "" && !(Array.isArray(v) && v.length === 0));
+  if (entries.length === 0) return null;
+  const text = (v: unknown) => (Array.isArray(v) ? v.join("; ") : typeof v === "object" ? JSON.stringify(v) : String(v));
+  return (
+    <details>
+      <summary className="cursor-pointer text-accent hover:underline">{label}</summary>
+      <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+        {entries.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-muted">{k}</dt>
+            <dd className="break-all font-mono">{text(v)}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
 export async function generateMetadata(): Promise<Metadata> {
   return { title: (await getTranslations("audit"))("title") };
 }
@@ -50,14 +71,14 @@ export default async function Audit({ searchParams }: { searchParams: Promise<Se
             <input name={f} defaultValue={q[f] ?? ""} className="w-40 rounded-md border border-border bg-surface px-2 py-1.5" />
           </label>
         ))}
-        <button type="submit" className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-fg">
+        <button type="submit" className="rounded-md bg-action px-3 py-1.5 font-medium text-action-fg">
           {t("apply")}
         </button>
         <Link href="/audit" className="px-2 py-1.5 text-muted hover:text-fg">
           {t("reset")}
         </Link>
       </form>
-      <Table caption={t("title")} head={[t("when"), t("actor"), t("actionCol"), t("targetCol"), t("tenantCol"), t("outcomeCol")]} empty={t("none")}>
+      <Table caption={t("title")} head={[t("when"), t("actor"), t("actionCol"), t("targetCol"), t("tenantCol"), t("outcomeCol"), t("detailsCol")]} empty={t("none")}>
         {page.events.map((e) => (
           <Row key={e.seq}>
             <Cell mono>{stamp(e.occurred_at_micros, "us")}</Cell>
@@ -67,6 +88,9 @@ export default async function Audit({ searchParams }: { searchParams: Promise<Se
             <Cell>{e.tenant ?? "—"}</Cell>
             <Cell>
               <Badge tone={e.outcome === "ok" ? "ok" : "bad"}>{e.outcome}</Badge>
+            </Cell>
+            <Cell>
+              <Details details={e.details} label={t("show")} />
             </Cell>
           </Row>
         ))}

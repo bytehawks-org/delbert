@@ -1,7 +1,8 @@
 {
   "app": {
     "name": "Delbert",
-    "tagline": "Gestione della configurazione e applicazione dello stato"
+    "tagline": "Gestione della configurazione e applicazione dello stato",
+    "by": "ByteHawks"
   },
   "common": {
     "loading": "Caricamento…",
@@ -17,7 +18,14 @@
     "users": "Utenti",
     "roles": "Ruoli",
     "sso": "Single sign-on",
-    "content": "Contenuti"
+    "content": "Contenuti",
+    "shared": "Condivisi",
+    "groups": {
+      "overview": "Panoramica",
+      "fleet": "Flotta",
+      "content": "Contenuti",
+      "administration": "Amministrazione"
+    }
   },
   "header": {
     "signedInAs": "Accesso come {name}",
@@ -26,7 +34,9 @@
     "theme": "Tema",
     "themeLight": "Chiaro",
     "themeDark": "Scuro",
-    "themeSystem": "Sistema"
+    "themeSystem": "Sistema",
+    "openMenu": "Apri il menu",
+    "closeMenu": "Chiudi il menu"
   },
   "login": {
     "title": "Accedi",
@@ -122,7 +132,12 @@
     "dangerZone": "Archiviazione",
     "archive": "Archivia tenant",
     "archiveHelp": "Il tenant scompare dalla console e dalle API, le sue chiavi di enrollment, i token e le assegnazioni di ruolo vengono revocati e le sorgenti di contenuto del tenant si fermano. Non deve avere agent. Audit trail e storico delle policy restano e il nome resta riservato.",
-    "confirmArchive": "Digita il nome del tenant \"{name}\" per archiviarlo."
+    "confirmArchive": "Digita il nome del tenant \"{name}\" per archiviarlo.",
+    "origin": "Origine",
+    "inherited": "ereditato",
+    "overrides": "sostituisce il condiviso",
+    "own": "proprio",
+    "variables": "Variabili"
   },
   "agents": {
     "title": "Agent",
@@ -176,6 +191,9 @@
     "dnsNames": "Nomi DNS (separati da virgola)",
     "keyOnce": "Chiave di enrollment per {name} (mostrata una sola volta, valida 24 ore, monouso):",
     "delete": "Elimina",
+    "actions": "Azioni",
+    "config": "Configurazione",
+    "configProxy": "Configurazione del proxy {name}",
     "deleteProxy": "Elimina il proxy {name}",
     "confirmDelete": "Digita il nome del proxy \"{name}\" per eliminarlo."
   },
@@ -204,6 +222,8 @@
     "targetCol": "Destinazione",
     "tenantCol": "Tenant",
     "outcomeCol": "Esito",
+    "detailsCol": "Dettagli",
+    "show": "Mostra",
     "none": "Nessun evento corrisponde.",
     "older": "Eventi precedenti"
   },
@@ -470,5 +490,47 @@
     "connecting": "connessione…",
     "live": "in tempo reale",
     "polling": "aggiornamento ogni 30 s"
+  },
+  "shared": {
+    "title": "Contenuti condivisi",
+    "subtitle": "Artefatti e variabili che ogni tenant eredita. Un tenant sostituisce un artefatto caricandone uno con lo stesso nome.",
+    "denied": "I tuoi ruoli non coprono i contenuti condivisi.",
+    "artifacts": "Artefatti condivisi",
+    "artifactsNote": "Le policy li richiamano come artifact://nome come i propri. Una nuova versione porta con sé tutti gli agent che la usano.",
+    "noArtifacts": "Nessun artefatto condiviso.",
+    "variables": "Variabili condivise"
+  },
+  "variables": {
+    "title": "Variabili",
+    "noteGlobal": "Livelli, dal generale allo specifico: condiviso, tenant, gruppo, agent. Una costante non si sovrascrive più in basso. I valori sono visibili: i segreti vanno in Segreti.",
+    "noteTenant": "Livelli tenant, gruppo e agent; quelli condivisi sono ereditati e qui in sola lettura. Un numero, true/false o JSON è salvato come tale, il resto come testo.",
+    "scope": "Livello",
+    "scopes": {
+      "global": "condiviso",
+      "tenant": "tenant",
+      "group": "gruppo",
+      "agent": "agent"
+    },
+    "group": "Gruppo",
+    "agent": "Agent",
+    "name": "Nome",
+    "value": "Valore",
+    "constant": "Costante",
+    "variable": "variabile",
+    "kind": "Tipo",
+    "updatedBy": "Aggiornata da",
+    "save": "Salva variabile",
+    "delete": "Elimina",
+    "deleteVariable": "Elimina la variabile {name}",
+    "confirmDelete": "Eliminare la variabile {name}?",
+    "none": "Nessuna variabile.",
+    "resolvedTitle": "Variabili come le riceve questo agent",
+    "resolvedNote": "Vince il livello più specifico, sempre le costanti. I default delle policy stanno sotto a tutti i livelli.",
+    "source": "Proviene da",
+    "hides": "Nasconde",
+    "ignored": "ignorata",
+    "renderTitle": "Anteprima dei template",
+    "renderNote": "Template resi come li renderà l'agent, con segreti mascherati e fatti dell'host come segnaposto.",
+    "noTemplates": "Nessun template si applica a questo agent."
   }
 }

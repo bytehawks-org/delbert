@@ -45,7 +45,7 @@ export function SecretsPanel({ tenant, secrets, canWrite }: { tenant: string; se
             <span className="text-muted">{t("value")}</span>
             <input name="value" type="password" required autoComplete="off" className="w-48 rounded-md border border-border bg-surface px-2 py-1.5" />
           </label>
-          <button type="submit" className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-fg">
+          <button type="submit" className="rounded-md bg-action px-3 py-1.5 font-medium text-action-fg">
             {t("save")}
           </button>
         </form>

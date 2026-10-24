@@ -21,10 +21,11 @@ const ALLOWED: Record<string, RegExp[]> = {
     new RegExp(`^/v1/sso/providers/${SEG}/test$`),
     new RegExp(`^/v1/content/sources(/${SEG}/sync)?$`),
   ],
-  PUT: [new RegExp(`^${T}/(settings|assignments/${SEG})$`), new RegExp(`^${T}/secrets/${SEG}$`), new RegExp(`^${T}/artifacts/${SEG}$`), new RegExp(`^/v1/(users|roles|sso/providers|content/sources)/${SEG}$`), new RegExp(`^${T}/agents/${SEG}$`)],
+  PUT: [new RegExp(`^${T}/(settings|assignments/${SEG})$`), new RegExp(`^${T}/secrets/${SEG}$`), new RegExp(`^${T}/(artifacts|variables)/${SEG}$`), new RegExp(`^/v1/globals/(artifacts|variables)/${SEG}$`), new RegExp(`^/v1/(users|roles|sso/providers|content/sources)/${SEG}$`), new RegExp(`^${T}/agents/${SEG}$`)],
   DELETE: [
     new RegExp(`^${T}/enrollment-keys/${SEG}$`),
-    new RegExp(`^${T}/secrets/${SEG}$`),
+    new RegExp(`^${T}/(secrets|variables)/${SEG}$`),
+    new RegExp(`^/v1/globals/variables/${SEG}$`),
     new RegExp(`^/v1/(users|roles|sso/providers|content/sources|tenants|proxies)/${SEG}$`),
     new RegExp(`^${T}/agents/${SEG}$`),
     new RegExp(`^/v1/users/${SEG}/(mfa|sessions)$`),
@@ -36,11 +37,14 @@ async function forward(request: NextRequest, { params }: { params: Promise<{ pat
   if (!sameOrigin(request)) return forbidden();
   const path = "/" + (await params).path.join("/");
   if (!ALLOWED[request.method]?.some((re) => re.test(path))) return NextResponse.json({ error: "not available through the UI" }, { status: 404 });
+  // Only the variable layer selectors may travel in the query string.
+  const query = request.nextUrl.searchParams;
+  if ([...query.keys()].some((k) => k !== "scope" && k !== "target")) return NextResponse.json({ error: "not available through the UI" }, { status: 404 });
   const session = await getSession();
   if (!session || session.mfaPending) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 
   const body = request.method === "DELETE" ? undefined : await request.arrayBuffer();
-  const res = await fetch(`${CORE_URL}${path}`, {
+  const res = await fetch(`${CORE_URL}${path}${query.size ? `?${query}` : ""}`, {
     method: request.method,
     headers: { authorization: `Bearer ${session.token}`, ...(request.headers.get("content-type") ? { "content-type": request.headers.get("content-type")! } : {}) },
     body,

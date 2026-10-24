@@ -152,7 +152,7 @@ async fn agent_events_reach_the_audit_trail_once_and_only_when_authentic(pool: P
         json!({ "proof": proof, "events": events })
     };
     let events = json!([
-        { "id": "evt-0000000001", "kind": "resource.changed", "at": 1700000000, "resource": "motd", "version": 3, "detail": "content, mode" },
+        { "id": "evt-0000000001", "kind": "resource.changed", "at": 1700000000, "resource": "motd", "version": 3, "detail": "content, mode", "subject": "copy /etc/motd", "drift": ["content differs", "mode"], "ms": 12 },
         { "id": "evt-0000000002", "kind": "resource.failed", "at": 1700000001, "resource": "svc", "version": 3, "detail": "unit not found" },
         { "id": "evt-0000000003", "kind": "made.up", "at": 1700000002 },
     ]);
@@ -179,6 +179,10 @@ async fn agent_events_reach_the_audit_trail_once_and_only_when_authentic(pool: P
     assert_eq!((failed["actor"].as_str(), failed["target"].as_str(), failed["outcome"].as_str()), (Some("agent:acme/agent-1"), Some("svc"), Some("failed")));
     assert_eq!(failed["details"]["detail"], "unit not found");
     assert_eq!(failed["details"]["event_id"], "evt-0000000002");
+    let changed = trail.iter().find(|e| e["action"] == "agent.resource.changed").unwrap();
+    assert_eq!(changed["details"]["subject"], "copy /etc/motd");
+    assert_eq!(changed["details"]["drift"], json!(["content differs", "mode"]));
+    assert_eq!(changed["details"]["duration_ms"], 12);
     assert_eq!(c.call("GET", "/v1/audit/verify", None).await.1["first_bad"], Value::Null);
     client.drain().await.ok(); // leave the queue group before the next test joins it
 }

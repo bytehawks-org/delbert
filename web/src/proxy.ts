@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // (the UI is never the security boundary: the Core enforces every permission).
 
 const COOKIE = "delbert_web";
-const PUBLIC = [/^\/login$/, /^\/api\/auth\//, /^\/auth\/callback$/, /^\/api\/locale$/];
+const PUBLIC = [/^\/login$/, /^\/bytehawks-mark\.png$/, /^\/icon\.png$/, /^\/api\/auth\//, /^\/auth\/callback$/, /^\/api\/locale$/];
 
 export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");

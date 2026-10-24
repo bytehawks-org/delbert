@@ -94,7 +94,7 @@ export function UsersPanel({ users, roles, tenants, me, canWrite }: { users: Use
               {tenantOptions}
             </select>
           </label>
-          <button type="submit" className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-fg">
+          <button type="submit" className="rounded-md bg-action px-3 py-1.5 font-medium text-action-fg">
             {t("create")}
           </button>
         </form>
@@ -136,7 +136,7 @@ export function UsersPanel({ users, roles, tenants, me, canWrite }: { users: Use
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="rounded-md bg-accent px-2 py-1 text-xs font-medium text-accent-fg"
+                      className="rounded-md bg-action px-2 py-1 text-xs font-medium text-action-fg"
                       onClick={async () => {
                         if (await run("PUT", `/v1/users/${encodeURIComponent(u.username)}`, { assignments: draft })) setEditing(null);
                       }}

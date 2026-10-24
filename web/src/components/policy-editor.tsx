@@ -76,7 +76,7 @@ export function PolicyEditor({ tenant, initial, base, baseLabel }: { tenant: str
         type="button"
         onClick={save}
         disabled={check.state !== "ok" || saving || !changed}
-        className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg disabled:opacity-50"
+        className="rounded-md bg-action px-4 py-2 text-sm font-medium text-action-fg disabled:opacity-50"
       >
         {saving ? t("saving") : t("save")}
       </button>

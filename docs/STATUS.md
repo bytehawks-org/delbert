@@ -11,12 +11,12 @@ Snapshot for whoever continues the work (updated 2026-10-24). Design lives in [A
 | `delbert-pki` | internal CA behind a trait (rcgen backend), Ed25519 CSR signing, agent request proofs | `delbert-pki` CLI |
 | `delbert-natsauth` | NATS authorization-callout building blocks | shared by Core and Proxy |
 | `delbert-fs` | crash-safe file replacement | used by agent, proxy, PKI CLI |
-| `delbert-core` | REST API, PostgreSQL via SQLx (migrations 0001-0019), NATS bus + callout | RBAC v2 (tenant-scoped), approval workflow, sessions/CSRF/MFA/throttling, API tokens, OIDC SSO, content sources (directory/git), artifacts in local dir or S3, audit browse/export, config file |
+| `delbert-core` | REST API, PostgreSQL via SQLx (migrations 0001-0020), NATS bus + callout | RBAC v2 (tenant-scoped), shared artifacts and layered variables, approval workflow, sessions/CSRF/MFA/throttling, API tokens, OIDC SSO, content sources (directory/git), artifacts in local dir or S3, audit browse/export, config file |
 | `delbert-agent` | engine + daemon + CLI | enrollment, renewal with key rotation, trust updates |
 | `delbert-proxy` | branch-office relay | see [PROXY.md](PROXY.md) |
 | `web/` (Next.js) | administration UI, milestones M0-M4 (complete) | backend-for-frontend, see [web/README.md](../web/README.md) |
 
-About 130 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
+About 135 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
 
 ## Run it
 

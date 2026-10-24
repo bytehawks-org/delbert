@@ -27,6 +27,7 @@ pub const MAX_BATCH: usize = 100;
 /// Events one agent may add per hour; the rest of a batch is acknowledged and dropped.
 const MAX_PER_HOUR: i64 = 1000;
 const MAX_DETAIL: usize = 500;
+const MAX_DRIFT: usize = 20;
 
 /// Event kind to (audit action, outcome).
 fn classify(kind: &str) -> Option<(&'static str, &'static str)> {
@@ -90,11 +91,17 @@ async fn store(state: &AppState, tenant: &str, agent: &str, events: &[Value]) ->
         }
         room -= 1;
         let resource = ev["resource"].as_str().map(truncate);
+        // `subject`, `drift` and `ms` describe what was acted on, what was found and how long it took;
+        // they are bounded here as everything else an agent says.
+        let drift: Vec<String> = ev["drift"].as_array().into_iter().flatten().filter_map(Value::as_str).take(MAX_DRIFT).map(truncate).collect();
         let details = json!({
             "event_id": id,
             "at": ev["at"].as_i64().unwrap_or(0),
             "version": ev["version"].as_i64(),
             "detail": ev["detail"].as_str().map(truncate).unwrap_or_default(),
+            "subject": ev["subject"].as_str().map(truncate),
+            "drift": drift,
+            "duration_ms": ev["ms"].as_u64(),
         });
         audit::append(&mut tx, &NewEvent { tenant_id: Some(tenant_id), actor: &actor, action, target: resource.as_deref(), outcome, details }).await?;
         stored += 1;

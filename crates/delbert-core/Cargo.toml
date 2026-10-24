@@ -34,6 +34,7 @@ sqlx.workspace = true
 thiserror.workspace = true
 bytes = "1"
 serde_yaml_ng.workspace = true
+minijinja.workspace = true
 tar = "0.4"
 similar = "2"
 hmac = "0.12"

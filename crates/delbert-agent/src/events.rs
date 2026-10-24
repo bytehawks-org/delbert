@@ -32,7 +32,7 @@ use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::engine::{Report, Status};
+use crate::engine::{Report, ResourceReport, Status};
 
 /// Events in one message to the Core.
 pub const BATCH: usize = 100;
@@ -50,6 +50,15 @@ pub struct Event {
     pub resource: Option<String>,
     pub version: Option<u64>,
     pub detail: String,
+    /// What the resource acts on (`copy /etc/app/db.conf`); older spooled events have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    /// The differences found before the change, one short phrase each.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drift: Vec<String>,
+    /// Milliseconds the resource took.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ms: Option<u64>,
 }
 
 fn new_id() -> String {
@@ -64,7 +73,15 @@ fn cut(text: &str) -> String {
 
 impl Event {
     fn new(kind: &str, at: i64, resource: Option<&str>, version: Option<u64>, detail: &str) -> Event {
-        Event { id: new_id(), kind: kind.into(), at, resource: resource.map(str::to_owned), version, detail: cut(detail) }
+        Event { id: new_id(), kind: kind.into(), at, resource: resource.map(str::to_owned), version, detail: cut(detail), subject: None, drift: Vec::new(), ms: None }
+    }
+
+    /// Say what was acted on, what was found and how long it took.
+    fn with(mut self, r: &ResourceReport, drift: &[String]) -> Event {
+        self.subject = Some(cut(&r.subject));
+        self.drift = drift.iter().take(20).map(|d| cut(d)).collect();
+        self.ms = Some(r.ms);
+        self
     }
 }
 
@@ -105,10 +122,13 @@ pub fn derive(outcome: &Outcome, at: i64, memo: &mut BTreeMap<String, String>) -
             let mut failing = Vec::new();
             for r in &report.resources {
                 match &r.status {
-                    Status::Changed(what) => events.push(Event::new("resource.changed", at, Some(&r.id), Some(*version), &what.join(", "))),
+                    Status::Changed(what) => {
+                        let detail = format!("{}: {}; corrected and verified in {} ms", r.subject, what.join(", "), r.ms);
+                        events.push(Event::new("resource.changed", at, Some(&r.id), Some(*version), &detail).with(r, what));
+                    }
                     Status::Failed(why) => {
                         failing.push(r.id.clone());
-                        once(memo, &mut events, format!("res:{}", r.id), Event::new("resource.failed", at, Some(&r.id), Some(*version), why));
+                        once(memo, &mut events, format!("res:{}", r.id), Event::new("resource.failed", at, Some(&r.id), Some(*version), &format!("{}: {why}", r.subject)).with(r, &[]));
                     }
                     _ => {}
                 }
@@ -208,7 +228,7 @@ mod tests {
     use crate::engine::ResourceReport;
 
     fn res(id: &str, status: Status) -> ResourceReport {
-        ResourceReport { id: id.into(), status }
+        ResourceReport { id: id.into(), status, subject: format!("file /x/{id}"), ms: 3 }
     }
     fn report(resources: Vec<ResourceReport>) -> Report {
         Report { resources }
@@ -224,7 +244,10 @@ mod tests {
         let first = derive(&Outcome::Applied { policy: "web", version: 3, previous: None, report: &r1 }, 100, &mut memo);
         assert_eq!(kinds(&first), ["policy.applied:web", "resource.changed:motd", "resource.failed:svc"]);
         assert_eq!(first[0].detail, "3 resources, 1 changed, 1 failed");
-        assert_eq!(first[1].detail, "content, mode");
+        assert_eq!(first[1].detail, "file /x/motd: content, mode; corrected and verified in 3 ms");
+        assert_eq!(first[1].subject.as_deref(), Some("file /x/motd"));
+        assert_eq!(first[1].drift, ["content", "mode"]);
+        assert_eq!(first[1].ms, Some(3));
 
         // Same version, same failure next cycle: nothing new, except a change that happens again.
         let second = derive(&Outcome::Applied { policy: "web", version: 3, previous: Some(3), report: &r1 }, 120, &mut memo);

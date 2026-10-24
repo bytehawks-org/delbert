@@ -1,57 +1,105 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/space-grotesk";
+@import "@fontsource-variable/jetbrains-mono";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Design tokens. Components only use these, so a theme is a handful of variables. */
+/*
+ * ByteHawks design tokens. Components only use these, so a theme is a handful of variables.
+ *
+ * Palette (brand): Deep Tech Navy #0A192F, Off-White Slate #F8FAFC, Precision Cyan #0284C7,
+ * Amber Signal #D97706, Slate Gray #475569. Two adjustments keep text at WCAG AA contrast:
+ * links use a darker cyan (#0369A1: #0284C7 on white is 4.1:1) and the amber action buttons carry
+ * navy text (white on #D97706 is 3.2:1).
+ */
 :root {
-  --bg: #f6f7f9;
+  --bg: #f8fafc;
   --surface: #ffffff;
-  --fg: #14161a;
-  --muted: #566070;
-  --border: #d9dde4;
-  --accent: #3445c8;
-  --accent-fg: #ffffff;
-  --danger: #b3261e;
-  --ok: #1b7a43;
+  --surface-2: #f1f5f9;
+  --fg: #0a192f;
+  --muted: #475569;
+  --border: #e2e8f0;
+  --accent: #0369a1;
+  --brand-cyan: #0284c7;
+  --action: #d97706;
+  --action-fg: #0a192f;
+  --danger: #b91c1c;
+  --ok: #166534;
+  /* The sidebar is navy in both themes. */
+  --side-bg: #0a192f;
+  --side-fg: #cbd5e1;
+  --side-muted: #8195b0;
+  --side-hover: #13294b;
+  --side-accent: #38bdf8;
   color-scheme: light;
 }
 
 .dark {
-  --bg: #0e1013;
-  --surface: #161a20;
-  --fg: #e8eaee;
-  --muted: #9aa4b4;
-  --border: #29303a;
-  --accent: #8a98ff;
-  --accent-fg: #0e1013;
-  --danger: #ff8a80;
-  --ok: #6fd39a;
+  --bg: #0a192f;
+  --surface: #0f2340;
+  --surface-2: #13294b;
+  --fg: #e2e8f0;
+  --muted: #9fb0c6;
+  --border: #1e3a5f;
+  --accent: #38bdf8;
+  --brand-cyan: #38bdf8;
+  --action: #f59e0b;
+  --action-fg: #0a192f;
+  --danger: #f87171;
+  --ok: #4ade80;
+  --side-bg: #061224;
   color-scheme: dark;
 }
 
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-fg: var(--fg);
   --color-muted: var(--muted);
   --color-border: var(--border);
   --color-accent: var(--accent);
-  --color-accent-fg: var(--accent-fg);
+  --color-brand: var(--brand-cyan);
+  --color-action: var(--action);
+  --color-action-fg: var(--action-fg);
   --color-danger: var(--danger);
   --color-ok: var(--ok);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --color-side: var(--side-bg);
+  --color-side-fg: var(--side-fg);
+  --color-side-muted: var(--side-muted);
+  --color-side-hover: var(--side-hover);
+  --color-side-accent: var(--side-accent);
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Space Grotesk Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 html {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--brand-cyan);
   outline-offset: 2px;
+}
+
+/* The ByteHawks mark, coloured by the surrounding text colour (the PNG is only a mask). */
+.brand-mark {
+  display: inline-block;
+  background-color: currentColor;
+  -webkit-mask: url("/bytehawks-mark.png") center / contain no-repeat;
+  mask: url("/bytehawks-mark.png") center / contain no-repeat;
 }
 
 @media (prefers-reduced-motion: reduce) {

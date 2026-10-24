@@ -47,6 +47,7 @@ Roles carry a `scope` (`global` or `tenant`): a role meant for tenants cannot be
 | `secrets:write` | set / delete secrets | |
 | `artifacts:read`, `artifacts:write` | list / upload artifacts | |
 | `proxies:read`, `proxies:write` | list / manage proxies | yes |
+| `globals:read`, `globals:write` | shared artifacts and shared variables (inherited by every tenant); `read` is in the built-in `viewer` and `auditor` | yes |
 | `users:read`, `users:write` | users, MFA reset, deactivation | yes |
 | `roles:read`, `roles:write` | custom roles and assignments | yes (tenant admins assign only) |
 | `audit:read` | browse the audit trail (scoped to the tenant for tenant grants) | |

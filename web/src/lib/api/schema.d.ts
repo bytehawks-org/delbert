@@ -295,6 +295,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/globals/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_global_artifacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/globals/artifacts/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_global_artifact"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/globals/variables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_global"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/globals/variables/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_global"];
+        post?: never;
+        delete: operations["delete_global"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -801,6 +865,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/{tenant}/agents/{agent}/render": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Render every template resource of the agent's effective policy the way the agent will, except
+         *     that secrets are masked and the host facts are placeholders (the Core does not know them). The
+         *     Core only renders text here; it never applies anything.
+         */
+        get: operations["render"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tenants/{tenant}/agents/{agent}/variables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["resolved"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/{tenant}/artifacts": {
         parameters: {
             query?: never;
@@ -1111,6 +1212,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/{tenant}/variables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_variables"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tenants/{tenant}/variables/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_variable"];
+        post?: never;
+        delete: operations["delete_variable"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/users": {
         parameters: {
             query?: never;
@@ -1206,7 +1339,11 @@ export interface components {
         };
         ArtifactOut: {
             name: string;
+            /** @description `tenant` or `global` (inherited from the platform). */
+            origin: string;
             sha256: string;
+            /** @description A tenant artifact that hides a global one of the same name. */
+            shadows_global: boolean;
             /** Format: int64 */
             size: number;
             /** Format: int64 */
@@ -1478,6 +1615,10 @@ export interface components {
             password: string;
             username: string;
         };
+        NewVariable: {
+            locked?: boolean;
+            value: unknown;
+        };
         Overview: {
             /** Format: int64 */
             agents: number;
@@ -1532,6 +1673,10 @@ export interface components {
             name: string;
             /** Format: int64 */
             version: number;
+        };
+        Preview: {
+            notes: string[];
+            templates: components["schemas"]["Rendered"][];
         };
         ProviderBody: {
             client_id: string;
@@ -1606,6 +1751,31 @@ export interface components {
         RecoveryCodes: {
             /** @description Shown once; each works one time in place of a TOTP code. */
             recovery_codes: string[];
+        };
+        Rendered: {
+            dest: string;
+            /** @description Why rendering failed (for example an undefined variable). */
+            error?: string | null;
+            /** @description The rendering, with secrets masked; absent when rendering failed. */
+            output?: string | null;
+            /** @description The template resource (`<policy>/<id>`). */
+            resource: string;
+        };
+        /** @description One variable as an agent sees it, and where it comes from. */
+        Resolution: {
+            /** @description Higher layers that tried to override a constant and were ignored. */
+            ignored: string[];
+            locked: boolean;
+            name: string;
+            /** @description Lower layers that define the same name and lose to `source`. */
+            overrides: string[];
+            /** @description `global`, `tenant`, `group:<name>` or `agent:<name>`. */
+            source: string;
+            value: unknown;
+        };
+        Resolved: {
+            conflicts: components["schemas"]["Conflict"][];
+            variables: components["schemas"]["Resolution"][];
         };
         RoleBody: {
             /** @description Required on create; ignored on update (the name is in the path). */
@@ -1785,6 +1955,22 @@ export interface components {
             /** @description Replaces the whole set of assignments when present. */
             assignments?: components["schemas"]["Assignment"][] | null;
             password?: string | null;
+        };
+        VariableOut: {
+            /** @description A constant: lower layers cannot override it. */
+            locked: boolean;
+            name: string;
+            /** @description `global`, `tenant`, `group` or `agent`. */
+            scope: string;
+            /** @description The group or agent name; empty for `global` and `tenant`. */
+            target: string;
+            /**
+             * Format: int64
+             * @description Unix seconds.
+             */
+            updated_at: number;
+            updated_by: string;
+            value: unknown;
         };
         Verification: {
             /** Format: int64 */
@@ -2472,6 +2658,154 @@ export interface operations {
                 content?: never;
             };
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_global_artifacts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Latest version of each global artifact */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactOut"][];
+                };
+            };
+        };
+    };
+    put_global_artifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": number[];
+            };
+        };
+        responses: {
+            /** @description Same content as the latest version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactOut"];
+                };
+            };
+            /** @description New version */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactOut"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_global: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VariableOut"][];
+                };
+            };
+        };
+    };
+    put_global: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewVariable"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_global: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3675,6 +4009,63 @@ export interface operations {
             };
         };
     };
+    render: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preview"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resolved: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Variables as this agent receives them, with their origin */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resolved"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_artifacts: {
         parameters: {
             query?: never;
@@ -3686,7 +4077,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Latest version of each artifact */
+            /** @description Latest version of each artifact the tenant can use: its own and the inherited global ones */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4509,6 +4900,115 @@ export interface operations {
             };
             /** @description Versions are waiting for approval */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_variables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tenant's own variables (tenant, group and agent level) and the inherited global ones */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VariableOut"][];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_variable: {
+        parameters: {
+            query?: {
+                /** @description `tenant` (default), `group` or `agent`. */
+                scope?: string;
+                /** @description The group or agent name; required for those scopes. */
+                target?: string;
+            };
+            header?: never;
+            path: {
+                tenant: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewVariable"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A constant above cannot be overridden */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_variable: {
+        parameters: {
+            query?: {
+                /** @description `tenant` (default), `group` or `agent`. */
+                scope?: string;
+                /** @description The group or agent name; required for those scopes. */
+                target?: string;
+            };
+            header?: never;
+            path: {
+                tenant: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -37,7 +37,7 @@ test("every main screen is accessible, in light and dark", async ({ page }) => {
   await api("/v1/content/sources", "POST", { name: `src${id}`, kind: "git", location: "https://git.invalid/o/p.git" }, admin);
   await api(`/v1/tenants/${tenant}/policies`, "POST", { yaml: `apiVersion: delbert/v1\nkind: Policy\nmetadata: { name: base, tenant: ${tenant} }\nspec:\n  target: { groups: [web] }\n  resources:\n    - id: motd\n      copy: { content: "hi\\n", dest: /etc/motd }\n` }, admin);
 
-  const routes = ["/", "/tenants", `/tenants/${tenant}`, `/tenants/${tenant}/policies/base`, `/tenants/${tenant}/policies/new`, `/tenants/${tenant}/agents/host-1`, "/agents", "/proxies", "/users", "/roles", "/sso", "/content", `/content/src${id}`, "/audit", "/profile"];
+  const routes = ["/", "/tenants", `/tenants/${tenant}`, `/tenants/${tenant}/policies/base`, `/tenants/${tenant}/policies/new`, `/tenants/${tenant}/agents/host-1`, "/agents", "/proxies", "/users", "/roles", "/sso", "/content", "/shared", `/content/src${id}`, "/audit", "/profile"];
   await signIn(page);
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });

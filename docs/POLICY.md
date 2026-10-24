@@ -122,13 +122,30 @@ Within a single policy the same rules are already enforced at validation time: t
 
 - `package`: backend auto-detected (apt-get, dnf, zypper, apk) through the command runner; `present`/`absent` implemented, `latest` returns an error for now. Names are restricted to a safe character set (no leading dash).
 - `service` (systemd): `started`/`stopped` and `enabled` are states; `restarted`/`reloaded` are one-shot actions allowed **only on handlers**, otherwise they could never converge.
-- `template`: MiniJinja, rendered on the agent with `vars` (policy `vars`, overridden by the resource's own `vars`) and `facts` (`hostname`, `os_id`, `os_version_id`). Undefined variables are errors; no loader, no file or command access. Trailing newlines are preserved.
+- `template`: MiniJinja, rendered on the agent with `vars` (see "Variables" below) and `facts` (`hostname`, `os_id`, `os_version_id`). Undefined variables are errors; no loader, no file or command access. Trailing newlines are preserved.
 - System commands are executed as argv vectors (no shell) and are refused when the agent runs with a sandbox `--root`.
+
+## Variables
+
+`vars` in a template come from layers, resolved by the **Core per agent** and delivered in the signed effective policy, so what an agent renders depends only on verified data. From lowest to highest precedence:
+
+1. the policy's own `spec.vars` (the author's defaults; policies that disagree are a conflict as before);
+2. **shared** (global) variables, managed by the platform (`globals:write`);
+3. **tenant** variables;
+4. **group** variables, for the groups the agent belongs to (several groups apply in alphabetical order, the last wins and the disagreement is reported as a conflict);
+5. **agent** (host) variables;
+6. the template resource's own `vars` (an explicit value written into the resource).
+
+A variable can be a **constant** (`locked`): nothing below its layer can change it: lower layers are ignored (and reported when their value differs), the policy's default is overridden, the resource's own value for that name is removed. Setting a variable that a higher layer locked is refused (409). Names are `[A-Za-z_][A-Za-z0-9_]*` (usable as `vars.name`); values are JSON (at most 16 KiB). Variables are **not a secret store**: values are readable by whoever can read variables and the audit trail keeps only their SHA-256; use `spec.secrets` for anything sensitive.
+
+Predictability: `GET /v1/tenants/{t}/agents/{a}/variables` returns each variable as the agent receives it, with the layer it comes from and the layers it hides; `GET .../render` renders every template resource of the agent's effective policy exactly as the agent will, with secrets masked (`********`) and host facts as placeholders, and reports undefined variables as errors per template. Changing any layer changes the effective policy, so the agent's version moves and agents are told to pull.
+
+Not covered yet: variable changes do not go through the four-eyes approval of a tenant (they are authenticated, authorized and audited).
 
 ## Secrets and artifacts in policies
 
 - `spec.secrets: [name, ...]` asks for tenant secrets; templates read them as `{{ secrets.name }}` (undefined names are errors). Secret values never appear in YAML.
-- `artifact://<name>` in `copy.src` and `template.src` refers to an artifact uploaded through the API; on the agent it is pinned by the SHA-256 in the signed policy. Local YAML runs (`check`/`apply`) still read artifacts from a directory and skip the pin.
+- `artifact://<name>` in `copy.src` and `template.src` refers to an artifact uploaded through the API: the tenant's own, or else a **shared (global)** one of the platform (a tenant overrides a shared artifact by uploading one with the same name). On the agent it is pinned by the SHA-256 in the signed policy. Local YAML runs (`check`/`apply`) still read artifacts from a directory and skip the pin.
 
 ## Backend selection
 

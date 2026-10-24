@@ -64,7 +64,7 @@ export function LiveRefresh() {
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-muted" data-testid="live-state" data-state={state}>
       <span aria-hidden className={`inline-block size-2 rounded-full ${state === "live" ? "bg-ok" : "bg-muted"}`} />
-      {t(state)}
+      <span className="sr-only sm:not-sr-only">{t(state)}</span>
     </span>
   );
 }

@@ -926,6 +926,7 @@ dependencies = [
  "futures",
  "hmac",
  "http-body-util",
+ "minijinja",
  "nkeys",
  "object_store",
  "openidconnect",

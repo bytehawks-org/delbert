@@ -93,6 +93,10 @@ Policies, artifacts and tenant settings can come from a repository instead of th
 | `POST /v1/enroll` | the enrollment key | Agent enrollment: CSR + age public key in, certificate + CA + signing keys out |
 | `PUT/GET /v1/tenants/{t}/secrets[/{name}]`, `DELETE` | `secrets:write` / `secrets:read` | Tenant secrets: write-only, the list shows names only |
 | `PUT /v1/tenants/{t}/artifacts/{name}`, `GET .../artifacts` | `artifacts:write` / `artifacts:read` | Immutable artifact versions (64 MiB at most); same content is a no-op |
+| `PUT /v1/globals/artifacts/{name}`, `GET /v1/globals/artifacts` | `globals:write` / `globals:read` | Shared artifacts, inherited by every tenant (same rules as tenant artifacts). `GET /v1/tenants/{t}/artifacts` lists the tenant's own and the inherited ones (`origin`, `shadows_global`) |
+| `GET /v1/globals/variables`, `PUT\|DELETE /v1/globals/variables/{name}` | `globals:read` / `globals:write` | Shared variables; body `{value, locked}` |
+| `GET /v1/tenants/{t}/variables`, `PUT\|DELETE .../variables/{name}?scope=tenant\|group\|agent&target=` | `policies:read` / `policies:write` | Tenant, group and agent layers (plus the inherited shared ones in the list); 409 when a higher layer locked the name |
+| `GET /v1/tenants/{t}/agents/{a}/variables`, `GET .../render` | `agents:preview` | Variables as the agent receives them, with their origin; templates rendered with secrets masked. See [POLICY.md](POLICY.md) "Variables" |
 | `GET /v1/agent/{t}/{a}/artifacts/{name}?sha256=` | agent proof | Download by hash, authenticated with `Authorization: Delbert-Agent <base64 proof>` |
 | `POST/GET /v1/tenants/{t}/policies` | `policies:write` / `policies:read` | Upload a policy YAML (`{"yaml": "..."}`, new immutable version) / list |
 | `GET/DELETE /v1/tenants/{t}/policies/{name}` | `policies:read` / `policies:write` | Latest version / deactivate (soft delete, history kept) |
@@ -128,11 +132,11 @@ Tenant and agent names contain no dots, so they are safe subject tokens.
 
 ### Agent audit events
 
-The compliance report is a state view (the latest one replaces the previous). The **event log** is separate: after every cycle the agent says what it did, and the Core appends each event to the hash-chained audit trail (actor `agent:<tenant>/<agent>`, `target` = the resource, `details` = `{event_id, at, version, detail}`; `at` is the agent's clock, the trail's own timestamp is the Core's).
+The compliance report is a state view (the latest one replaces the previous). The **event log** is separate: after every cycle the agent says what it did, and the Core appends each event to the hash-chained audit trail (actor `agent:<tenant>/<agent>`, `target` = the resource, `details` = `{event_id, at, version, detail, subject, drift, duration_ms}`; `subject` is the verb and target (`copy /etc/app/db.conf`), `drift` the differences found before the correction, `duration_ms` the time the resource took (the last three only on resource events); `at` is the agent's clock, the trail's own timestamp is the Core's).
 
 | Action | Outcome | When |
 |--------|---------|------|
-| `agent.resource.changed` | ok | a resource was changed (`detail` lists the attributes, for example `content, mode`; never values) |
+| `agent.resource.changed` | ok | a resource was changed (`detail` reads like `copy /etc/app/db.conf: content differs; corrected and verified in 12 ms`; names and attributes only, never values) |
 | `agent.resource.failed` | failed | a resource failed; repeated only when the failure changes |
 | `agent.policy.applied` | ok | a policy version was applied for the first time |
 | `agent.policy.rejected` | denied | a policy was refused (signature, expiry, rollback); repeated only when the reason changes |

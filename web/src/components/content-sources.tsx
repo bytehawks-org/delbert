@@ -166,7 +166,7 @@ export function ContentSources({ sources, tenants, canWrite, canSync }: { source
       )}
 
       {canWrite && !draft && (
-        <button type="button" className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg" onClick={() => open(blank, true)}>
+        <button type="button" className="rounded-md bg-action px-3 py-1.5 text-sm font-medium text-action-fg" onClick={() => open(blank, true)}>
           {t("add")}
         </button>
       )}
@@ -246,7 +246,7 @@ export function ContentSources({ sources, tenants, canWrite, canSync }: { source
             </label>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={save} disabled={!draft.name.trim() || !draft.location.trim()} className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-fg disabled:opacity-50">
+            <button type="button" onClick={save} disabled={!draft.name.trim() || !draft.location.trim()} className="rounded-md bg-action px-3 py-1.5 font-medium text-action-fg disabled:opacity-50">
               {t("save")}
             </button>
             <button type="button" onClick={() => setDraft(null)} className={button}>

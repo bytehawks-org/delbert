@@ -90,7 +90,7 @@ export function TenantAccess({
         ))}
       </fieldset>
       <div className="flex gap-2">
-        <button type="button" disabled={!user.trim()} className="rounded-md bg-accent px-2 py-1 text-xs font-medium text-accent-fg disabled:opacity-50" onClick={() => save(user.trim(), [...picked])}>
+        <button type="button" disabled={!user.trim()} className="rounded-md bg-action px-2 py-1 text-xs font-medium text-action-fg disabled:opacity-50" onClick={() => save(user.trim(), [...picked])}>
           {t("save")}
         </button>
         <button type="button" className={button} onClick={() => setEditing(null)}>

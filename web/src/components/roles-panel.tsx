@@ -126,7 +126,7 @@ export function RolesPanel({ roles, catalog, canWrite }: { roles: Role[]; catalo
       </Table>
 
       {canWrite && (
-        <section aria-labelledby="matrix" className="space-y-3 rounded-lg border border-border bg-surface p-5">
+        <section aria-labelledby="matrix" className="space-y-3 rounded-xl border border-border bg-surface p-5">
           <h2 id="matrix" className="text-lg font-medium">
             {editing ? t("editing", { name: editing }) : t("newRole")}
           </h2>
@@ -196,7 +196,7 @@ export function RolesPanel({ roles, catalog, canWrite }: { roles: Role[]; catalo
             </table>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={save} disabled={!name.trim() || picked.size === 0} className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg disabled:opacity-50">
+            <button type="button" onClick={save} disabled={!name.trim() || picked.size === 0} className="rounded-md bg-action px-3 py-1.5 text-sm font-medium text-action-fg disabled:opacity-50">
               {t("save")}
             </button>
             {editing && (

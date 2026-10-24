@@ -19,12 +19,12 @@ export function LocaleSwitcher() {
 
   return (
     <label className="flex items-center gap-2 text-sm text-muted">
-      <span>{t("language")}</span>
+      <span className="sr-only">{t("language")}</span>
       <select
         value={locale}
         disabled={pending}
         onChange={(e) => change(e.target.value)}
-        className="rounded-md border border-border bg-surface px-2 py-1 text-fg"
+        className="rounded-md border border-border bg-surface px-1.5 py-1.5 text-xs text-fg sm:px-2 sm:text-sm"
       >
         {Object.entries(NAMES).map(([code, name]) => (
           <option key={code} value={code}>

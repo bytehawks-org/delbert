@@ -11,7 +11,7 @@ type Token = { id: string; name: string; tenant?: string | null; permissions: st
 
 const field = "rounded-md border border-border bg-surface px-2 py-1.5";
 const button = "rounded-md border border-border px-2 py-1 text-xs hover:bg-surface";
-const primary = "rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg";
+const primary = "rounded-md bg-action px-3 py-1.5 text-sm font-medium text-action-fg";
 
 /** The signed-in user's own security settings: second factor, sessions and API tokens. */
 export function ProfilePanel({

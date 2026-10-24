@@ -102,7 +102,7 @@ test("enrollment keys, secrets and artifacts can be managed", async ({ page }) =
   await expect(page.getByText("revoked", { exact: true })).toBeVisible();
 
   await page.getByRole("region", { name: "Secrets" }).getByLabel(/^name$/i).fill("db-password");
-  await page.getByLabel(/^value$/i).fill("s3cret");
+  await page.getByRole("region", { name: "Secrets" }).getByLabel(/^value$/i).fill("s3cret");
   await page.getByRole("button", { name: /save secret/i }).click();
   await expect(page.getByRole("cell", { name: "db-password" })).toBeVisible();
   await expect(page.locator("body")).not.toContainText("s3cret");

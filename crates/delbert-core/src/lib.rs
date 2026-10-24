@@ -15,6 +15,7 @@ pub mod openapi;
 pub mod overview;
 pub mod proxies;
 pub mod totp;
+pub mod variables;
 pub mod secrets;
 pub mod signing;
 pub mod stream;

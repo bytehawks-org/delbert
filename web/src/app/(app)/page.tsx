@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
-import { Badge, Card, Cell, Row, Table } from "@/components/ui";
+import { Badge, Card, Cell, Row, Stat, Table } from "@/components/ui";
 import { core } from "@/lib/core";
 import { stamp, unwrap } from "@/lib/data";
 import { requireMe } from "@/lib/me";
@@ -29,29 +29,18 @@ export default async function Dashboard() {
   const { tenants = 0, agents = 0, compliant = 0, drifted = 0, silent = 0, attention = [] } = overview ?? {};
   const failingSources = (sources ?? []).filter((s) => s.last_error);
 
-  const tiles: [string, number, string, string?][] = [
-    [t("tenants"), tenants, "", "tenant-count"],
-    [t("agents"), agents, "", "agent-count"],
-    [t("compliant"), compliant, "text-ok"],
-    [t("drifted"), drifted, drifted ? "text-danger" : ""],
-    [t("silent"), silent, silent ? "text-danger" : ""],
-  ];
-
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">{t("welcome", { name: me.username })}</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">{t("welcome", { name: me.username })}</h1>
 
       <section aria-label={t("overview")}>
-        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
-          {tiles.map(([label, value, tone, testid]) => (
-            <div key={label} className="rounded-lg border border-border bg-surface p-4">
-              <dt className="text-muted">{label}</dt>
-              <dd className={`text-3xl font-semibold ${tone}`} data-testid={testid}>
-                {value}
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <Stat label={t("tenants")} value={tenants} icon="tenants" testid="tenant-count" />
+          <Stat label={t("agents")} value={agents} icon="agents" testid="agent-count" />
+          <Stat label={t("compliant")} value={compliant} icon="ok" tone="ok" />
+          <Stat label={t("drifted")} value={drifted} icon="alert" tone={drifted ? "bad" : "neutral"} />
+          <Stat label={t("silent")} value={silent} icon="clock" tone={silent ? "bad" : "neutral"} />
+        </div>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">

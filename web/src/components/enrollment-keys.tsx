@@ -47,7 +47,7 @@ export function EnrollmentKeys({ tenant, keys, canWrite }: { tenant: string; key
             <span className="text-muted">{t("ttl")}</span>
             <input name="ttl_hours" type="number" min={1} max={720} defaultValue={24} className="w-24 rounded-md border border-border bg-surface px-2 py-1.5" />
           </label>
-          <button type="submit" className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-fg">
+          <button type="submit" className="rounded-md bg-action px-3 py-1.5 font-medium text-action-fg">
             {t("create")}
           </button>
         </form>

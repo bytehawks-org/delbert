@@ -31,6 +31,10 @@ No external CDN, fonts or analytics: everything is served from the same origin (
 
 `/openapi.json` (utoipa) is the contract. `openapi-typescript` + `openapi-fetch` generate types and a client in CI; the build fails if the Core's spec changes incompatibly. Endpoints missing from the spec are fixed in the Core, not worked around in the UI.
 
+## Look and layout
+
+Sidebar layout in the style of the Paces dashboard (fixed navy sidebar with grouped sections, sticky top bar, card panels); the ByteHawks palette and fonts are tokens in `src/app/globals.css` (`--bg`, `--surface`, `--accent` for links, `--action` for primary buttons, `--side-*` for the sidebar; a theme is a handful of variables). Space Grotesk for headings, Inter for the interface, JetBrains Mono for code, all self-hosted from `@fontsource-variable/*`. The logo is a mask (`.brand-mark`) coloured by the text colour. Rules that come from accessibility: link text uses the darker cyan, primary buttons are amber with navy text, status is never colour alone, scrollable tables are keyboard-focusable, the off-canvas sidebar is `invisible` when closed. Components live in `src/components/ui` (cards, tables, badges, stat cards, icons), `shell.tsx`, `nav.tsx` and `brand.tsx`: the candidates for a shared package once other ByteHawks dashboards adopt the theme.
+
 ## Screens
 
 Ordered by value; each maps to an existing or planned API.
@@ -44,7 +48,9 @@ Ordered by value; each maps to an existing or planned API.
 | Enrollment | keys with TTL/uses/groups, one-time display, revoke | exists |
 | Policies | list, **YAML editor with JSON Schema validation**, version history and diff, impact/conflict preview, submit/approve/activate/rollback | schema endpoint, versions, diff, approval, preview |
 | Secrets | names, set (write-only form, never displayed back), delete | exists |
-| Artifacts | upload, versions, hashes, where used | usage lookup |
+| Artifacts | upload, versions, hashes, origin (own / inherited / overrides shared); where used still open | usage lookup |
+| Shared | platform artifacts and variables (constants) every tenant inherits | exists |
+| Variables | tenant, group and agent layers on the tenant page; the agent page shows each variable's origin and the rendered templates | exists |
 | Proxies | create (one-time key), status, agents, last seen | exists |
 | Users and roles | users, MFA state, assignments with scope, **permission matrix** editor | RBAC v2 |
 | Audit | search and filter, event detail, chain verification, export | `GET /v1/audit` missing |

@@ -231,6 +231,17 @@ pub fn router(state: AppState) -> Router {
             put(crate::artifacts::put_artifact).layer(axum::extract::DefaultBodyLimit::max(crate::artifacts::MAX_ARTIFACT_BYTES + 1024)),
         )
         .route("/v1/agent/{tenant}/{agent}/artifacts/{name}", get(crate::artifacts::agent_download))
+        .route("/v1/globals/artifacts", get(crate::artifacts::list_global_artifacts))
+        .route("/v1/globals/variables", get(crate::variables::list_global))
+        .route("/v1/globals/variables/{name}", put(crate::variables::put_global).delete(crate::variables::delete_global))
+        .route("/v1/tenants/{tenant}/variables", get(crate::variables::list_variables))
+        .route("/v1/tenants/{tenant}/variables/{name}", put(crate::variables::put_variable).delete(crate::variables::delete_variable))
+        .route("/v1/tenants/{tenant}/agents/{agent}/variables", get(crate::variables::resolved))
+        .route("/v1/tenants/{tenant}/agents/{agent}/render", get(crate::variables::render))
+        .route(
+            "/v1/globals/artifacts/{name}",
+            put(crate::artifacts::put_global_artifact).layer(axum::extract::DefaultBodyLimit::max(crate::artifacts::MAX_ARTIFACT_BYTES + 1024)),
+        )
         .route("/v1/tenants/{tenant}/enrollment-keys", get(crate::enroll::list_keys).post(crate::enroll::create_key))
         .route("/v1/tenants/{tenant}/enrollment-keys/{id}", axum::routing::delete(crate::enroll::revoke_key))
         .route("/v1/tenants", get(list_tenants).post(create_tenant))
@@ -332,6 +343,19 @@ pub(crate) async fn notify_tenant(st: &AppState, tenant: &str, tenant_id: Uuid) 
         Ok(agents) => {
             for agent in agents {
                 bus.notify(tenant, &agent).await;
+            }
+        }
+        Err(e) => tracing::warn!("cannot list agents to notify: {e}"),
+    }
+}
+
+/// A change that concerns every tenant (global artifacts and variables): all agents pull.
+pub(crate) async fn notify_all(st: &AppState) {
+    let Some(bus) = &st.bus else { return };
+    match sqlx::query_as::<_, (String, String)>("SELECT t.name, a.name FROM agents a JOIN tenants t ON t.id = a.tenant_id WHERE t.archived_at IS NULL").fetch_all(&st.pool).await {
+        Ok(agents) => {
+            for (tenant, agent) in agents {
+                bus.notify(&tenant, &agent).await;
             }
         }
         Err(e) => tracing::warn!("cannot list agents to notify: {e}"),
@@ -675,6 +699,42 @@ pub async fn effective(State(st): State<AppState>, Authn(user): Authn, Path((ten
     Ok(Json(issue(&st, tenant, agent, &user.username).await?))
 }
 
+/// Compile the active policies that target an agent, with the artifact catalog (global and
+/// tenant) and the agent's resolved variables applied. Shared by `issue` and the render preview.
+pub(crate) async fn compile_for(st: &AppState, tid: Uuid, agent: &str, groups: &[String]) -> ApiResult<compile::Compiled> {
+    let sources: Vec<(String, String)> = sqlx::query_as(
+        "SELECT p.name, v.yaml FROM policies p \
+         JOIN policy_versions v ON v.policy_id = p.id AND v.version = p.active_version \
+         WHERE p.tenant_id = $1 AND p.active ORDER BY p.name",
+    )
+    .bind(tid)
+    .fetch_all(&st.pool)
+    .await?;
+
+    let mut inputs = Vec::new();
+    for (name, yaml) in sources {
+        let p = delbert_policy::from_yaml(&yaml).map_err(|e| {
+            tracing::error!("stored policy '{name}' no longer parses: {e}");
+            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "stored policy is invalid")
+        })?;
+        let targets = &p.spec.target.groups;
+        if targets.is_empty() || targets.iter().any(|g| groups.contains(g)) {
+            inputs.push(PolicyInput { name, priority: p.spec.priority.unwrap_or(0), secrets: p.spec.secrets, vars: p.spec.vars, resources: p.spec.resources });
+        }
+    }
+    let catalog = crate::artifacts::catalog(st, tid).await?;
+    let mut compiled = compile::compile(&inputs, &st.strategies, &catalog);
+    delbert_policy::validate_resources(&compiled.resources).map_err(|e| {
+        tracing::error!("compiled policy for {agent} is invalid: {e:?}");
+        ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "compiled policy is invalid")
+    })?;
+
+    let (resolved, conflicts) = crate::variables::resolve(st, tid, groups, agent).await?;
+    crate::variables::overlay(&mut compiled, &resolved);
+    compiled.conflicts.extend(conflicts);
+    Ok(compiled)
+}
+
 /// Compile every active policy that targets the agent and sign the result.
 /// Shared by the HTTP endpoint and the NATS responder (`actor` goes to the audit trail).
 pub async fn issue(st: &AppState, tenant: String, agent: String, actor: &str) -> ApiResult<Issued> {
@@ -690,36 +750,7 @@ pub async fn issue(st: &AppState, tenant: String, agent: String, actor: &str) ->
             .await?;
     let (agent_id, groups, mut version, stored_hash, enc_key) = row.ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "agent not found"))?;
 
-    let sources: Vec<(String, String)> = sqlx::query_as(
-        "SELECT p.name, v.yaml FROM policies p \
-         JOIN policy_versions v ON v.policy_id = p.id AND v.version = p.active_version \
-         WHERE p.tenant_id = $1 AND p.active ORDER BY p.name",
-    )
-    .bind(tid)
-    .fetch_all(&mut *tx)
-    .await?;
-
-    let mut inputs = Vec::new();
-    for (name, yaml) in sources {
-        let p = delbert_policy::from_yaml(&yaml).map_err(|e| {
-            tracing::error!("stored policy '{name}' no longer parses: {e}");
-            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "stored policy is invalid")
-        })?;
-        let targets = &p.spec.target.groups;
-        if targets.is_empty() || targets.iter().any(|g| groups.contains(g)) {
-            inputs.push(PolicyInput { name, priority: p.spec.priority.unwrap_or(0), secrets: p.spec.secrets, vars: p.spec.vars, resources: p.spec.resources });
-        }
-    }
-    let catalog: std::collections::BTreeMap<String, delbert_wire::ArtifactRef> = crate::artifacts::latest(st, tid)
-        .await?
-        .into_iter()
-        .map(|(name, _, size, sha256)| (name, delbert_wire::ArtifactRef { sha256, size: size as u64 }))
-        .collect();
-    let mut compiled = compile::compile(&inputs, &st.strategies, &catalog);
-    delbert_policy::validate_resources(&compiled.resources).map_err(|e| {
-        tracing::error!("compiled policy for {agent} is invalid: {e:?}");
-        ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "compiled policy is invalid")
-    })?;
+    let mut compiled = compile_for(st, tid, &agent, &groups).await?;
 
     // Secrets: decrypt with the Core key, re-encrypt to this agent only. Missing ones are reported.
     let wanted: Vec<String> = compiled.secrets.iter().cloned().collect();

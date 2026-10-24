@@ -70,6 +70,9 @@ test("a proxy is registered with a one-time key and removed", async ({ page }) =
   await expect(page.getByTestId("proxy-key")).not.toBeEmpty();
   await expect(page.getByRole("row", { name: new RegExp(name) })).toContainText("waiting for enrollment");
 
+  await page.getByRole("button", { name: `Configuration of proxy ${name}` }).click();
+  await expect(page.getByRole("row", { name: new RegExp(name) })).toContainText(`${name}.example.com`);
+
   page.once("dialog", (d) => d.accept(name));
   await page.getByRole("button", { name: `Delete proxy ${name}` }).click();
   await expect(page.getByRole("row", { name: new RegExp(name) })).toHaveCount(0);

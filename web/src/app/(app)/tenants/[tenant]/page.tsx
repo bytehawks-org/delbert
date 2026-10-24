@@ -4,6 +4,7 @@ import { getTranslations } from "next-intl/server";
 import { ArtifactUpload } from "@/components/artifact-upload";
 import { EnrollmentKeys } from "@/components/enrollment-keys";
 import { SecretsPanel } from "@/components/secrets-panel";
+import { VariablesPanel } from "@/components/variables-panel";
 import { AgentAdmin } from "@/components/agent-admin";
 import { TenantAccess } from "@/components/tenant-access";
 import { TenantArchive } from "@/components/tenant-archive";
@@ -28,7 +29,7 @@ export default async function Tenant({ params }: Props) {
   const tAgents = await getTranslations("agentAdmin");
   const api = core(token);
   const p = { params: { path: { tenant } } };
-  const [agents, policies, artifacts, secrets, keys, assignments, settings, roles] = await Promise.all([
+  const [agents, policies, artifacts, secrets, keys, assignments, settings, roles, variables] = await Promise.all([
     api.GET("/v1/tenants/{tenant}/agents", p),
     api.GET("/v1/tenants/{tenant}/policies", p),
     api.GET("/v1/tenants/{tenant}/artifacts", p),
@@ -37,9 +38,10 @@ export default async function Tenant({ params }: Props) {
     api.GET("/v1/tenants/{tenant}/assignments", p),
     api.GET("/v1/tenants/{tenant}/settings", p),
     api.GET("/v1/roles"),
+    api.GET("/v1/tenants/{tenant}/variables", p),
   ]);
   const [a, pol, art, sec, ek] = [unwrap(agents), unwrap(policies), unwrap(artifacts), unwrap(secrets), unwrap(keys)];
-  const [asg, cfg, rl] = [unwrap(assignments), unwrap(settings), unwrap(roles)];
+  const [asg, cfg, rl, vars] = [unwrap(assignments), unwrap(settings), unwrap(roles), unwrap(variables)];
   const now = Math.floor(Date.now() / 1000);
   const denied = <Notice>{t("denied")}</Notice>;
 
@@ -64,7 +66,7 @@ export default async function Tenant({ params }: Props) {
       )}
       <Card id="policies" title={t("policies")}>
         {can(me, "policies:write", tenant) && (
-          <Link href={`/tenants/${encodeURIComponent(tenant)}/policies/new`} className="mb-3 inline-block rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg">
+          <Link href={`/tenants/${encodeURIComponent(tenant)}/policies/new`} className="mb-3 inline-block rounded-md bg-action px-3 py-1.5 text-sm font-medium text-action-fg">
             {t("newPolicy")}
           </Link>
         )}
@@ -103,13 +105,16 @@ export default async function Tenant({ params }: Props) {
           {art ? (
             <>
               {can(me, "artifacts:write", tenant) && <ArtifactUpload tenant={tenant} />}
-              <Table caption={t("artifacts")} head={[t("name"), t("version"), t("size"), "SHA-256"]} empty={t("noArtifacts")}>
+              <Table caption={t("artifacts")} head={[t("name"), t("version"), t("size"), "SHA-256", t("origin")]} empty={t("noArtifacts")}>
                 {art.map((x) => (
                   <Row key={x.name}>
                     <Cell>{x.name}</Cell>
                     <Cell>{x.version}</Cell>
                     <Cell>{x.size}</Cell>
                     <Cell mono>{x.sha256.slice(0, 12)}…</Cell>
+                    <Cell>
+                      {x.origin === "global" ? <Badge>{t("inherited")}</Badge> : x.shadows_global ? <Badge tone="ok">{t("overrides")}</Badge> : t("own")}
+                    </Cell>
                   </Row>
                 ))}
               </Table>
@@ -122,6 +127,11 @@ export default async function Tenant({ params }: Props) {
           {sec ? <SecretsPanel tenant={tenant} canWrite={can(me, "secrets:write", tenant)} secrets={sec.map((x) => ({ name: x.name, updated_by: x.updated_by, updatedLabel: stamp(x.updated_at) }))} /> : denied}
         </Card>
       </div>
+      {vars && (
+        <Card id="variables" title={t("variables")}>
+          <VariablesPanel tenant={tenant} variables={vars} canWrite={can(me, "policies:write", tenant)} />
+        </Card>
+      )}
       {canGlobal(me, "tenants:delete") && (
         <Card id="danger" title={t("dangerZone")}>
           <TenantArchive tenant={tenant} />

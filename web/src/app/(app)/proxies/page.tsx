@@ -3,7 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { Badge, Cell, Notice, PageHeader, Row, Table } from "@/components/ui";
 import { core } from "@/lib/core";
 import { stamp, unwrap } from "@/lib/data";
-import { ProxyAdmin } from "@/components/proxy-admin";
+import { ProxyActions, ProxyAdmin } from "@/components/proxy-admin";
 import { requireMe } from "@/lib/me";
 import { canGlobal } from "@/lib/perm";
 
@@ -18,9 +18,9 @@ export default async function Proxies() {
   return (
     <>
       <PageHeader title={t("title")} subtitle={t("subtitle")} />
-      {proxies && canGlobal(me, "proxies:write") && <ProxyAdmin names={proxies.map((x) => x.name)} />}
+      {proxies && canGlobal(me, "proxies:write") && <ProxyAdmin />}
       {proxies ? (
-        <Table caption={t("title")} head={[t("name"), t("state"), t("dns"), t("agents"), t("lastSeen")]} empty={t("none")}>
+        <Table caption={t("title")} head={[t("name"), t("state"), t("dns"), t("agents"), t("lastSeen"), t("actions")]} empty={t("none")}>
           {proxies.map((x) => (
             <Row key={x.name}>
               <Cell>{x.name}</Cell>
@@ -28,6 +28,9 @@ export default async function Proxies() {
               <Cell>{x.dns_names.join(", ") || "—"}</Cell>
               <Cell>{x.agents}</Cell>
               <Cell>{stamp(x.last_seen)}</Cell>
+              <Cell>
+                <ProxyActions proxy={x} canWrite={canGlobal(me, "proxies:write")} seen={stamp(x.last_seen)} />
+              </Cell>
             </Row>
           ))}
         </Table>
