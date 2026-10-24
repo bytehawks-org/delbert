@@ -101,7 +101,7 @@ test("enrollment keys, secrets and artifacts can be managed", async ({ page }) =
   await page.getByRole("button", { name: "Revoke" }).click();
   await expect(page.getByText("revoked", { exact: true })).toBeVisible();
 
-  await page.getByLabel(/^name$/i).first().fill("db-password");
+  await page.getByRole("region", { name: "Secrets" }).getByLabel(/^name$/i).fill("db-password");
   await page.getByLabel(/^value$/i).fill("s3cret");
   await page.getByRole("button", { name: /save secret/i }).click();
   await expect(page.getByRole("cell", { name: "db-password" })).toBeVisible();
@@ -116,7 +116,7 @@ test("the pass-through to the Core only allows what the UI needs", async ({ page
   await signIn(page, ADMIN.username, ADMIN.password);
   const origin = new URL(page.url()).origin;
   const post = (path: string, from: string) => page.request.post(path, { headers: { origin: from, "content-type": "application/json" }, data: "{}" });
-  expect((await post("/api/core/v1/proxies", origin)).status()).toBe(404);
-  expect((await post("/api/core/v1/tenants", origin)).status()).toBe(404);
+  expect((await post("/api/core/v1/secrets/reseal", origin)).status()).toBe(404);
+  expect((await post("/api/core/v1/audit/export", origin)).status()).toBe(404);
   expect((await post("/api/core/v1/tenants/x/enrollment-keys", "https://evil.example.com")).status()).toBe(403);
 });

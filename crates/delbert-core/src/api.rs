@@ -230,6 +230,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/tenants/{tenant}/enrollment-keys", get(crate::enroll::list_keys).post(crate::enroll::create_key))
         .route("/v1/tenants/{tenant}/enrollment-keys/{id}", axum::routing::delete(crate::enroll::revoke_key))
         .route("/v1/tenants", get(list_tenants).post(create_tenant))
+        .route("/v1/tenants/{tenant}", axum::routing::delete(archive_tenant))
         .route("/v1/tenants/{tenant}/agents", get(list_agents).post(create_agent))
         .route("/v1/tenants/{tenant}/agents/{agent}", put(update_agent).delete(delete_agent))
         .route("/v1/tenants/{tenant}/agents/{agent}/effective", get(effective))
@@ -291,7 +292,7 @@ pub(crate) fn check_name(name: &str, what: &str) -> ApiResult<()> {
 }
 
 pub(crate) async fn tenant_id(pool: &PgPool, name: &str) -> ApiResult<Uuid> {
-    sqlx::query_scalar("SELECT id FROM tenants WHERE name = $1")
+    sqlx::query_scalar("SELECT id FROM tenants WHERE name = $1 AND archived_at IS NULL")
         .bind(name)
         .fetch_optional(pool)
         .await?
@@ -358,12 +359,36 @@ pub async fn create_tenant(State(st): State<AppState>, Authn(user): Authn, Json(
     Ok((StatusCode::CREATED, Json(TenantOut { id: id.to_string(), name: body.name })))
 }
 
+/// Archives a tenant (see migration `0018`): it needs `tenants:delete`, a tenant without agents, and it
+/// revokes what could still reach it (enrollment keys, tenant-scoped API tokens, role assignments)
+/// and stops its tenant-owned content sources. Audit events and policy versions are kept.
+#[utoipa::path(delete, path = "/v1/tenants/{tenant}", tag = "tenants", security(("bearer" = [])), params(("tenant" = String, Path)),
+    responses((status = 204), (status = 403), (status = 404), (status = 409, description = "The tenant still has agents")))]
+pub async fn archive_tenant(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>) -> ApiResult<StatusCode> {
+    user.require_global("tenants:delete")?;
+    let tid = tenant_id(&st.pool, &tenant).await?;
+    let mut tx = st.pool.begin().await?;
+    sqlx::query("SELECT id FROM tenants WHERE id = $1 FOR UPDATE").bind(tid).execute(&mut *tx).await?;
+    let agents: i64 = sqlx::query_scalar("SELECT count(*) FROM agents WHERE tenant_id = $1").bind(tid).fetch_one(&mut *tx).await?;
+    if agents > 0 {
+        return Err(ApiError::new(StatusCode::CONFLICT, format!("the tenant still has {agents} agent(s): delete them first")));
+    }
+    sqlx::query("UPDATE tenants SET archived_at = now() WHERE id = $1").bind(tid).execute(&mut *tx).await?;
+    sqlx::query("UPDATE enrollment_keys SET revoked = true WHERE tenant_id = $1").bind(tid).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM api_tokens WHERE tenant_id = $1").bind(tid).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM user_roles WHERE tenant_id = $1").bind(tid).execute(&mut *tx).await?;
+    sqlx::query("UPDATE content_sources SET enabled = false WHERE tenant_id = $1").bind(tid).execute(&mut *tx).await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: Some(tid), actor: &user.username, action: "tenant.archive", target: Some(&tenant), outcome: "ok", details: json!({}) }).await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[utoipa::path(get, path = "/v1/tenants", tag = "tenants", security(("bearer" = [])), responses((status = 200, body = Vec<TenantOut>)))]
 pub async fn list_tenants(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<Vec<TenantOut>>> {
     // Only the tenants the caller can reach (all of them for a global grant).
     let rows: Vec<(Uuid, String)> = match user.tenants_with("tenants:read") {
-        None => sqlx::query_as("SELECT id, name FROM tenants ORDER BY name").fetch_all(&st.pool).await?,
-        Some(ids) => sqlx::query_as("SELECT id, name FROM tenants WHERE id = ANY($1) ORDER BY name").bind(ids).fetch_all(&st.pool).await?,
+        None => sqlx::query_as("SELECT id, name FROM tenants WHERE archived_at IS NULL ORDER BY name").fetch_all(&st.pool).await?,
+        Some(ids) => sqlx::query_as("SELECT id, name FROM tenants WHERE id = ANY($1) AND archived_at IS NULL ORDER BY name").bind(ids).fetch_all(&st.pool).await?,
     };
     Ok(Json(rows.into_iter().map(|(id, name)| TenantOut { id: id.to_string(), name }).collect()))
 }

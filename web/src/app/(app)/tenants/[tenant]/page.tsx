@@ -4,13 +4,15 @@ import { getTranslations } from "next-intl/server";
 import { ArtifactUpload } from "@/components/artifact-upload";
 import { EnrollmentKeys } from "@/components/enrollment-keys";
 import { SecretsPanel } from "@/components/secrets-panel";
+import { AgentAdmin } from "@/components/agent-admin";
 import { TenantAccess } from "@/components/tenant-access";
+import { TenantArchive } from "@/components/tenant-archive";
 import { AgentsTable } from "@/components/agents-table";
 import { Badge, Card, Cell, Notice, PageHeader, Row, Table } from "@/components/ui";
 import { core } from "@/lib/core";
 import { stamp, unwrap } from "@/lib/data";
 import { requireMe } from "@/lib/me";
-import { can } from "@/lib/perm";
+import { can, canGlobal } from "@/lib/perm";
 
 type Props = { params: Promise<{ tenant: string }> };
 
@@ -23,6 +25,7 @@ export default async function Tenant({ params }: Props) {
   const { me, token } = await requireMe();
   const t = await getTranslations("tenants");
   const tAccess = await getTranslations("access");
+  const tAgents = await getTranslations("agentAdmin");
   const api = core(token);
   const p = { params: { path: { tenant } } };
   const [agents, policies, artifacts, secrets, keys, assignments, settings, roles] = await Promise.all([
@@ -45,6 +48,14 @@ export default async function Tenant({ params }: Props) {
       <PageHeader title={tenant} back={{ href: "/tenants", label: t("title") }} />
       <Card id="agents" title={t("agents")}>
         {a ? <AgentsTable agents={a.map((x) => ({ ...x, tenant }))} /> : denied}
+        {a && can(me, "agents:write", tenant) && (
+          <details className="mt-4">
+            <summary className="cursor-pointer text-sm font-medium text-accent">{tAgents("manage")}</summary>
+            <div className="mt-3">
+              <AgentAdmin tenant={tenant} agents={a.map((x) => ({ name: x.name, groups: x.groups }))} />
+            </div>
+          </details>
+        )}
       </Card>
       {ek && (
         <Card id="keys" title={t("keys")}>
@@ -111,6 +122,11 @@ export default async function Tenant({ params }: Props) {
           {sec ? <SecretsPanel tenant={tenant} canWrite={can(me, "secrets:write", tenant)} secrets={sec.map((x) => ({ name: x.name, updated_by: x.updated_by, updatedLabel: stamp(x.updated_at) }))} /> : denied}
         </Card>
       </div>
+      {canGlobal(me, "tenants:delete") && (
+        <Card id="danger" title={t("dangerZone")}>
+          <TenantArchive tenant={tenant} />
+        </Card>
+      )}
     </div>
   );
 }

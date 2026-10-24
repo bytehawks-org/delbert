@@ -4,14 +4,16 @@ import { getTranslations } from "next-intl/server";
 import { Cell, PageHeader, Row, Table } from "@/components/ui";
 import { core } from "@/lib/core";
 import { unwrap } from "@/lib/data";
+import { TenantCreate } from "@/components/tenant-create";
 import { requireMe } from "@/lib/me";
+import { canGlobal } from "@/lib/perm";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: (await getTranslations("tenants"))("title") };
 }
 
 export default async function Tenants() {
-  const { token } = await requireMe();
+  const { me, token } = await requireMe();
   const t = await getTranslations("tenants");
   const api = core(token);
   const tenants = unwrap(await api.GET("/v1/tenants")) ?? [];
@@ -25,6 +27,7 @@ export default async function Tenants() {
   return (
     <>
       <PageHeader title={t("title")} subtitle={t("subtitle")} />
+      {canGlobal(me, "tenants:create") && <TenantCreate />}
       <Table caption={t("title")} head={[t("name"), t("agents"), t("policies")]} empty={t("none")}>
         {rows.map((x) => (
           <Row key={x.id}>

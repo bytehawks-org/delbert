@@ -700,6 +700,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/{tenant}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Archives a tenant (see migration `0018`): it needs `tenants:delete`, a tenant without agents, and it
+         *     revokes what could still reach it (enrollment keys, tenant-scoped API tokens, role assignments)
+         *     and stops its tenant-owned content sources. Audit events and policy versions are kept.
+         */
+        delete: operations["archive_tenant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/{tenant}/agents": {
         parameters: {
             query?: never;
@@ -3343,6 +3364,44 @@ export interface operations {
                 content?: never;
             };
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    archive_tenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The tenant still has agents */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

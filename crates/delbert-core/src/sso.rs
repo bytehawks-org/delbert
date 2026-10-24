@@ -161,7 +161,7 @@ async fn set_mappings(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, provider: 
         let role: Option<(Uuid, String)> = sqlx::query_as("SELECT id, scope FROM roles WHERE name = $1").bind(&m.role).fetch_optional(&mut **tx).await?;
         let (role_id, scope) = role.ok_or_else(|| err(StatusCode::UNPROCESSABLE_ENTITY, format!("unknown role '{}'", m.role)))?;
         let tenant_id: Option<Uuid> = match &m.tenant {
-            Some(t) => Some(sqlx::query_scalar("SELECT id FROM tenants WHERE name = $1").bind(t).fetch_optional(&mut **tx).await?.ok_or_else(|| err(StatusCode::UNPROCESSABLE_ENTITY, format!("unknown tenant '{t}'")))?),
+            Some(t) => Some(sqlx::query_scalar("SELECT id FROM tenants WHERE name = $1 AND archived_at IS NULL").bind(t).fetch_optional(&mut **tx).await?.ok_or_else(|| err(StatusCode::UNPROCESSABLE_ENTITY, format!("unknown tenant '{t}'")))?),
             None => None,
         };
         let fits = scope == "any" || (m.tenant.is_none() && scope == "global") || (m.tenant.is_some() && scope == "tenant");

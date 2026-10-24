@@ -90,7 +90,13 @@
     "updatedBy": "Updated by",
     "updatedAt": "Updated",
     "newPolicy": "New policy",
-    "keys": "Enrollment keys"
+    "keys": "Enrollment keys",
+    "newTenant": "New tenant",
+    "create": "Create",
+    "dangerZone": "Archive",
+    "archive": "Archive tenant",
+    "archiveHelp": "The tenant disappears from the console and the API, its enrollment keys, tokens and role assignments are revoked, and its tenant-owned content sources stop. It must have no agents. The audit trail and policy history are kept and the name stays reserved.",
+    "confirmArchive": "Type the tenant name \"{name}\" to archive it."
   },
   "agents": {
     "title": "Agents",
@@ -139,7 +145,13 @@
     "enrolled": "enrolled",
     "pending": "waiting for enrollment",
     "none": "No proxies.",
-    "denied": "Your roles do not cover proxies."
+    "denied": "Your roles do not cover proxies.",
+    "create": "Register proxy",
+    "dnsNames": "DNS names (comma separated)",
+    "keyOnce": "Enrollment key for {name} (shown once, valid 24 hours, single use):",
+    "delete": "Delete",
+    "deleteProxy": "Delete proxy {name}",
+    "confirmDelete": "Type the proxy name \"{name}\" to delete it."
   },
   "audit": {
     "title": "Audit trail",
@@ -415,5 +427,17 @@
     "changesOf": "Changes of {revision}",
     "noChanges": "No changes.",
     "noSnapshots": "No syncs yet."
+  },
+  "agentAdmin": {
+    "title": "Agents",
+    "manage": "Add or manage agents",
+    "name": "Name",
+    "groups": "Groups (comma separated)",
+    "groupsOf": "Groups of {name}",
+    "add": "Add agent",
+    "saveGroups": "Save groups",
+    "delete": "Delete",
+    "confirmDelete": "Type the agent name \"{name}\" to delete it. The host will no longer be served.",
+    "none": "No agents."
   }
 }

@@ -2033,6 +2033,44 @@
         ]
       }
     },
+    "/v1/tenants/{tenant}": {
+      "delete": {
+        "tags": [
+          "tenants"
+        ],
+        "summary": "Archives a tenant (see migration `0018`): it needs `tenants:delete`, a tenant without agents, and it\nrevokes what could still reach it (enrollment keys, tenant-scoped API tokens, role assignments)\nand stops its tenant-owned content sources. Audit events and policy versions are kept.",
+        "operationId": "archive_tenant",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "403": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": "The tenant still has agents"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/tenants/{tenant}/agents": {
       "get": {
         "tags": [

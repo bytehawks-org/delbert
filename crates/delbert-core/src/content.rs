@@ -585,7 +585,7 @@ async fn sync_locked(st: &AppState, s: &Source, actor: &str) -> ApiResult<SyncOu
     let (parsed, mut problems) = parse_layout(&snap.files, owner_tenant.as_deref());
     let mut tenant_ids: HashMap<String, Uuid> = HashMap::new();
     for t in parsed.keys() {
-        match sqlx::query_scalar::<_, Uuid>("SELECT id FROM tenants WHERE name = $1").bind(t).fetch_optional(&st.pool).await? {
+        match sqlx::query_scalar::<_, Uuid>("SELECT id FROM tenants WHERE name = $1 AND archived_at IS NULL").bind(t).fetch_optional(&st.pool).await? {
             Some(id) => {
                 tenant_ids.insert(t.clone(), id);
             }

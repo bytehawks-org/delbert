@@ -90,7 +90,13 @@
     "updatedBy": "Aggiornato da",
     "updatedAt": "Aggiornato",
     "newPolicy": "Nuova policy",
-    "keys": "Chiavi di registrazione"
+    "keys": "Chiavi di registrazione",
+    "newTenant": "Nuovo tenant",
+    "create": "Crea",
+    "dangerZone": "Archiviazione",
+    "archive": "Archivia tenant",
+    "archiveHelp": "Il tenant scompare dalla console e dalle API, le sue chiavi di enrollment, i token e le assegnazioni di ruolo vengono revocati e le sorgenti di contenuto del tenant si fermano. Non deve avere agent. Audit trail e storico delle policy restano e il nome resta riservato.",
+    "confirmArchive": "Digita il nome del tenant \"{name}\" per archiviarlo."
   },
   "agents": {
     "title": "Agent",
@@ -139,7 +145,13 @@
     "enrolled": "registrato",
     "pending": "in attesa di registrazione",
     "none": "Nessun proxy.",
-    "denied": "I tuoi ruoli non coprono i proxy."
+    "denied": "I tuoi ruoli non coprono i proxy.",
+    "create": "Registra proxy",
+    "dnsNames": "Nomi DNS (separati da virgola)",
+    "keyOnce": "Chiave di enrollment per {name} (mostrata una sola volta, valida 24 ore, monouso):",
+    "delete": "Elimina",
+    "deleteProxy": "Elimina il proxy {name}",
+    "confirmDelete": "Digita il nome del proxy \"{name}\" per eliminarlo."
   },
   "audit": {
     "title": "Registro di audit",
@@ -415,5 +427,17 @@
     "changesOf": "Modifiche di {revision}",
     "noChanges": "Nessuna modifica.",
     "noSnapshots": "Nessuna sincronizzazione."
+  },
+  "agentAdmin": {
+    "title": "Agent",
+    "manage": "Aggiungi o gestisci gli agent",
+    "name": "Nome",
+    "groups": "Gruppi (separati da virgola)",
+    "groupsOf": "Gruppi di {name}",
+    "add": "Aggiungi agent",
+    "saveGroups": "Salva gruppi",
+    "delete": "Elimina",
+    "confirmDelete": "Digita il nome dell'agent \"{name}\" per eliminarlo. L'host non sarà più servito.",
+    "none": "Nessun agent."
   }
 }

@@ -213,3 +213,40 @@ async fn invalid_policies_are_rejected_and_versions_are_kept(pool: PgPool) {
     assert_eq!(got["version"], 2);
     assert!(got["yaml"].as_str().unwrap().contains("/etc/motd"));
 }
+
+#[sqlx::test]
+async fn archiving_a_tenant_hides_it_everywhere_and_keeps_the_audit_trail(pool: PgPool) {
+    let admin = admin_client(state(pool.clone(), vec![Strategy::Error], None)).await;
+    setup(&admin).await;
+    assert_eq!(admin.call("POST", "/v1/tenants/acme/policies", Some(policy("web", "", MOTD_A))).await.0, StatusCode::CREATED);
+    let (s, key) = admin.call("POST", "/v1/tenants/acme/enrollment-keys", Some(json!({ "groups": ["web"], "max_uses": 1, "ttl_hours": 1 }))).await;
+    assert_eq!(s, StatusCode::CREATED);
+    let _ = key;
+    assert_eq!(admin.call("POST", "/v1/users", Some(json!({ "username": "olivia", "password": "a-long-enough-password", "assignments": [{ "role": "operator", "tenant": "acme" }] }))).await.0, StatusCode::CREATED);
+    let olivia = admin.as_user("olivia", "a-long-enough-password").await;
+    assert_eq!(olivia.call("GET", "/v1/tenants/acme/agents", None).await.0, StatusCode::OK);
+
+    // Not while agents exist, and only with tenants:delete (a tenant-scoped operator cannot).
+    assert_eq!(olivia.call("DELETE", "/v1/tenants/acme", None).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(admin.call("DELETE", "/v1/tenants/acme", None).await.0, StatusCode::CONFLICT);
+    assert_eq!(admin.call("DELETE", "/v1/tenants/acme/agents/agent-1", None).await.0, StatusCode::NO_CONTENT);
+
+    assert_eq!(admin.call("DELETE", "/v1/tenants/acme", None).await.0, StatusCode::NO_CONTENT);
+
+    // Gone from the list and from every tenant route; the role assignment went with it; the name stays taken.
+    let (_, tenants) = admin.call("GET", "/v1/tenants", None).await;
+    assert!(tenants.as_array().unwrap().is_empty());
+    assert_eq!(admin.call("GET", "/v1/tenants/acme/policies", None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(admin.call("DELETE", "/v1/tenants/acme", None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(olivia.call("GET", "/v1/tenants/acme/agents", None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(admin.call("POST", "/v1/tenants", Some(json!({ "name": "acme" }))).await.0, StatusCode::CONFLICT);
+
+    // Keys no longer work, and the trail records the archive and still verifies.
+    let revoked: i64 = sqlx::query_scalar("SELECT count(*) FROM enrollment_keys WHERE NOT revoked").fetch_one(&pool).await.unwrap();
+    assert_eq!(revoked, 0);
+    let (_, audit) = admin.call("GET", "/v1/audit?action=tenant.archive", None).await;
+    assert_eq!(audit["events"].as_array().map(|e| e.len()).unwrap_or(0), 1, "{audit}");
+    let (s, verify) = admin.call("GET", "/v1/audit/verify", None).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(verify["first_bad"], Value::Null, "{verify}");
+}

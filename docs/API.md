@@ -79,6 +79,8 @@ Policies, artifacts and tenant settings can come from a repository instead of th
 | `GET/POST /v1/roles`, `PUT/DELETE /v1/roles/{name}` | `roles:read` (or `roles:assign` in a tenant) / `roles:write` | Roles (`permissions`, `scope`) |
 | `GET /v1/tenants/{t}/assignments`, `PUT .../assignments/{username}` | `roles:assign` in the tenant | Delegated administration: who holds which role in the tenant; set a user's roles there |
 | `POST /v1/tenants`, `GET /v1/tenants` | `tenants:create` (global) / `tenants:read` | Tenants (the list is limited to reachable tenants) |
+| `DELETE /v1/tenants/{t}` | `tenants:delete` (global) | **Archives** the tenant (migration `0018`): refused with 409 while it has agents; revokes its enrollment keys, tenant-scoped API tokens and role assignments, stops its tenant-owned content sources; the tenant vanishes from every API and its name stays reserved. Audit events and policy versions are append-only and are kept |
+| `GET /v1/permissions` | same gate as the role list | Every permission with `global_only`, for building roles |
 | `POST/GET /v1/tenants/{t}/agents` | `agents:write` / `agents:read` | Create / list agents (`name`, `groups`; list includes the last report) |
 | `PUT/DELETE /v1/tenants/{t}/agents/{a}` | `agents:write` | Change groups / delete |
 | `POST/GET /v1/tenants/{t}/enrollment-keys`, `DELETE .../{id}` | `agents:enroll` | Enrollment keys: expiring, limited uses, revocable; the key is shown once |

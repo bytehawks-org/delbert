@@ -13,7 +13,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Core: REST API for tenants, agents, policies, effective policy ([API.md](API.md)) | partial | 2026-10-23 |
 | Core: audit hash chain writer and verification | complete | 2026-10-23 |
 | Core: OpenAPI/Swagger (utoipa) | complete | 2026-10-23 |
-| Core: DELETE for tenants; pagination of list endpoints (audit already keyset-paged) | to-do | 2026-10-23 |
+| Core: tenant archive (`DELETE /v1/tenants/{t}`, migration `0018`) | complete | 2026-10-24 |
+| Core: pagination of list endpoints (audit already keyset-paged) | to-do | 2026-10-24 |
 | Core: local users, customizable RBAC, sessions | complete | 2026-10-23 |
 | Core: least-privilege DB role (no UPDATE/DELETE on audit and policy versions) | complete | 2026-10-23 |
 | Audit: NDJSON export done; signed anchors for the chain, SIEM connector, retention to-do | partial | 2026-10-24 |
@@ -60,12 +61,13 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | RBAC v2: tenant-scoped assignments, `resource:action` permissions, built-in roles, delegated tenant administration (migration `0010`) | complete | 2026-10-23 |
 | RBAC v2: approval workflow (`approval_required`, `active_version`, `policy_version_events`, migration `0011`) | complete | 2026-10-23 |
 | Approval: version diff, impact preview before approving, emergency path | to-do | 2026-10-23 |
-| Core API for the UI: audit search/export, policy versions/validate done; tenant delete, general pagination/filters, SSE status to-do | partial | 2026-10-24 |
+| Core API for the UI: audit search/export, policy versions/validate done; general pagination/filters, SSE status to-do | partial | 2026-10-24 |
 | Frontend design ([FRONTEND.md](FRONTEND.md)) | complete | 2026-10-23 |
 | Frontend M0 (Next.js BFF, generated client, login with MFA/SSO, i18n, theme, Playwright) | complete | 2026-10-23 |
 | Frontend M1 (read-only: dashboard, tenants, agents, policies and versions, proxies, audit) | complete | 2026-10-23 |
 | Frontend M2 (policy editor with dry-run validation and diff, version steps, enrollment keys, secrets, artifacts) | complete | 2026-10-23 |
-| Frontend M2 leftovers: tenant create/delete, agent and proxy management, content sources screens, CodeMirror highlighting | to-do | 2026-10-23 |
+| Frontend M2 leftovers: tenant create/archive, agent and proxy management | complete | 2026-10-24 |
+| Frontend: CodeMirror highlighting for the policy editor | to-do | 2026-10-24 |
 | Frontend M3-M4 (governance, hardening) | to-do | 2026-10-23 |
 | `git init` | complete | 2026-10-24 |
 | CI pipeline (tests, clippy, fmt, image build) | partial | 2026-10-24 |

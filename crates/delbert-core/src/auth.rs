@@ -656,7 +656,7 @@ async fn assign(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, user_id: Uuid, a
     let role: Option<(Uuid, String)> = sqlx::query_as("SELECT id, scope FROM roles WHERE name = $1").bind(&a.role).fetch_optional(&mut **tx).await?;
     let (role_id, scope) = role.ok_or_else(|| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("unknown role '{}'", a.role)))?;
     let tenant_id: Option<Uuid> = match &a.tenant {
-        Some(name) => Some(sqlx::query_scalar("SELECT id FROM tenants WHERE name = $1").bind(name).fetch_optional(&mut **tx).await?.ok_or_else(|| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("unknown tenant '{name}'")))?),
+        Some(name) => Some(sqlx::query_scalar("SELECT id FROM tenants WHERE name = $1 AND archived_at IS NULL").bind(name).fetch_optional(&mut **tx).await?.ok_or_else(|| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("unknown tenant '{name}'")))?),
         None => None,
     };
     let fits = match (&a.tenant, scope.as_str()) {
