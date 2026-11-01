@@ -1,0 +1,46 @@
+# The Operator needs, in the namespace delbert-system:
+#   - ConfigMap "delbert-ca" with key ca.pem: the Delbert CA (the only trust anchor for the Core);
+#   - Secret "delbert-operator-enroll" with key psk: an enrollment key of the tenant the Operator serves.
+#     Needed for the first start only; the Operator stores its identity in the Secret
+#     "delbert-operator-identity" and the enrollment key can be deleted afterwards.
+# One replica on purpose: there is no leader election yet (two replicas would just do the same work twice).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: delbert-operator
+  namespace: delbert-system
+  labels: { app.kubernetes.io/name: delbert-operator }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: delbert-operator }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: delbert-operator }
+    spec:
+      serviceAccountName: delbert-operator
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: operator
+          image: localhost/delbert-operator:latest   # set to your registry (kustomization.yaml)
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: DELBERT_CORE_URL, value: "https://core.example.com:8080" }   # CHANGE
+            - { name: DELBERT_CA_FILE, value: /etc/delbert/ca.pem }
+            - { name: DELBERT_OPERATOR_NAME, value: "operator-k3s" }               # CHANGE: unique per cluster
+            - { name: RUST_LOG, value: info }
+            - name: DELBERT_ENROLL_PSK
+              valueFrom: { secretKeyRef: { name: delbert-operator-enroll, key: psk, optional: true } }
+          volumeMounts:
+            - { name: ca, mountPath: /etc/delbert, readOnly: true }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { memory: 128Mi }
+      volumes:
+        - name: ca
+          configMap: { name: delbert-ca }

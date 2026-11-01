@@ -1,3 +1,6 @@
 /target
 .env
 /dev/
+
+# Reusable design kit (not versioned)
+/_GRAPHICS_/

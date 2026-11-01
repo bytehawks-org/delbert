@@ -4,7 +4,7 @@ Open-source configuration management and state enforcement for hybrid infrastruc
 
 Web UI: [web/README.md](web/README.md) · Start here: [Quickstart](docs/quickstart.md) · [Installation](docs/install.md)
 
-Status and handoff: [docs/STATUS.md](docs/STATUS.md) · RBAC v2: [docs/RBAC.md](docs/RBAC.md) · Frontend: [docs/FRONTEND.md](docs/FRONTEND.md)
+Status and handoff: [docs/STATUS.md](docs/STATUS.md) · Operator: [docs/OPERATOR.md](docs/OPERATOR.md) · RBAC v2: [docs/RBAC.md](docs/RBAC.md) · Frontend: [docs/FRONTEND.md](docs/FRONTEND.md)
 
 Design: [docs/ABSTRACT.md](docs/ABSTRACT.md) · Scope: [docs/SCOPE.md](docs/SCOPE.md) · Policy format: [docs/POLICY.md](docs/POLICY.md) · Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md) · Changes: [docs/CHANGELOG.md](docs/CHANGELOG.md)
 
@@ -14,6 +14,7 @@ Early skeleton (v0.1.0):
 
 - `delbert-policy`: policy YAML model, JSON Schema, semantic validation (tests included).
 - `delbert-core`: Axum REST API with Swagger UI ([docs/API.md](docs/API.md)): local users and customizable RBAC with sessions, tenants, agents, versioned policies, policy compiler with conflict resolution (`priority`/`error`), signing of effective policies (`core` mode), hash-chained audit trail, NATS notifications/pull/reports, least-privilege DB role, agent enrollment (pre-shared keys, CSR, mTLS), NATS authorization callout (per-agent subject permissions), certificate renewal with key rotation, per-agent encrypted secrets, content-pinned artifacts (own or shared with every tenant), layered template variables with constants and a render preview. SQLx migrations.
+- `delbert-operator` (in progress, [docs/OPERATOR.md](docs/OPERATOR.md)): Kubernetes Operator that delivers per-namespace configuration (ConfigMap + Secret) from the Core's configuration deliveries; the `DelbertBinding` CRD, rendering rules, identity and reconcile loop are written (unit-tested and verified by hand on K3s 1.31.14; manifests in `deploy/kubernetes/operator`); the Core bundle endpoint is done and tested.
 - `delbert-proxy`: branch-office relay ([docs/PROXY.md](docs/PROXY.md)): local NATS authorization callout from a synchronized allow-list, request relay with cache, store-and-forward of reports (latest per agent), enrollment relay, artifact cache; `delbert-natsauth` holds the callout building blocks shared with the Core.
 - `delbert-pki`: internal CA (Ed25519, leaf-only), CSR signing with Core-chosen subjects, agent request proofs; `delbert-pki` CLI (`init`, `issue-server`, `issue-client`, `secrets-key`).
 - `delbert-wire`: effective policy (JSON), JCS canonicalization (RFC 8785), Ed25519 JWS signing and strict verification (key id, expiry, target, anti-rollback); `delbert-sign` CLI (`keygen`, `sign`) for the `external` signing mode.

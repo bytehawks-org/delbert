@@ -11,9 +11,10 @@ Snapshot for whoever continues the work (updated 2026-10-24). Design lives in [A
 | `delbert-pki` | internal CA behind a trait (rcgen backend), Ed25519 CSR signing, agent request proofs | `delbert-pki` CLI |
 | `delbert-natsauth` | NATS authorization-callout building blocks | shared by Core and Proxy |
 | `delbert-fs` | crash-safe file replacement | used by agent, proxy, PKI CLI |
-| `delbert-core` | REST API, PostgreSQL via SQLx (migrations 0001-0020), NATS bus + callout | RBAC v2 (tenant-scoped), shared artifacts and layered variables, approval workflow, sessions/CSRF/MFA/throttling, API tokens, OIDC SSO, content sources (directory/git), artifacts in local dir or S3, audit browse/export, config file |
+| `delbert-core` | REST API, PostgreSQL via SQLx (migrations 0001-0021), NATS bus + callout | RBAC v2 (tenant-scoped), shared artifacts and layered variables, configuration deliveries for the Operator, approval workflow, sessions/CSRF/MFA/throttling, API tokens, OIDC SSO, content sources (directory/git), artifacts in local dir or S3, audit browse/export, config file |
 | `delbert-agent` | engine + daemon + CLI | enrollment, renewal with key rotation, trust updates |
 | `delbert-proxy` | branch-office relay | see [PROXY.md](PROXY.md) |
+| `delbert-operator` | Kubernetes Operator | `DelbertBinding` CRD, rendering, identity, bundle fetch and reconcile loop ([OPERATOR.md](OPERATOR.md)); verified by hand on K3s 1.31.14 (manifests in `deploy/kubernetes/operator`, image target `operator`); no CI test, no leader election. Target Kubernetes >= 1.31. Design: [ABSTRACT.md](ABSTRACT.md) §5 |
 | `web/` (Next.js) | administration UI, milestones M0-M4 (complete) | backend-for-frontend, see [web/README.md](../web/README.md) |
 
 About 135 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
@@ -45,7 +46,7 @@ Optional environment for the real-system tests: `S3_TEST_*` (Garage), `GIT_TEST_
 
 ## Known limits
 
-See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI complete through M4 ([FRONTEND.md](FRONTEND.md)); no Kubernetes Operator; no Windows agent; `service` only tested with a fake runner; no CRL/OCSP; proxy renewal not run live in a branch scenario ([ROTATION.md](ROTATION.md)); the Kubernetes manifests were never run on a cluster; no published images/packages; the proxy has no configuration file and its certificate does not renew.
+See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI complete through M4 ([FRONTEND.md](FRONTEND.md)); Kubernetes Operator verified by hand on K3s 1.31.14 but with no automated end-to-end test and no audit event of the applied version; no Windows agent; `service` only tested with a fake runner; no CRL/OCSP; proxy renewal not run live in a branch scenario ([ROTATION.md](ROTATION.md)); the Kubernetes manifests were never run on a cluster; no published images/packages; the proxy has no configuration file and its certificate does not renew.
 
 ## Next steps
 

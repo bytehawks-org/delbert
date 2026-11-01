@@ -14,11 +14,16 @@
 //! An agent is trusted only about itself: a compromised one can add noise to the trail but not
 //! more than [`MAX_PER_HOUR`] events per hour, and only under its own name.
 
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use delbert_pki::authn::Proof;
 use serde_json::{Value, json};
 
 use crate::{
-    api::AppState,
+    api::{ApiError, ApiResult, AppState},
     audit::{self, NewEvent},
 };
 
@@ -37,6 +42,9 @@ fn classify(kind: &str) -> Option<(&'static str, &'static str)> {
         "policy.applied" => ("agent.policy.applied", "ok"),
         "policy.rejected" => ("agent.policy.rejected", "denied"),
         "events.dropped" => ("agent.events.dropped", "failed"),
+        // The Kubernetes Operator, an agent that reports over HTTP: a delivery applied to / refused in a namespace.
+        "delivery.applied" => ("agent.delivery.applied", "ok"),
+        "delivery.failed" => ("agent.delivery.failed", "failed"),
         _ => return None,
     })
 }
@@ -64,6 +72,19 @@ pub(crate) async fn ingest(state: &AppState, tenant: &str, agent: &str, batch: &
             tracing::error!("cannot store events of {tenant}/{agent}: {e}");
             None // the sender keeps them and retries
         }
+    }
+}
+
+/// The same batch as the NATS subject `delbert.event.<t>.<a>`, for agents that have no bus
+/// connection (the Kubernetes Operator): body `{proof, events}`, proof kind `event`.
+#[utoipa::path(post, path = "/v1/agent/{tenant}/{agent}/events", tag = "agents",
+    params(("tenant" = String, Path), ("agent" = String, Path)),
+    request_body = Object,
+    responses((status = 200, description = "`{\"stored\": n}`"), (status = 401, description = "Invalid proof or unknown agent")))]
+pub async fn post(State(st): State<AppState>, Path((tenant, agent)): Path<(String, String)>, Json(batch): Json<Value>) -> ApiResult<Json<Value>> {
+    match ingest(&st, &tenant, &agent, &batch, crate::bus::now()).await {
+        Some(stored) => Ok(Json(json!({ "stored": stored }))),
+        None => Err(ApiError(StatusCode::UNAUTHORIZED, "invalid agent proof".into())),
     }
 }
 

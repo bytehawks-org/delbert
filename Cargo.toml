@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/delbert-fs", "crates/delbert-policy", "crates/delbert-core", "crates/delbert-agent", "crates/delbert-wire", "crates/delbert-pki", "crates/delbert-natsauth", "crates/delbert-proxy"]
+members = ["crates/delbert-fs", "crates/delbert-policy", "crates/delbert-core", "crates/delbert-agent", "crates/delbert-wire", "crates/delbert-pki", "crates/delbert-natsauth", "crates/delbert-proxy", "crates/delbert-operator"]
 
 # Integration tests link one binary per file: full debug info made the build cache grow past 30 GB.
 [profile.dev]

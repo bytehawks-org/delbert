@@ -2,6 +2,7 @@
 #   podman build --target core  -t localhost/delbert-core  .
 #   podman build --target agent -t localhost/delbert-agent .
 #   podman build --target proxy -t localhost/delbert-proxy .
+#   podman build --target operator -t localhost/delbert-operator .   # Kubernetes Operator (docs/OPERATOR.md)
 #   podman build --target web   -t localhost/delbert-web   .   # administration UI (Next.js)
 #   podman build --target tools -t localhost/delbert-tools .   # delbert-pki and delbert-sign, to bootstrap keys
 FROM docker.io/library/rust:1 AS build
@@ -12,7 +13,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release --workspace \
  && mkdir /out \
- && cp target/release/delbert-core target/release/delbert-agent target/release/delbert-sign target/release/delbert-proxy target/release/delbert-pki /out/
+ && cp target/release/delbert-core target/release/delbert-agent target/release/delbert-sign target/release/delbert-proxy target/release/delbert-pki target/release/delbert-operator /out/
 
 FROM docker.io/library/debian:13-slim AS core
 # git: content sources of kind "git" (docs/CONTENT.md). The Core runs it on its own host, never on managed systems.
@@ -45,6 +46,15 @@ COPY --from=build /out/delbert-proxy /usr/local/bin/delbert-proxy
 VOLUME /var/lib/delbert-proxy
 EXPOSE 8443
 ENTRYPOINT ["delbert-proxy", "run"]
+
+# The Operator runs in a cluster and only calls the Kubernetes API and the Core: no root, no host changes.
+FROM docker.io/library/debian:13-slim AS operator
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --uid 10002 --no-create-home delbert
+COPY --from=build /out/delbert-operator /usr/local/bin/delbert-operator
+USER 10002
+ENTRYPOINT ["delbert-operator", "run"]
 
 # Administration tools: the internal CA / key generation (delbert-pki) and the signing-key tool (delbert-sign).
 FROM docker.io/library/debian:13-slim AS tools

@@ -1,0 +1,72 @@
+# Permissions of the Delbert Operator (docs/OPERATOR.md "Kubernetes permissions").
+#
+# Three pieces, from the narrowest:
+#   1. Role in the Operator's namespace: its own identity Secret (get, create; never delete or overwrite).
+#   2. ClusterRole "delbert-operator-bindings", bound cluster-wide: watch DelbertBindings and write their status.
+#   3. ClusterRole "delbert-operator-delivery": write ConfigMaps/Secrets and roll out workloads. It is NOT bound
+#      cluster-wide: create one RoleBinding per namespace that carries a DelbertBinding (example at the end).
+#      A cluster-wide write on Secrets is a broad grant; keep it to the namespaces you serve.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: delbert-operator
+  namespace: delbert-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: delbert-operator-identity
+  namespace: delbert-system
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: delbert-operator-identity
+  namespace: delbert-system
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: delbert-operator-identity }
+subjects:
+  - { kind: ServiceAccount, name: delbert-operator, namespace: delbert-system }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: delbert-operator-bindings
+rules:
+  - apiGroups: ["delbert.bytehawks.io"]
+    resources: ["delbertbindings"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["delbert.bytehawks.io"]
+    resources: ["delbertbindings/status"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: delbert-operator-bindings
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: delbert-operator-bindings }
+subjects:
+  - { kind: ServiceAccount, name: delbert-operator, namespace: delbert-system }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: delbert-operator-delivery
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "create", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "patch"]
+# Per served namespace (replace "shop"):
+#
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: RoleBinding
+# metadata: { name: delbert-operator-delivery, namespace: shop }
+# roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: delbert-operator-delivery }
+# subjects:
+#   - { kind: ServiceAccount, name: delbert-operator, namespace: delbert-system }

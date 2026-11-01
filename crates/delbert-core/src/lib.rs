@@ -11,6 +11,7 @@ pub mod audit;
 pub mod blobs;
 pub mod audit_api;
 pub mod auth;
+pub mod deliveries;
 pub mod openapi;
 pub mod overview;
 pub mod proxies;

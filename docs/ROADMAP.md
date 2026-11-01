@@ -61,7 +61,23 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Windows agent approach (service, registry, DSC) | to-do | 2026-10-23 |
 | Workspace skeleton: policy, Core, Agent crates | complete | 2026-10-23 |
 | Workspace skeleton: Proxy crate | complete | 2026-10-23 |
-| Workspace skeleton: Operator crate (Kubernetes, kube-rs) | to-do | 2026-10-23 |
+| Workspace skeleton: Operator crate (Kubernetes, kube-rs) | complete | 2026-11-01 |
+| Container config delivery design: per-namespace/environment, no per-pod identity ([ABSTRACT.md](ABSTRACT.md) §5) | complete | 2026-11-01 |
+| Operator: `DelbertBinding` CRD, ConfigMap/Secret rendering with content hash (pure logic, tests) | complete | 2026-11-01 |
+| Core deliveries: migration `0021`, CRUD (`/v1/tenants/{t}/deliveries`), bundle endpoint for the Operator (variables, files, sensitive values sealed to it), integration test | complete | 2026-11-01 |
+| Deliveries in the web console (CRUD, bundle preview with masked values) and a dedicated `deliveries:*` permission (today `policies:*`) | to-do | 2026-11-01 |
+| Deliveries: audit event when the Operator reports an applied version | complete | 2026-11-01 |
+| Deliveries: bundle version is informational (removals not reflected) | to-do | 2026-11-01 |
+| Operator: minimum Kubernetes 1.31 (k8s-openapi 0.28 offers `v1_32` as earliest; verified working on K3s 1.31.14) | complete | 2026-11-01 |
+| Operator: identity (enrollment, kept in a Secret), bundle fetch with agent proof, reconcile loop (server-side apply, owner reference, rollout hash on workloads, status), `run` command | partial | 2026-11-01 |
+| Operator: loop verified by hand on K3s 1.31.14 against a real Core ([TESTING.md](TESTING.md)) | complete | 2026-11-01 |
+| Operator: repeatable end-to-end test in CI (K3s + Core), a current Kubernetes version, StatefulSet/DaemonSet rollouts | to-do | 2026-11-01 |
+| Operator: manifests (`deploy/kubernetes/operator`: CRD, RBAC, Deployment) and `operator` image target | complete | 2026-11-01 |
+| Operator: leader election (today one replica, Recreate strategy) | to-do | 2026-11-01 |
+| Operator: push notification instead of polling; several tenants per Operator | to-do | 2026-11-01 |
+| Operator: Deployment/RBAC manifests, etcd encryption at rest documented as prerequisite, optional External Secrets backend | to-do | 2026-11-01 |
+| Containers (Podman/Docker): `env_from` / `secret_from` on the `container` resource | to-do | 2026-11-01 |
+| Deferred: sidecar agent with environment PSK; per-pod identity; workload auth via projected ServiceAccount token | to-do | 2026-11-01 |
 | Agent: check/apply for `file`, `copy`, `line_in_file` (local YAML mode) | complete | 2026-10-23 |
 | Agent: `template`, `package` (apt/dnf/zypper/apk), `service` (systemd) | complete | 2026-10-23 |
 | Agent: `get_url`, `user`/`group`, `sysctl`, `cron`, `block_in_file`, `command`, containers | to-do | 2026-10-23 |

@@ -1,0 +1,86 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: delbertbindings.delbert.bytehawks.io
+spec:
+  group: delbert.bytehawks.io
+  names:
+    kind: DelbertBinding
+    plural: delbertbindings
+    shortNames:
+    - dbind
+    singular: delbertbinding
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for DelbertBindingSpec via `CustomResource`
+        properties:
+          spec:
+            description: Desired delivery for the namespace the resource lives in.
+            properties:
+              configMapName:
+                description: Name of the generated `ConfigMap` (default `delbert-config`).
+                nullable: true
+                type: string
+              environment:
+                description: Environment (layer) inside the tenant, e.g. `prod`.
+                type: string
+              restartWorkloads:
+                default: []
+                description: Workloads to restart (pod-template annotation) when the content changes.
+                items:
+                  description: A workload to roll out when the delivered content changes.
+                  properties:
+                    kind:
+                      description: '`Deployment`, `StatefulSet` or `DaemonSet`.'
+                      enum:
+                      - Deployment
+                      - StatefulSet
+                      - DaemonSet
+                      type: string
+                    name:
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
+                type: array
+              secretName:
+                description: Name of the generated `Secret` (default `delbert-secret`).
+                nullable: true
+                type: string
+              tenant:
+                description: Core tenant (slug) whose configuration is delivered.
+                type: string
+            required:
+            - environment
+            - tenant
+            type: object
+          status:
+            description: Last delivery outcome, written by the reconcile loop.
+            nullable: true
+            properties:
+              contentHash:
+                description: Keyed content hash last applied (never a plain hash of secret values).
+                nullable: true
+                type: string
+              message:
+                description: Human-readable result of the last reconcile.
+                nullable: true
+                type: string
+              observedVersion:
+                description: Core bundle version last applied.
+                format: int64
+                nullable: true
+                type: integer
+            type: object
+        required:
+        - spec
+        title: DelbertBinding
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

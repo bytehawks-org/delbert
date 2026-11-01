@@ -262,6 +262,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/tenants/{tenant}/policies/{name}/versions/{version}/rollback", post(approval::rollback))
         .route("/v1/signing/keys", get(crate::signing::status))
         .route("/v1/pki/ca", get(crate::signing::ca_status))
+        .route("/v1/tenants/{tenant}/deliveries", get(crate::deliveries::list))
+        .route("/v1/tenants/{tenant}/deliveries/{name}", get(crate::deliveries::get).put(crate::deliveries::put).delete(crate::deliveries::delete))
+        .route("/v1/agent/{tenant}/{agent}/deliveries/{name}", get(crate::deliveries::fetch))
+        .route("/v1/agent/{tenant}/{agent}/events", post(crate::agent_events::post))
         .route("/v1/audit", get(crate::audit_api::list))
         .route("/v1/audit/export", get(crate::audit_api::export))
         .route("/v1/audit/verify", get(audit_verify));

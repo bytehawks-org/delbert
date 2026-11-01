@@ -59,6 +59,7 @@ This file extends and integrates the user-scoped CLAUDE.md file.
 - docs/ABSTRACT.md
 - docs/POLICY.md (policy YAML format)
 - docs/API.md (Core API), docs/PROXY.md (branch-office proxy), docs/TESTING.md
+- docs/OPERATOR.md (Kubernetes Operator and configuration delivery)
 - docs/RBAC.md (access control v2), docs/FRONTEND.md (web UI design), web/README.md (the UI project)
 - docs/STATUS.md (current state and handoff: read it first in a new session)
 - docs/ROTATION.md (key and certificate rotation)
