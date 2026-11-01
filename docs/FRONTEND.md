@@ -71,7 +71,7 @@ UI rules that follow from the product: secret values are never rendered; destruc
 1. **M0 - skeleton**: Next.js app in `web/`, Containerfile target `web`, compose service, generated client in CI, login through the BFF, layout, i18n and theme, Playwright smoke test against the e2e stack.
 2. **M1 - read-only (implemented)**: dashboard, tenants, agents (list/detail), policies (list, read-only YAML), proxies, audit browser.
 3. **M2 - operations (implemented)**: enrollment keys, secrets, artifacts, agent and proxy management, policy editor with validation and versions.
-4. **M3 - governance**: users, roles and the permission matrix, tenant settings, approval workflow, MFA, API tokens.
+4. **M3 - governance (implemented)**: users, roles and the permission matrix, tenant settings, approval workflow, MFA, API tokens.
 5. **M4 - hardening (implemented)**: SSO login (done in M0), live status (SSE), dashboard, accessibility audit, performance budget, visual regression. See "M4 in practice".
 
 ## Repository editor

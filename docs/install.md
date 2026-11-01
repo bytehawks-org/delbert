@@ -2,7 +2,7 @@
 
 How to run Delbert for real: the control plane (Core, PostgreSQL, NATS), agents on hosts, and optionally a proxy at a branch office. For a ten-minute trial on one machine see [quickstart.md](quickstart.md).
 
-**State of the project:** unreleased (v0.x). There are no published images, packages or Helm chart yet; you build the images from this repository. The web UI is not built yet (administration is through the API and Swagger UI). The Kubernetes manifests in `deploy/kubernetes/` follow the settings exercised in the container tests but **have not been run on a cluster yet**. Read the "Known limits" at the end before relying on it.
+**State of the project:** unreleased (v0.x). There are no published images, packages or Helm chart yet; you build the images from this repository. The web UI is built (administration console, milestones M0-M4) and the Kubernetes Operator exists but is verified only by hand ([OPERATOR.md](OPERATOR.md)); the API and Swagger UI remain available for scripting. The Kubernetes manifests in `deploy/kubernetes/` follow the settings exercised in the container tests but **have not been run on a cluster yet**. Read the "Known limits" at the end before relying on it.
 
 ## What you are installing
 
@@ -165,11 +165,11 @@ The `package` verb supports apt, dnf, zypper and apk; `service` drives systemd. 
 
 ### Kubernetes nodes
 
-Install the agent on the nodes' hosts as above. The in-cluster Operator for cluster objects is planned, not available. Windows hosts are not supported yet.
+Install the agent on the nodes' hosts as above. The in-cluster Operator for cluster objects is available but young: manifests in `deploy/kubernetes/operator`, verified by hand on K3s 1.31 ([OPERATOR.md](OPERATOR.md)). Windows hosts are not supported yet.
 
 ### The web UI
 
-`deploy/kubernetes/web.yaml` runs `delbert-web` behind an Ingress (browser TLS ends there; the Core API keeps its own certificate). It needs a `delbert-web-env` secret with `WEB_SESSION_SECRET` (`openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`), the Delbert CA mounted for Node (`NODE_EXTRA_CA_CERTS`), `DELBERT_CORE_URL` (in-cluster) and `WEB_CORE_PUBLIC_URL` (how browsers reach the Core, needed for single sign-on). For single sign-on also set the Core's `DELBERT_UI_URL` to `https://<ui host>/auth/callback` and `DELBERT_PUBLIC_URL`. Settings: [web/README.md](../web/README.md). Only the first milestone is built (login, MFA, SSO, dashboard skeleton): [FRONTEND.md](FRONTEND.md).
+`deploy/kubernetes/web.yaml` runs `delbert-web` behind an Ingress (browser TLS ends there; the Core API keeps its own certificate). It needs a `delbert-web-env` secret with `WEB_SESSION_SECRET` (`openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`), the Delbert CA mounted for Node (`NODE_EXTRA_CA_CERTS`), `DELBERT_CORE_URL` (in-cluster) and `WEB_CORE_PUBLIC_URL` (how browsers reach the Core, needed for single sign-on). For single sign-on also set the Core's `DELBERT_UI_URL` to `https://<ui host>/auth/callback` and `DELBERT_PUBLIC_URL`. Settings: [web/README.md](../web/README.md). The console covers dashboard, tenants, agents, policies (editor, versions, approval), secrets, artifacts, users and roles, SSO, content sources with the online editor and the audit trail: [FRONTEND.md](FRONTEND.md).
 
 ## 8. A branch-office proxy (optional)
 
@@ -213,4 +213,4 @@ Back up first. Start the new Core image: it applies the pending migrations on st
 
 - No published images, packages or Helm chart; the agent binary is dynamically linked against the glibc of the build image (Debian 13), so older hosts may need a build on an older base.
 - Kubernetes manifests not yet run on a cluster; no PodDisruptionBudget, NetworkPolicy or HA of NATS and the Core (see [ROADMAP.md](ROADMAP.md)).
-- Editing in the web UI (M2 onwards), the Kubernetes Operator, the Windows agent, per-action audit events from agents and the `command` resource are planned.
+- The Windows agent and the `command` resource are planned; the Operator has no automated end-to-end test and no leader election; `service` and remediation were tested with a scripted `systemctl`, not on a real systemd host. See [ROADMAP.md](ROADMAP.md).

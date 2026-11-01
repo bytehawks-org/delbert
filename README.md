@@ -2,7 +2,7 @@
 
 Open-source configuration management and state enforcement for hybrid infrastructure (Linux hosts, containers, Kubernetes). Agents pull signed, declarative YAML policies and converge the local system idempotently; the server never executes commands.
 
-Web UI: [web/README.md](web/README.md) · Start here: [Quickstart](docs/quickstart.md) · [Installation](docs/install.md)
+Administration console (Next.js, EN + IT): [web/README.md](web/README.md) · Start here: [Quickstart](docs/quickstart.md) · [Installation](docs/install.md)
 
 Status and handoff: [docs/STATUS.md](docs/STATUS.md) · Operator: [docs/OPERATOR.md](docs/OPERATOR.md) · RBAC v2: [docs/RBAC.md](docs/RBAC.md) · Frontend: [docs/FRONTEND.md](docs/FRONTEND.md) · Repository layout and editor: [docs/REPOSITORY.md](docs/REPOSITORY.md) · Remediation and orphans: [docs/REMEDIATION.md](docs/REMEDIATION.md)
 
@@ -10,11 +10,11 @@ Design: [docs/ABSTRACT.md](docs/ABSTRACT.md) · Scope: [docs/SCOPE.md](docs/SCOP
 
 ## Status
 
-Early skeleton (v0.1.0):
+Pre-release (v0.1.0, unreleased: no published images or packages yet; the web console, Operator and proxy exist, see [docs/STATUS.md](docs/STATUS.md) for what is verified and what is not):
 
 - `delbert-policy`: policy YAML model, JSON Schema, semantic validation (tests included).
 - `delbert-core`: Axum REST API with Swagger UI ([docs/API.md](docs/API.md)): local users and customizable RBAC with sessions, tenants, agents, versioned policies, policy compiler with conflict resolution (`priority`/`error`), signing of effective policies (`core` mode), hash-chained audit trail, NATS notifications/pull/reports, least-privilege DB role, agent enrollment (pre-shared keys, CSR, mTLS), NATS authorization callout (per-agent subject permissions), certificate renewal with key rotation, per-agent encrypted secrets, content-pinned artifacts (own or shared with every tenant), layered template variables with constants and a render preview. SQLx migrations. Content sources read a repository with policies, files, templates and variables per tenant, group and host, and a writable source can be edited from the console ([docs/REPOSITORY.md](docs/REPOSITORY.md)); an inconsistent agent is released by a signed, audited decision.
-- `delbert-operator` (in progress, [docs/OPERATOR.md](docs/OPERATOR.md)): Kubernetes Operator that delivers per-namespace configuration (ConfigMap + Secret) from the Core's configuration deliveries; the `DelbertBinding` CRD, rendering rules, identity and reconcile loop are written (unit-tested and verified by hand on K3s 1.31.14; manifests in `deploy/kubernetes/operator`); the Core bundle endpoint is done and tested.
+- `delbert-operator` ([docs/OPERATOR.md](docs/OPERATOR.md), young: verified by hand, no CI test): Kubernetes Operator that delivers per-namespace configuration (ConfigMap + Secret) from the Core's configuration deliveries; the `DelbertBinding` CRD, rendering rules, identity and reconcile loop are written (unit-tested and verified by hand on K3s 1.31.14; manifests in `deploy/kubernetes/operator`); the Core bundle endpoint is done and tested.
 - `delbert-proxy`: branch-office relay ([docs/PROXY.md](docs/PROXY.md)): local NATS authorization callout from a synchronized allow-list, request relay with cache, store-and-forward of reports (latest per agent), enrollment relay, artifact cache; `delbert-natsauth` holds the callout building blocks shared with the Core.
 - `delbert-pki`: internal CA (Ed25519, leaf-only), CSR signing with Core-chosen subjects, agent request proofs; `delbert-pki` CLI (`init`, `issue-server`, `issue-client`, `secrets-key`).
 - `delbert-wire`: effective policy (JSON), JCS canonicalization (RFC 8785), Ed25519 JWS signing and strict verification (key id, expiry, target, anti-rollback); `delbert-sign` CLI (`keygen`, `sign`) for the `external` signing mode.

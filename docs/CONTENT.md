@@ -45,9 +45,9 @@ An item **owned by a source** cannot be edited through the API or the UI (409 na
 - Signed commits/tags can be required (`require_signed: true`, keys configured per source) so that only reviewed changes are applied.
 - The Core only reads. Branch protection and review live in the git server, where they belong.
 
-## API and permissions (planned)
+## API and permissions
 
-`GET/POST/PUT/DELETE /v1/content/sources`, `POST .../{id}/sync`, `GET .../{id}/snapshots`, `GET .../snapshots/{s}` (changes and diffs). Permissions `content:read`, `content:write` (global-only: a source can write to any tenant it lists) and `content:sync` (scoped by tenant for a tenant-owned source).
+`GET/POST/PUT/DELETE /v1/content/sources`, `POST .../{id}/sync`, `GET .../{id}/snapshots`, `GET .../snapshots/{s}` (changes and diffs). Implemented; see [API.md](API.md). Permissions `content:read`, `content:write` (global-only: a source can write to any tenant it lists) and `content:sync` (scoped by tenant for a tenant-owned source).
 
 ## Open points
 

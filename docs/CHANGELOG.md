@@ -2,6 +2,9 @@
 
 ## 2026-11-01
 
+### Documentation alignment
+- README, `install.md`, `quickstart.md`, `SCOPE.md`, `FRONTEND.md` and `CONTENT.md` no longer describe the web UI, the Operator, OpenAPI, certificate renewal and the content API as missing or planned: they match [STATUS.md](STATUS.md).
+
 ### Repository layout and the online editor
 - **Layout** ([REPOSITORY.md](REPOSITORY.md)): `policies/`, `files/`, `templates/`, `variables/` with `tenant/`, `groups/<g>/` and `hosts/<h>/` inside the tenant's tree; one repository per tenant (tree at the root) or several tenants (`tenants/<t>/`). The folder sets the policy target; a contradicting `target` rejects the snapshot. New `target.agents`. Variables come from the repository (`variables/*.yaml`: `vars`, `locked`), are owned by the source like policies, and `prune` deletes the ones that left it (migration `0024`). The old flat layout still works. README.md, `.gitkeep` and `*.example` are ignored. Files and templates per group/host are refused (not supported yet).
 - **Template repository** in `deploy/repository-template/` (validated by a test).
