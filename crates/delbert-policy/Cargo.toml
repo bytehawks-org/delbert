@@ -9,6 +9,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+minijinja.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

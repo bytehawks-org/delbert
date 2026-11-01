@@ -84,7 +84,7 @@ Policies, artifacts and tenant settings can come from a repository instead of th
 | `GET /v1/stream` | any session | Server-Sent Events: `data: {"kind": "audit" \| "report" \| "resync"}` when something the caller may see changed (tenant-scoped; nothing about the content). Fed by PostgreSQL `LISTEN/NOTIFY` after commit; a comment line every 15 s keeps it open |
 | `GET /v1/overview?stale_secs=` | `agents:read` (tenant-scoped) | Totals and the agents needing attention in one query: `tenants`, `agents`, `compliant`, `drifted`, `silent` (no report for `stale_secs`, default 600), `attention` (at most 20, drifted first) |
 | `GET /v1/permissions` | same gate as the role list | Every permission with `global_only`, for building roles |
-| `POST/GET /v1/tenants/{t}/agents` | `agents:write` / `agents:read` | Create / list agents (`name`, `groups`; list includes the last report) |
+| `POST/GET /v1/tenants/{t}/agents` | `agents:write` / `agents:read` | Create / list agents (`name`, `groups`; list includes the last report and the host facts the agent reported: `facts` {`os_family`, `distribution`, `os_version`, `kernel`, `hostname`, `domain`, `ips`}, `facts_at`; migration `0022`, informational, removed with the agent) |
 | `PUT/DELETE /v1/tenants/{t}/agents/{a}` | `agents:write` | Change groups / delete |
 | `POST/GET /v1/tenants/{t}/enrollment-keys`, `DELETE .../{id}` | `agents:enroll` | Enrollment keys: expiring, limited uses, revocable; the key is shown once |
 | `POST/GET /v1/proxies`, `DELETE /v1/proxies/{name}` | `proxies:write` / `proxies:read` (global) | Branch-office proxies ([PROXY.md](PROXY.md)): create (one-time key), list (agents, last seen), delete (refused while agents are assigned) |
@@ -98,6 +98,7 @@ Policies, artifacts and tenant settings can come from a repository instead of th
 | `GET /v1/tenants/{t}/variables`, `PUT\|DELETE .../variables/{name}?scope=tenant\|group\|agent&target=` | `policies:read` / `policies:write` | Tenant, group and agent layers (plus the inherited shared ones in the list); 409 when a higher layer locked the name |
 | `GET /v1/tenants/{t}/deliveries`, `GET\|PUT\|DELETE .../deliveries/{name}` | `policies:read` / `policies:write` | Configuration deliveries (migration `0021`): body `{agent, secrets[], files[]}`. The name is the environment: the variables of the group of that name are delivered. `agent` is the enrolled identity (the Operator) allowed to fetch it; audited as `delivery.set` / `delivery.delete` |
 | `GET /v1/agent/{t}/{agent}/deliveries/{name}` | agent proof (`Authorization: Delbert-Agent`, kind `delivery`, body = the delivery name) | The bundle `{version, variables, files, sensitive}`: variables resolved over global, tenant and group layers (strings as they are, other values as compact JSON); files = latest artifacts as UTF-8 text (256 KiB each, 768 KiB total); sensitive = secrets re-encrypted (age, base64) to the fetching identity only. 404 for an unknown delivery or one that is not the caller's; 409 when a listed secret or file is missing (never a partial bundle) |
+| `POST /v1/tenants/{t}/agents/{a}/remediation/force` | `agents:remediate` | Release the version an agent rolled back: body `{version, note}`; 409 unless the agent is quarantined at that version; signed into the agent's policy, audited (`remediation.force`). `DELETE` withdraws a force not yet obeyed. `GET .../agents` shows `remediation` and `force_pending`; `GET /v1/overview` counts `inconsistent` ([REMEDIATION.md](REMEDIATION.md)) |
 | `POST /v1/agent/{t}/{agent}/events` | body `{proof, events}`, proof kind `event` over the `events` array | The HTTP twin of the bus subject `delbert.event.<t>.<a>` for agents without a bus connection (the Operator): same batch, same limits, same idempotent ingestion. Answers `{"stored": n}`, 401 on an invalid proof |
 | `GET /v1/tenants/{t}/agents/{a}/variables`, `GET .../render` | `agents:preview` | Variables as the agent receives them, with their origin; templates rendered with secrets masked. See [POLICY.md](POLICY.md) "Variables" |
 | `GET /v1/agent/{t}/{a}/artifacts/{name}?sha256=` | agent proof | Download by hash, authenticated with `Authorization: Delbert-Agent <base64 proof>` |
@@ -144,6 +145,9 @@ The compliance report is a state view (the latest one replaces the previous). Th
 | `agent.policy.applied` | ok | a policy version was applied for the first time |
 | `agent.policy.rejected` | denied | a policy was refused (signature, expiry, rollback); repeated only when the reason changes |
 | `agent.events.dropped` | failed | the agent's spool overflowed and the oldest events were discarded |
+| `agent.policy.rolled_back` | failed | a failed update was rolled back to the last known good policy (steps in `detail`) |
+| `agent.remediation.failed` / `.stopped` / `.skipped` | failed / failed / denied | the rollback itself failed / services were stopped (`on_failure: stop`) / remediation was impossible (no last known good) |
+| `agent.service.stop_forced` | ok | a service had to be killed (SIGKILL) because the policy allows it |
 | `agent.delivery.applied` | ok | the Kubernetes Operator applied a delivery version to a namespace (`target` = `<namespace>/<binding>`; once per change of content) |
 | `agent.delivery.failed` | failed | the Operator could not apply a delivery (once per distinct error) |
 

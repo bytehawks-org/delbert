@@ -17,7 +17,7 @@ Snapshot for whoever continues the work (updated 2026-10-24). Design lives in [A
 | `delbert-operator` | Kubernetes Operator | `DelbertBinding` CRD, rendering, identity, bundle fetch and reconcile loop ([OPERATOR.md](OPERATOR.md)); verified by hand on K3s 1.31.14 (manifests in `deploy/kubernetes/operator`, image target `operator`); no CI test, no leader election. Target Kubernetes >= 1.31. Design: [ABSTRACT.md](ABSTRACT.md) §5 |
 | `web/` (Next.js) | administration UI, milestones M0-M4 (complete) | backend-for-frontend, see [web/README.md](../web/README.md) |
 
-About 135 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
+About 170 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
 
 ## Run it
 
@@ -46,9 +46,11 @@ Optional environment for the real-system tests: `S3_TEST_*` (Garage), `GIT_TEST_
 
 ## Known limits
 
-See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI complete through M4 ([FRONTEND.md](FRONTEND.md)); Kubernetes Operator verified by hand on K3s 1.31.14 but with no automated end-to-end test and no audit event of the applied version; no Windows agent; `service` only tested with a fake runner; no CRL/OCSP; proxy renewal not run live in a branch scenario ([ROTATION.md](ROTATION.md)); the Kubernetes manifests were never run on a cluster; no published images/packages; the proxy has no configuration file and its certificate does not renew.
+See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI complete through M4 ([FRONTEND.md](FRONTEND.md)); Kubernetes Operator verified by hand on K3s 1.31.14 but with no automated end-to-end test; remediation (rollback to the last known good, [REMEDIATION.md](REMEDIATION.md)) and `service` tested with a scripted `systemctl` only, not on a real systemd host; no Windows agent; `service` only tested with a fake runner; no CRL/OCSP; proxy renewal not run live in a branch scenario ([ROTATION.md](ROTATION.md)); the Kubernetes manifests were never run on a cluster; no published images/packages; the proxy has no configuration file and its certificate does not renew.
 
 ## Next steps
+
+0. Decided and pending: model the Git repositories (layout for tenants, environments, policies, templates) and an in-browser editor for policies, templates and the repositories themselves (Monaco is MIT; a full VS Code server would need per-tenant isolation); `container` resource for Podman/Docker with `env_from` / `secret_from` (the resource is only in the spec today).
 
 1. The product is feature-complete for a first trial; next: run it on a real K3s cluster and publish images/packages (see ROADMAP), web e2e in CI, then the optional integrations (external key and secret providers, Operator, Windows agent). The UI is complete through M4 ([FRONTEND.md](FRONTEND.md)); a tenant "delete" is an archive.
 2. Kubernetes Operator; Windows agent study. (The CA is behind a trait, rcgen backend only: [API.md](API.md) `DELBERT_CA_BACKEND`.) (Per-action audit events from agents are done, also through the proxy: [API.md](API.md) "Agent audit events".)

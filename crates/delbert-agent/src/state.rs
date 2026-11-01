@@ -14,6 +14,20 @@ pub struct State {
     /// cycle becomes one audit event (see `events.rs`). Losing it costs one repeated event.
     #[serde(default)]
     pub events: BTreeMap<String, String>,
+    /// Paths the last clean cycle applied (see `orphans.rs`). Losing it only means an orphan is
+    /// not removed.
+    #[serde(default)]
+    pub managed: BTreeMap<String, crate::orphans::Managed>,
+    /// Version of the policy kept in `policy.lkg.jws` (the last known good).
+    #[serde(default)]
+    pub lkg_version: Option<u64>,
+    /// A failed version that was rolled back or stopped: not applied again until a greater
+    /// version arrives or the Core releases it (docs/REMEDIATION.md).
+    #[serde(default)]
+    pub quarantine: Option<crate::remediation::Quarantine>,
+    /// Id of the last release (`force`) obeyed: each decision is honoured once.
+    #[serde(default)]
+    pub last_force: Option<String>,
 }
 
 impl State {

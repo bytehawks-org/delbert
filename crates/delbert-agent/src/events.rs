@@ -76,6 +76,11 @@ impl Event {
         Event { id: new_id(), kind: kind.into(), at, resource: resource.map(str::to_owned), version, detail: cut(detail), subject: None, drift: Vec::new(), ms: None }
     }
 
+    /// An event of the remediation (kind without prefix): the steps are in the detail.
+    pub fn remediation(kind: &str, at: i64, resource: &str, version: u64, detail: &str) -> Event {
+        Event::new(kind, at, Some(resource), Some(version), detail)
+    }
+
     /// Say what was acted on, what was found and how long it took.
     fn with(mut self, r: &ResourceReport, drift: &[String]) -> Event {
         self.subject = Some(cut(&r.subject));
@@ -83,6 +88,24 @@ impl Event {
         self.ms = Some(r.ms);
         self
     }
+}
+
+/// The events of a remediation: what happened, and a forced kill separately (it is the dangerous part).
+pub fn remediation_events(q: &crate::remediation::Quarantine, at: i64) -> Vec<Event> {
+    use crate::remediation::State;
+    let kind = match q.state {
+        State::RolledBack => "policy.rolled_back",
+        State::RollbackFailed => "remediation.failed",
+        State::Stopped => "remediation.stopped",
+        State::Skipped => "remediation.skipped",
+    };
+    let back = q.running_version.map_or(String::new(), |v| format!("; v{v} runs again"));
+    let detail = format!("v{} failed: {}{back}. {}", q.failed_version, q.reason, q.steps.join("; "));
+    let mut events = vec![Event::remediation(kind, at, &q.resource, q.failed_version, &detail)];
+    if q.forced_kill {
+        events.push(Event::remediation("service.stop_forced", at, &q.resource, q.failed_version, &q.steps.iter().filter(|s| s.contains("SIGKILL")).cloned().collect::<Vec<_>>().join("; ")));
+    }
+    events
 }
 
 /// What a cycle produced, as far as events are concerned.

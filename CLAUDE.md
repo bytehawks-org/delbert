@@ -63,6 +63,7 @@ This file extends and integrates the user-scoped CLAUDE.md file.
 - docs/RBAC.md (access control v2), docs/FRONTEND.md (web UI design), web/README.md (the UI project)
 - docs/STATUS.md (current state and handoff: read it first in a new session)
 - docs/ROTATION.md (key and certificate rotation)
+- docs/REMEDIATION.md (orphaned files, remediation and rollback)
 - docs/CONTENT.md (content sources: directory / git)
 - docs/DESIDERATA.md
 - docs/SCOPE.md

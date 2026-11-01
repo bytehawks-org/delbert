@@ -1005,6 +1005,7 @@ dependencies = [
  "delbert-policy",
  "delbert-wire",
  "futures",
+ "if-addrs",
  "minijinja",
  "rand_core 0.6.4",
  "regex",
@@ -1012,6 +1013,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.21",
@@ -1146,6 +1148,7 @@ dependencies = [
 name = "delbert-policy"
 version = "0.1.0"
 dependencies = [
+ "minijinja",
  "schemars 0.8.22",
  "serde",
  "serde_json",
@@ -2297,6 +2300,16 @@ checksum = "cb68373c0d6620ef8105e855e7745e18b0d00d3bdb07fb532e434244cdb9a714"
 dependencies = [
  "icu_normalizer",
  "icu_properties",
+]
+
+[[package]]
+name = "if-addrs"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0a05c691e1fae256cf7013d99dad472dc52d5543322761f83ec8d47eab40d2b"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4151,7 +4164,7 @@ checksum = "7bd22781911de0ca6debda95f073c8f18bec65d1a94f1fa9573f3102e514cea4"
 dependencies = [
  "ahash",
  "annotate-snippets",
- "base64 0.21.7",
+ "base64 0.22.1",
  "encoding_rs_io",
  "getrandom 0.3.4",
  "granit-parser",

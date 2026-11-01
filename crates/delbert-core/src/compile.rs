@@ -130,6 +130,13 @@ pub fn compile(inputs: &[PolicyInput], chain: &[Strategy], catalog: &BTreeMap<St
                 continue;
             }
 
+            // Different conditions: the agent decides on its own host. Both are kept; if both hold
+            // there, the agent refuses them (the Core cannot see the host).
+            if a.res.when.is_some() && b.res.when.is_some() {
+                conflicts.push(Conflict { what, resources: ids_pair.to_vec(), resolution: "both kept: their 'when' conditions decide on each host".into() });
+                continue;
+            }
+
             let mut resolution = None;
             for strategy in chain {
                 match strategy {
@@ -329,5 +336,17 @@ mod tests {
     fn parse_chain_rejects_unknown_strategies() {
         assert_eq!(parse_chain("priority, error").unwrap(), vec![Strategy::Priority, Strategy::Error]);
         assert!(parse_chain("specificity").is_err());
+    }
+
+    #[test]
+    fn different_conditions_on_one_thing_keep_both_and_say_so() {
+        let w = |cond: &str, body: &str| format!("    - id: motd\n      when: \"{cond}\"\n      copy: {{ content: \"{body}\\n\", dest: /etc/motd }}\n");
+        let c = compile(&[input("a", 0, &w("facts.os_family == 'debian'", "d")), input("b", 0, &w("facts.os_family == 'rhel'", "r"))], &[Strategy::Error]);
+        assert_eq!(ids(&c), vec!["a/motd", "b/motd"]);
+        assert_eq!(c.conflicts.len(), 1);
+        assert!(c.conflicts[0].resolution.starts_with("both kept"));
+        // Without a condition on one side the usual rule applies.
+        let c = compile(&[input("a", 0, &w("facts.os_family == 'debian'", "d")), input("b", 0, A)], &[Strategy::Error]);
+        assert_eq!(c.conflicts[0].resolution, "error: neither applied");
     }
 }

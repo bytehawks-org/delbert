@@ -102,6 +102,20 @@ pub struct Resource {
     /// A handler runs only when notified.
     #[serde(default)]
     pub handler: bool,
+    /// When a later policy version no longer declares this file, link or directory, the agent
+    /// removes it (only what it applied itself, after a clean cycle). `true` keeps it. Only for
+    /// `file` (file, link, directory), `copy` and `template`.
+    #[serde(default)]
+    pub keep_if_absent_in_policy: bool,
+    /// What to do when this (service) resource fails or does not come up after a policy update
+    /// (docs/REMEDIATION.md). Absent: nothing is verified and nothing is undone.
+    #[serde(default)]
+    pub remediation: Option<Remediation>,
+    /// Condition evaluated by the agent on its own host: a MiniJinja expression over `facts` and
+    /// `vars` (`facts.os_family == 'debian'`). False: the resource does not apply there. An
+    /// expression that cannot be evaluated (undefined name) fails the resource: never applied by guess.
+    #[serde(default)]
+    pub when: Option<String>,
 
     // Verbs: exactly one must be set (checked by `validate`).
     #[serde(default)]
@@ -232,6 +246,110 @@ pub enum ServiceState {
     Stopped,
     Restarted,
     Reloaded,
+}
+
+/// How a service resource is judged after a change, and what the agent does when it fails.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Remediation {
+    /// How to tell it came up. Without it only a failing `systemctl` counts as a failure.
+    #[serde(default)]
+    pub verify: Option<Verify>,
+    #[serde(default)]
+    pub on_failure: OnFailure,
+    /// Clean stop before a rollback or a stop (defaults: 30 s, never kill).
+    #[serde(default)]
+    pub stop: StopSpec,
+    /// Clean start after a rollback (default: 60 s).
+    #[serde(default)]
+    pub start: StartSpec,
+}
+
+/// Judged on this host only: the service is active, stays active for `settle_seconds`, and
+/// optionally accepts TCP connections on `127.0.0.1:port`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Verify {
+    /// It must remain active this long (default 10).
+    #[serde(default = "Verify::default_settle")]
+    pub settle_seconds: u32,
+    /// Give up waiting for it to come up after this long (default 60).
+    #[serde(default = "Verify::default_timeout")]
+    pub timeout_seconds: u32,
+    /// Local TCP port that must accept a connection.
+    #[serde(default)]
+    pub port: Option<u16>,
+}
+
+impl Verify {
+    fn default_settle() -> u32 {
+        10
+    }
+    fn default_timeout() -> u32 {
+        60
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OnFailure {
+    /// Report only (default): what is not declared is not automated.
+    #[default]
+    None,
+    /// Stop the service cleanly and leave the host as it is; the agent becomes inconsistent.
+    Stop,
+    /// Stop cleanly, re-apply the last known good policy as a whole, start cleanly.
+    Rollback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum KillMode {
+    /// Wait for the service forever (systemd's own timeout still applies).
+    #[default]
+    Never,
+    /// SIGKILL once `graceful_seconds` have passed.
+    AfterTimeout,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StopSpec {
+    #[serde(default = "StopSpec::default_graceful")]
+    pub graceful_seconds: u32,
+    #[serde(default)]
+    pub kill: KillMode,
+}
+
+impl StopSpec {
+    fn default_graceful() -> u32 {
+        30
+    }
+}
+
+impl Default for StopSpec {
+    fn default() -> Self {
+        StopSpec { graceful_seconds: Self::default_graceful(), kill: KillMode::Never }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StartSpec {
+    #[serde(default = "StartSpec::default_timeout")]
+    pub timeout_seconds: u32,
+}
+
+impl StartSpec {
+    fn default_timeout() -> u32 {
+        60
+    }
+}
+
+impl Default for StartSpec {
+    fn default() -> Self {
+        StartSpec { timeout_seconds: Self::default_timeout() }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

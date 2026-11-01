@@ -29,7 +29,7 @@ pub struct OverviewQuery {
 pub struct AttentionAgent {
     pub tenant: String,
     pub name: String,
-    /// `drifted` (reported, not compliant) or `silent` (never reported, or not for a while).
+    /// `inconsistent` (rolled back or stopped, see remediation), `drifted` (reported, not compliant) or `silent` (never reported, or not for a while).
     pub state: String,
     /// Unix seconds of the last report.
     pub reported_at: Option<i64>,
@@ -42,7 +42,9 @@ pub struct Overview {
     pub compliant: i64,
     pub drifted: i64,
     pub silent: i64,
-    /// Drifted agents first, then the silent ones (longest silent first); at most 20.
+    /// Of the drifted: agents that rolled back or stopped after a failed update and wait for a person.
+    pub inconsistent: i64,
+    /// Inconsistent and drifted agents first, then the silent ones (longest silent first); at most 20.
     pub attention: Vec<AttentionAgent>,
 }
 
@@ -52,11 +54,12 @@ pub async fn overview(State(st): State<AppState>, Authn(user): Authn, Query(q): 
     // `None`: every tenant (global grant).
     let scope: Option<Vec<Uuid>> = user.tenants_with("agents:read");
     let tenants: i64 = sqlx::query_scalar("SELECT count(*) FROM tenants WHERE archived_at IS NULL AND ($1::uuid[] IS NULL OR id = ANY($1))").bind(&scope).fetch_one(&st.pool).await?;
-    let (agents, compliant, drifted, silent): (i64, i64, i64, i64) = sqlx::query_as(
+    let (agents, compliant, drifted, silent, inconsistent): (i64, i64, i64, i64, i64) = sqlx::query_as(
         "SELECT count(*), \
                 count(*) FILTER (WHERE r.received_at > now() - make_interval(secs => $2) AND r.compliant), \
                 count(*) FILTER (WHERE r.received_at > now() - make_interval(secs => $2) AND NOT r.compliant), \
-                count(*) FILTER (WHERE r.received_at IS NULL OR r.received_at <= now() - make_interval(secs => $2)) \
+                count(*) FILTER (WHERE r.received_at IS NULL OR r.received_at <= now() - make_interval(secs => $2)), \
+                count(*) FILTER (WHERE r.received_at > now() - make_interval(secs => $2) AND jsonb_typeof(r.report->'remediation') = 'object') \
          FROM agents a JOIN tenants t ON t.id = a.tenant_id LEFT JOIN agent_reports r ON r.agent_id = a.id \
          WHERE t.archived_at IS NULL AND ($1::uuid[] IS NULL OR a.tenant_id = ANY($1))",
     )
@@ -64,12 +67,13 @@ pub async fn overview(State(st): State<AppState>, Authn(user): Authn, Query(q): 
     .bind(stale)
     .fetch_one(&st.pool)
     .await?;
-    let rows: Vec<(String, String, Option<bool>, Option<i64>)> = sqlx::query_as(
-        "SELECT t.name, a.name, (r.received_at > now() - make_interval(secs => $2)) AS reported, (EXTRACT(EPOCH FROM r.received_at))::bigint \
+    let rows: Vec<(String, String, Option<bool>, Option<i64>, Option<bool>)> = sqlx::query_as(
+        "SELECT t.name, a.name, (r.received_at > now() - make_interval(secs => $2)) AS reported, (EXTRACT(EPOCH FROM r.received_at))::bigint, \
+                (jsonb_typeof(r.report->'remediation') = 'object') \
          FROM agents a JOIN tenants t ON t.id = a.tenant_id LEFT JOIN agent_reports r ON r.agent_id = a.id \
          WHERE t.archived_at IS NULL AND ($1::uuid[] IS NULL OR a.tenant_id = ANY($1)) \
            AND (r.received_at IS NULL OR r.received_at <= now() - make_interval(secs => $2) OR NOT r.compliant) \
-         ORDER BY COALESCE(r.received_at > now() - make_interval(secs => $2), false) DESC, r.received_at NULLS FIRST, t.name, a.name LIMIT $3",
+         ORDER BY COALESCE(jsonb_typeof(r.report->'remediation') = 'object', false) DESC, COALESCE(r.received_at > now() - make_interval(secs => $2), false) DESC, r.received_at NULLS FIRST, t.name, a.name LIMIT $3",
     )
     .bind(&scope)
     .bind(stale)
@@ -78,7 +82,10 @@ pub async fn overview(State(st): State<AppState>, Authn(user): Authn, Query(q): 
     .await?;
     let attention = rows
         .into_iter()
-        .map(|(tenant, name, reported, reported_at)| AttentionAgent { tenant, name, state: if reported == Some(true) { "drifted" } else { "silent" }.into(), reported_at })
+        .map(|(tenant, name, reported, reported_at, inconsistent)| {
+            let state = if inconsistent == Some(true) { "inconsistent" } else if reported == Some(true) { "drifted" } else { "silent" };
+            AttentionAgent { tenant, name, state: state.into(), reported_at }
+        })
         .collect();
-    Ok(Json(Overview { tenants, agents, compliant, drifted, silent, attention }))
+    Ok(Json(Overview { tenants, agents, compliant, drifted, silent, inconsistent, attention }))
 }

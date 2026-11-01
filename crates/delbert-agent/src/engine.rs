@@ -2,7 +2,6 @@
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -24,6 +23,8 @@ pub struct Ctx {
     pub secrets: BTreeMap<String, String>,
     /// Expected SHA-256 (hex) of artifacts, by name; present when the policy pins them.
     pub artifact_hashes: BTreeMap<String, String>,
+    /// Directory of custom facts (`facts.d`); empty path = none.
+    pub facts_dir: PathBuf,
     /// How verbs run system tools. Commands are refused when `root` is not `/`.
     pub runner: Arc<dyn Runner>,
 }
@@ -31,7 +32,7 @@ pub struct Ctx {
 impl Ctx {
     pub fn new(root: PathBuf, artifacts: PathBuf) -> Self {
         let runner: Arc<dyn Runner> = if root == Path::new("/") { Arc::new(SystemRunner) } else { Arc::new(SandboxRunner) };
-        Ctx { root, artifacts, vars: BTreeMap::new(), secrets: BTreeMap::new(), artifact_hashes: BTreeMap::new(), runner }
+        Ctx { root, artifacts, vars: BTreeMap::new(), secrets: BTreeMap::new(), artifact_hashes: BTreeMap::new(), facts_dir: PathBuf::new(), runner }
     }
 
     /// Map an absolute policy path into the root.
@@ -39,22 +40,9 @@ impl Ctx {
         self.root.join(absolute.trim_start_matches('/'))
     }
 
-    /// Facts exposed to templates as `facts.*` (read from the root, best effort).
+    /// Facts exposed to templates and `when` as `facts.*` (see `facts.rs`; best effort).
     pub fn facts(&self) -> serde_json::Value {
-        let read = |p: &str| fs::read_to_string(self.path(p)).unwrap_or_default();
-        let os_release = read("/etc/os-release");
-        let field = |key: &str| {
-            os_release
-                .lines()
-                .find_map(|l| l.strip_prefix(key).and_then(|v| v.strip_prefix('=')))
-                .map(|v| v.trim_matches('"').to_string())
-                .unwrap_or_default()
-        };
-        serde_json::json!({
-            "hostname": read("/etc/hostname").trim(),
-            "os_id": field("ID"),
-            "os_version_id": field("VERSION_ID"),
-        })
+        crate::facts::all(&self.root, &self.facts_dir)
     }
 }
 
@@ -79,6 +67,9 @@ pub enum Status {
     Unsupported(String),
     /// A dependency failed, was skipped or is unsupported.
     Skipped(String),
+    /// Its `when` is false on this host, or it depends on a resource that does not apply here.
+    /// Not a problem: counts as compliant.
+    NotApplicable(String),
     Failed(String),
 }
 
@@ -123,7 +114,7 @@ impl Report {
     }
     /// Everything converged (or has nothing to do).
     pub fn is_compliant(&self) -> bool {
-        self.resources.iter().all(|r| matches!(r.status, Status::Compliant | Status::Changed(_) | Status::Idle))
+        self.resources.iter().all(|r| matches!(r.status, Status::Compliant | Status::Changed(_) | Status::Idle | Status::NotApplicable(_)))
     }
     pub fn has_failures(&self) -> bool {
         self.resources.iter().any(|r| matches!(r.status, Status::Failed(_)))
@@ -202,6 +193,17 @@ fn run_one(r: &Resource, ctx: &Ctx, mode: Mode) -> Status {
 }
 
 /// Run a (validated) policy against the host described by `ctx`.
+/// Does the resource's `when` hold on this host? No `when`: yes. An expression that cannot be
+/// evaluated is an error, not "false": a resource is never applied (or silently dropped) by guess.
+fn applies(r: &Resource, facts: &serde_json::Value, ctx: &Ctx) -> Result<bool, String> {
+    let Some(when) = &r.when else { return Ok(true) };
+    let mut env = minijinja::Environment::new();
+    env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+    let expression = env.compile_expression(when).map_err(|e| format!("when: {e:#}"))?;
+    let value = expression.eval(minijinja::context! { facts => facts, vars => &ctx.vars }).map_err(|e| format!("when: {e:#}"))?;
+    Ok(value.is_true())
+}
+
 pub fn run(resources: &[Resource], ctx: &Ctx, mode: Mode) -> Report {
     let mut status: HashMap<&str, Status> = HashMap::new();
     let mut report = Report::default();
@@ -212,8 +214,42 @@ pub fn run(resources: &[Resource], ctx: &Ctx, mode: Mode) -> Report {
         report.resources.push(ResourceReport { id: r.id.clone(), status: s, subject: subject(r), ms });
     };
 
+    // Conditions first: which resources apply to this host. Two that name the same thing and both
+    // apply are refused (the Core cannot know, it did not see the host): both fail, nothing is applied by guess.
+    let facts = ctx.facts();
+    let conditions: HashMap<&str, Result<bool, String>> = resources.iter().filter(|r| r.when.is_some()).map(|r| (r.id.as_str(), applies(r, &facts, ctx))).collect();
+    let active = |r: &Resource| conditions.get(r.id.as_str()).is_none_or(|c| matches!(c, Ok(true)));
+    let mut clashing: HashMap<&str, String> = HashMap::new();
+    for (i, a) in resources.iter().enumerate() {
+        for b in &resources[i + 1..] {
+            if a.handler || b.handler || (a.when.is_none() && b.when.is_none()) || !active(a) || !active(b) {
+                continue;
+            }
+            if let Some(what) = delbert_policy::clash(a, b) {
+                clashing.insert(a.id.as_str(), format!("{what} is also managed by '{}', which applies on this host too", b.id));
+                clashing.insert(b.id.as_str(), format!("{what} is also managed by '{}', which applies on this host too", a.id));
+            }
+        }
+    }
+
     for r in order(resources) {
         let started = std::time::Instant::now();
+        let precondition = match conditions.get(r.id.as_str()) {
+            Some(Err(e)) => Some(Status::Failed(e.clone())),
+            Some(Ok(false)) => Some(Status::NotApplicable("'when' is false on this host".into())),
+            _ => clashing.get(r.id.as_str()).map(|m| Status::Failed(m.clone())),
+        }
+        .or_else(|| {
+            r.depends_on
+                .iter()
+                .find(|d| matches!(status.get(d.as_str()), Some(Status::NotApplicable(_))))
+                .map(|d| Status::NotApplicable(format!("dependency '{d}' does not apply on this host")))
+        });
+        if let Some(s) = precondition {
+            status.insert(r.id.as_str(), s.clone());
+            record(r, s, started, &mut report);
+            continue;
+        }
         let blocked = r.depends_on.iter().find(|d| {
             matches!(
                 status.get(d.as_str()),
@@ -242,6 +278,8 @@ pub fn run(resources: &[Resource], ctx: &Ctx, mode: Mode) -> Report {
     for r in resources.iter().filter(|r| r.handler) {
         let started = std::time::Instant::now();
         let s = match (notified.contains(r.id.as_str()), mode) {
+            _ if matches!(conditions.get(r.id.as_str()), Some(Ok(false))) => Status::NotApplicable("'when' is false on this host".into()),
+            _ if matches!(conditions.get(r.id.as_str()), Some(Err(_))) => Status::Failed(conditions[r.id.as_str()].clone().unwrap_err()),
             (false, _) => Status::Idle,
             (true, Mode::Check) => Status::Drifted(vec!["notified".into()]),
             (true, Mode::Apply) => run_one(r, ctx, mode),
@@ -351,5 +389,83 @@ spec:
         let report = run(&delbert_policy::from_yaml(yaml).unwrap().spec.resources, &ctx, Mode::Apply);
         assert!(matches!(status(&report, "bad"), Status::Failed(_)));
         assert!(matches!(status(&report, "good"), Status::Changed(_)));
+    }
+
+    const CONDITIONAL: &str = r#"
+apiVersion: delbert/v1
+kind: Policy
+metadata: { name: t, tenant: example }
+spec:
+  resources:
+    - id: deb-motd
+      when: "facts.os_family == 'debian'"
+      copy: { content: "deb\n", dest: /etc/motd }
+    - id: rhel-motd
+      when: "facts.os_family == 'rhel'"
+      copy: { content: "rhel\n", dest: /etc/motd }
+    - id: deb-follow
+      depends_on: [rhel-motd]
+      file: { path: /etc/follow }
+    - id: broken
+      when: "facts.custom.nope.x == 1"
+      file: { path: /etc/broken }
+    - id: by-var
+      when: "vars.mode == 'on' and facts.hostname == 'web01'"
+      file: { path: /etc/by-var }
+"#;
+
+    fn conditional_setup(os_release: &str) -> (tempfile::TempDir, Ctx) {
+        let (tmp, mut ctx) = setup();
+        fs::write(tmp.path().join("etc/os-release"), os_release).unwrap();
+        fs::write(tmp.path().join("etc/hostname"), "web01\n").unwrap();
+        ctx.vars.insert("mode".into(), serde_json::json!("on"));
+        (tmp, ctx)
+    }
+
+    #[test]
+    fn when_selects_resources_by_facts_and_vars_and_fails_closed() {
+        let (tmp, ctx) = conditional_setup("ID=ubuntu\nID_LIKE=debian\n");
+        let policy = delbert_policy::from_yaml(CONDITIONAL).unwrap();
+        let report = run(&policy.spec.resources, &ctx, Mode::Apply);
+        assert!(matches!(status(&report, "deb-motd"), Status::Changed(_)));
+        assert!(matches!(status(&report, "rhel-motd"), Status::NotApplicable(_)));
+        // A dependency that does not apply here takes its dependents with it.
+        assert!(matches!(status(&report, "deb-follow"), Status::NotApplicable(m) if m.contains("rhel-motd")));
+        // An expression that cannot be evaluated is a failure, never "false".
+        assert!(matches!(status(&report, "broken"), Status::Failed(m) if m.starts_with("when:")));
+        assert!(matches!(status(&report, "by-var"), Status::Changed(_)));
+        assert_eq!(fs::read_to_string(tmp.path().join("etc/motd")).unwrap(), "deb\n");
+        assert!(!tmp.path().join("etc/follow").exists() && !tmp.path().join("etc/broken").exists());
+        // Not-applicable is not a defect.
+        assert!(report.resources.iter().filter(|r| r.id != "broken").all(|r| !matches!(r.status, Status::Failed(_))));
+
+        let (_keep, other) = conditional_setup("ID=rocky\nID_LIKE=\"rhel centos fedora\"\n");
+        let report = run(&policy.spec.resources, &other, Mode::Check);
+        assert!(matches!(status(&report, "deb-motd"), Status::NotApplicable(_)));
+        assert!(matches!(status(&report, "rhel-motd"), Status::Drifted(_)), "{:?}", status(&report, "rhel-motd"));
+    }
+
+    #[test]
+    fn two_resources_that_both_apply_to_the_same_thing_are_refused() {
+        let (tmp, ctx) = conditional_setup("ID=ubuntu\nID_LIKE=debian\n");
+        let yaml = r#"
+apiVersion: delbert/v1
+kind: Policy
+metadata: { name: t, tenant: example }
+spec:
+  resources:
+    - id: a
+      when: "facts.os_family == 'debian'"
+      copy: { content: "a\n", dest: /etc/motd }
+    - id: b
+      when: "facts.hostname == 'web01'"
+      copy: { content: "b\n", dest: /etc/motd }
+"#;
+        let policy = delbert_policy::from_yaml(yaml).unwrap();
+        assert!(delbert_policy::validate(&policy).is_ok(), "different conditions are allowed to name the same file");
+        let report = run(&policy.spec.resources, &ctx, Mode::Apply);
+        assert!(matches!(status(&report, "a"), Status::Failed(m) if m.contains("'b'")));
+        assert!(matches!(status(&report, "b"), Status::Failed(_)));
+        assert!(!tmp.path().join("etc/motd").exists(), "nothing applied by guess");
     }
 }

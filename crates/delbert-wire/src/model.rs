@@ -49,4 +49,18 @@ pub struct EffectivePolicy {
     /// whole payload is signed by a key the agent already trusts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trust: Option<TrustUpdate>,
+    /// An operator's decision to apply a version again after the agent rolled it back
+    /// (docs/REMEDIATION.md). Honoured once per `id`, only because the payload is signed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub force: Option<Force>,
+}
+
+/// Release of a quarantined version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Force {
+    /// The quarantined version this releases.
+    pub version: u64,
+    /// Unique per decision: the agent remembers the last one it obeyed.
+    pub id: String,
 }

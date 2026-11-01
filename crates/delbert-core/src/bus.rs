@@ -309,11 +309,22 @@ pub(crate) async fn renew(state: &AppState, tenant: &str, agent: &str, payload: 
 async fn store_report(state: &AppState, tenant: &str, agent: &str, report: &serde_json::Value) -> Result<(), sqlx::Error> {
     let compliant = report["compliant"].as_bool().unwrap_or(false);
     let version = report["version"].as_i64();
+    // The host facts travel inside the report but are kept apart: the report is replaced by every
+    // cycle, the facts only by a report that carries them.
+    let facts = report.get("facts").and_then(crate::facts::sanitize);
+    let mut report = report.clone();
+    if let Some(object) = report.as_object_mut() {
+        object.remove("facts");
+    }
+    let report = &report;
     // Unknown agents are ignored: reports never create anything.
     sqlx::query(
-        "INSERT INTO agent_reports (agent_id, version, compliant, report) \
-         SELECT a.id, $3, $4, $5 FROM agents a JOIN tenants t ON t.id = a.tenant_id WHERE t.name = $1 AND a.name = $2 \
-         ON CONFLICT (agent_id) DO UPDATE SET received_at = now(), version = $3, compliant = $4, report = $5 \
+        "INSERT INTO agent_reports (agent_id, version, compliant, report, facts, facts_at) \
+         SELECT a.id, $3, $4, $5, $6::jsonb, CASE WHEN $6::jsonb IS NULL THEN NULL ELSE now() END \
+         FROM agents a JOIN tenants t ON t.id = a.tenant_id WHERE t.name = $1 AND a.name = $2 \
+         ON CONFLICT (agent_id) DO UPDATE SET received_at = now(), version = $3, compliant = $4, report = $5, \
+             facts = COALESCE($6::jsonb, agent_reports.facts), \
+             facts_at = CASE WHEN $6::jsonb IS NULL THEN agent_reports.facts_at ELSE now() END \
          WHERE COALESCE((agent_reports.report->>'at')::bigint, 0) <= COALESCE(($5::jsonb->>'at')::bigint, 0)",
     )
     .bind(tenant)
@@ -321,8 +332,17 @@ async fn store_report(state: &AppState, tenant: &str, agent: &str, report: &serd
     .bind(version)
     .bind(compliant)
     .bind(report)
+    .bind(facts)
     .execute(&state.pool)
     .await?;
+    // Back to consistent: a release the agent has obeyed is over.
+    if !report.get("remediation").is_some_and(serde_json::Value::is_object) {
+        sqlx::query("UPDATE agents a SET force_version = NULL, force_id = NULL, forced_by = NULL, forced_at = NULL FROM tenants t WHERE t.id = a.tenant_id AND t.name = $1 AND a.name = $2 AND a.force_id IS NOT NULL")
+            .bind(tenant)
+            .bind(agent)
+            .execute(&state.pool)
+            .await?;
+    }
     sqlx::query("SELECT pg_notify($3, json_build_object('t', t.id, 'k', 'report')::text) FROM tenants t WHERE t.name = $1 AND EXISTS (SELECT 1 FROM agents a WHERE a.tenant_id = t.id AND a.name = $2)")
         .bind(tenant)
         .bind(agent)

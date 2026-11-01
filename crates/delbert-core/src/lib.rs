@@ -27,3 +27,5 @@ pub mod config;
 pub mod content;
 pub mod compile;
 pub mod enroll;
+pub mod facts;
+pub mod remediation;

@@ -196,6 +196,7 @@ mod tests {
             secrets: Default::default(),
             resources: delbert_policy::from_yaml(yaml).unwrap().spec.resources,
             trust: None,
+            force: None,
         }
     }
 

@@ -11,4 +11,4 @@ pub mod trust;
 
 pub use jws::{Expect, Signer, VerifyError, Verifier};
 pub use trust::{TrustUpdate, TrustedKey};
-pub use model::{ArtifactRef, EffectivePolicy, SCHEMA};
+pub use model::{ArtifactRef, EffectivePolicy, Force, SCHEMA};

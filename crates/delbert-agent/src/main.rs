@@ -96,6 +96,12 @@ struct DaemonArgs {
     /// Renew the certificate when less than this many seconds remain (default: a third of its lifetime).
     #[arg(long, env = "DELBERT_RENEW_BEFORE_SECS")]
     renew_before_secs: Option<i64>,
+    /// Directory of custom facts (YAML/JSON files); they stay on this host.
+    #[arg(long, env = "DELBERT_FACTS_DIR", default_value = "/etc/delbert/facts.d")]
+    facts_dir: PathBuf,
+    /// The host facts (OS, kernel, hostname, addresses) are sent to the Core when they change and at least this often (minimum 60).
+    #[arg(long, env = "DELBERT_FACTS_INTERVAL_SECS", default_value_t = 900)]
+    facts_interval_secs: u64,
     // Unattended installs: if there is no identity yet, enroll with these first.
     #[arg(long, env = "DELBERT_CORE_URL")]
     core_url: Option<String>,
@@ -139,6 +145,7 @@ fn print(report: &Report) {
             Status::Idle => ("idle", String::new()),
             Status::Unsupported(m) => ("unsupported", m.clone()),
             Status::Skipped(m) => ("skipped", m.clone()),
+            Status::NotApplicable(m) => ("n/a", m.clone()),
             Status::Failed(m) => ("FAILED", m.clone()),
         };
         println!("{label:<12} {:<24} {detail}", r.id);
@@ -237,6 +244,8 @@ async fn main() -> anyhow::Result<ExitCode> {
                 artifacts: a.artifacts,
                 root: a.root,
                 renew_before_secs: a.renew_before_secs,
+                facts_dir: a.facts_dir,
+                facts_interval: std::time::Duration::from_secs(a.facts_interval_secs.max(60)),
             })
             .await?;
         }

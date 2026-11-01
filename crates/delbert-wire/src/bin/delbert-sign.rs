@@ -84,6 +84,7 @@ fn main() -> anyhow::Result<()> {
                 secrets: Default::default(),
                 resources: parsed.spec.resources,
                 trust: None,
+                force: None,
             };
             println!("{}", Signer::new(SigningKey::from_bytes(&seed), kid).sign(&effective)?);
         }

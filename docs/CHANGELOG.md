@@ -2,6 +2,20 @@
 
 ## 2026-11-01
 
+### Remediation and rollback to the last known good
+- **Policy:** `remediation` on service resources (`verify`, `on_failure` none/stop/rollback, `stop` with an optional forced kill, `start`); validated at save.
+- **Agent** (`remediation.rs`): verification after a change, clean stop with deadline (SIGKILL only if declared), atomic whole-policy rollback to the last known good (`policy.lkg.jws`, verified as of its issue time), quarantine of the failed version, orphans removed only after verification. New events: `policy.rolled_back`, `remediation.failed|stopped|skipped`, `service.stop_forced`.
+- **Core** (migration `0023`, `remediation.rs`): the agent is *inconsistent* (`remediation` in `GET .../agents`, `inconsistent` in the overview); `POST/DELETE .../remediation/force` with the new permission `agents:remediate` (tenant-admin) signs a one-time release into the effective policy (`force`), audited with the note. Tests: `tests/remediation.rs`, unit tests with a scripted `systemctl`. Not run on a real systemd host. See [REMEDIATION.md](REMEDIATION.md).
+
+### Orphaned files
+- A new policy version that no longer declares a file, link or empty directory makes the agent remove it (`orphans.rs`, `state.json` → `managed`), after a clean cycle and only for what the agent applied itself; `keep_if_absent_in_policy: true` on the old resource keeps it. Removals are report entries and `agent.resource.changed` events. Design of the remediation (LKG rollback, quarantine, forced release) in [REMEDIATION.md](REMEDIATION.md); not implemented yet.
+
+### Host facts and per-resource `when`
+- **Agent** (`facts.rs`): read-only collectors (OS family, distribution, version, kernel, hostname, domain, addresses without loopback/link-local/container interfaces; `if-addrs` 0.15) plus local facts (machine id, custom documents of `DELBERT_FACTS_DIR`). The shared subset rides on the compliance report when it changes and at least every `DELBERT_FACTS_INTERVAL_SECS` (900); nothing else leaves the host.
+- **Core** (migration `0022`, `facts.rs`): the subset (known keys only, bounded, addresses parsed) is stored next to the latest report, overwritten, not audited, deleted with the agent; returned by `GET .../agents` as `facts` / `facts_at`; `GET .../render` uses it.
+- **`when` per resource**, evaluated on the agent (MiniJinja expression over `facts` and `vars`): false = `not_applicable` (also for dependents), unevaluable = failed. Validated at save. Two resources with different `when` on the same thing are accepted and kept by the Core ("both kept"); the agent fails both if both hold on one host. `target.when` stays refused.
+- Tests: `tests/facts.rs` (NATS), engine, compile and facts unit tests. See [POLICY.md](POLICY.md) "Facts".
+
 ### Audit of delivered configuration
 - The Operator reports `delivery.applied` (once per change of content, with version and restarted workloads) and `delivery.failed` (once per distinct error) to the Core, which appends them to the hash-chained trail as `agent.delivery.applied` / `agent.delivery.failed`. New endpoint `POST /v1/agent/{t}/{agent}/events` (the HTTP twin of the bus batch, same proof and ingestion). Test: `tests/deliveries.rs`. See [OPERATOR.md](OPERATOR.md), [API.md](API.md).
 

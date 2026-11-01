@@ -43,6 +43,12 @@ fn classify(kind: &str) -> Option<(&'static str, &'static str)> {
         "policy.rejected" => ("agent.policy.rejected", "denied"),
         "events.dropped" => ("agent.events.dropped", "failed"),
         // The Kubernetes Operator, an agent that reports over HTTP: a delivery applied to / refused in a namespace.
+        // Remediation on the host: a failed update undone, stopped, or not remediable (docs/REMEDIATION.md).
+        "policy.rolled_back" => ("agent.policy.rolled_back", "failed"),
+        "remediation.failed" => ("agent.remediation.failed", "failed"),
+        "remediation.stopped" => ("agent.remediation.stopped", "failed"),
+        "remediation.skipped" => ("agent.remediation.skipped", "denied"),
+        "service.stop_forced" => ("agent.service.stop_forced", "ok"),
         "delivery.applied" => ("agent.delivery.applied", "ok"),
         "delivery.failed" => ("agent.delivery.failed", "failed"),
         _ => return None,

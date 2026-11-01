@@ -47,7 +47,9 @@ Rules:
 - Each resource has a unique `id` and **exactly one** verb key.
 - Order is top-to-bottom, overridden by `depends_on`. Cycles are rejected at validation.
 - `notify` triggers a `handler: true` resource only if the notifier changed something.
-- `when` uses a restricted expression language (MiniJinja expressions over `facts` and `vars`); no function can run commands or read files.
+- `when` (per resource) is a MiniJinja expression over `facts` and `vars`, evaluated **by the agent on its own host**; no function can run commands or read files. False: the resource is `not_applicable` (counts as compliant) and so are the resources that depend on it. An expression that cannot be evaluated (an undefined name; test with `facts.custom.x is defined`) **fails** the resource: it is never applied or dropped by guess. `target.when` (whole policy) is not supported: use groups. See "Facts".
+- `remediation` (service resources, usually the restart handler): `verify`, `on_failure: none|stop|rollback`, `stop {graceful_seconds, kill}`, `start`: what the agent verifies after a change and what it does when the service does not come up (clean stop, rollback of the whole policy to the last known good, forced kill only if declared). See [REMEDIATION.md](REMEDIATION.md).
+- `keep_if_absent_in_policy: true` (file, copy, template): the agent keeps the path when a later version no longer declares it; by default it removes what it had applied. See [REMEDIATION.md](REMEDIATION.md).
 - Artifacts (`artifact://`) are referenced by name; the signed policy pins their SHA-256.
 - Unknown keys are errors (typed deserialization, `deny_unknown_fields`).
 
@@ -122,8 +124,29 @@ Within a single policy the same rules are already enforced at validation time: t
 
 - `package`: backend auto-detected (apt-get, dnf, zypper, apk) through the command runner; `present`/`absent` implemented, `latest` returns an error for now. Names are restricted to a safe character set (no leading dash).
 - `service` (systemd): `started`/`stopped` and `enabled` are states; `restarted`/`reloaded` are one-shot actions allowed **only on handlers**, otherwise they could never converge.
-- `template`: MiniJinja, rendered on the agent with `vars` (see "Variables" below) and `facts` (`hostname`, `os_id`, `os_version_id`). Undefined variables are errors; no loader, no file or command access. Trailing newlines are preserved.
+- `template`: MiniJinja, rendered on the agent with `vars` (see "Variables" below) and `facts` (see "Facts"). Undefined variables are errors; no loader, no file or command access. Trailing newlines are preserved.
 - System commands are executed as argv vectors (no shell) and are refused when the agent runs with a sandbox `--root`.
+
+## Facts
+
+What the agent knows about its own host, read from files (no command is run). Available in templates and `when` as `facts.*`.
+
+| Fact | Content |
+|------|---------|
+| `os_family` | `debian`, `rhel`, `suse`, `arch`, `alpine`, `linux`, `windows` (from `ID` / `ID_LIKE` of `/etc/os-release`) |
+| `distribution` | `ID` of `/etc/os-release` (`ubuntu`, `rocky`); `os_id` is the same value under the name of the first version |
+| `os_version` | `VERSION_ID`; also `os_version_id` |
+| `kernel` | kernel release |
+| `hostname`, `domain` | short host name; domain of an FQDN hostname, else the kernel's NIS domain |
+| `ips` | addresses of the host, without loopback, link-local and container interfaces (`docker*`, `veth*`, `cni*`, `br-*`, ...) |
+| `machine_id` | `/etc/machine-id` (**local**) |
+| `custom.<file>.<key>` | documents in `DELBERT_FACTS_DIR` (default `/etc/delbert/facts.d`): `*.yaml`, `*.yml`, `*.json` up to 64 KiB, the file name without extension is the key (**local**) |
+
+**Two sets.** The first seven (the *shared subset*) are reported to the Core every `DELBERT_FACTS_INTERVAL_SECS` (default 900, minimum 60) and immediately when they change, with the compliance report. The Core keeps only that subset, overwritten at each report, with no history and no audit events, and removes it with the agent (`GET /v1/tenants/{t}/agents` returns it as `facts` and `facts_at`). The **local** facts never leave the host: policies can use them in `when` and templates, the Core cannot. Delbert is not a CMDB.
+
+**Trust.** The shared subset is what the agent says about itself: informational, never used for authorization, scoping or conflict resolution. In the console and in `GET .../render` the shared facts are the reported ones; the local ones are placeholders.
+
+**`when` and conflicts.** The Core does not see the host. Two resources that name the same thing and **both** have a `when` (different ones) are kept, and the compilation reports "both kept"; if both hold on one host the agent fails both and applies neither. If only one has a `when` the usual conflict rules apply.
 
 ## Variables
 

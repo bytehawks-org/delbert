@@ -77,6 +77,15 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Operator: push notification instead of polling; several tenants per Operator | to-do | 2026-11-01 |
 | Operator: Deployment/RBAC manifests, etcd encryption at rest documented as prerequisite, optional External Secrets backend | to-do | 2026-11-01 |
 | Containers (Podman/Docker): `env_from` / `secret_from` on the `container` resource | to-do | 2026-11-01 |
+| Facts: read-only collectors, shared subset reported to the Core every 15 min or on change, local facts and `facts.d` on the host; not a CMDB (decision 2026-11-01) | complete | 2026-11-01 |
+| Facts: console page/filter on the reported facts (the API returns them; `web/` schema not regenerated); Windows collectors; more collectors (init system, package manager, container engine) | to-do | 2026-11-01 |
+| Per-resource `when` evaluated on the agent over facts and variables (`target.when` for a whole policy stays refused: groups cover it) | complete | 2026-11-01 |
+| Preview of which resources apply to a host (the editor cannot know local facts; offer fake facts for a dry run) | to-do | 2026-11-01 |
+| Orphaned files removed when a version drops them, `keep_if_absent_in_policy`, after a clean cycle ([REMEDIATION.md](REMEDIATION.md)) | complete | 2026-11-01 |
+| Orphans: console preview of the paths a save would remove; offline CLI; `line_in_file` lines | to-do | 2026-11-01 |
+| Remediation: `verify` / `on_failure` / `stop` / `start` per service, atomic whole-policy rollback to the last known good, quarantine, inconsistent state in the Core, forced release (`agents:remediate`), audit events ([REMEDIATION.md](REMEDIATION.md)) | complete | 2026-11-01 |
+| Remediation: run on a real systemd host; Windows services and Podman containers; HTTP probe; console page to see and force an inconsistent agent | to-do | 2026-11-01 |
+| Operator counterpart of remediation: rollout that misses its deadline re-applies the previous bundle | to-do | 2026-11-01 |
 | Deferred: sidecar agent with environment PSK; per-pod identity; workload auth via projected ServiceAccount token | to-do | 2026-11-01 |
 | Agent: check/apply for `file`, `copy`, `line_in_file` (local YAML mode) | complete | 2026-10-23 |
 | Agent: `template`, `package` (apt/dnf/zypper/apk), `service` (systemd) | complete | 2026-10-23 |

@@ -249,6 +249,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/tenants/{tenant}/agents", get(list_agents).post(create_agent))
         .route("/v1/tenants/{tenant}/agents/{agent}", put(update_agent).delete(delete_agent))
         .route("/v1/tenants/{tenant}/agents/{agent}/effective", get(effective))
+        .route("/v1/tenants/{tenant}/agents/{agent}/remediation/force", post(crate::remediation::force).delete(crate::remediation::cancel))
         .route("/v1/tenants/{tenant}/policies", get(list_policies).post(create_policy))
         .route("/v1/tenants/{tenant}/policies/validate", post(validate_policy_dry_run))
         .route("/v1/tenants/{tenant}/policies/{name}", get(get_policy).delete(delete_policy))
@@ -319,7 +320,7 @@ pub(crate) async fn tenant_id(pool: &PgPool, name: &str) -> ApiResult<Uuid> {
 }
 
 /// Tell one agent to pull again (best effort: the periodic pull is the safety net).
-async fn notify_agent(st: &AppState, tenant: &str, agent: &str) {
+pub(crate) async fn notify_agent(st: &AppState, tenant: &str, agent: &str) {
     if let Some(bus) = &st.bus {
         bus.notify(tenant, agent).await;
     }
@@ -452,6 +453,17 @@ pub struct AgentOut {
     pub reported_at: Option<i64>,
     /// Proxy that serves this agent, if it enrolled through one.
     pub proxy: Option<String>,
+    /// Host facts the agent reported about itself (OS family, distribution, version, kernel,
+    /// hostname, domain, IPs): informational, never used for a decision. Absent until reported.
+    pub facts: Option<serde_json::Value>,
+    /// Unix seconds when the facts were last received.
+    pub facts_at: Option<i64>,
+    /// Present while the agent is inconsistent with its policy: a failed update was rolled back
+    /// (or its services stopped) and the failed version is quarantined. `state`, `failed_version`,
+    /// `running_version`, `resource`, `reason`, `at`, `steps`, `forced_kill`.
+    pub remediation: Option<serde_json::Value>,
+    /// A force (release of the quarantined version) was decided and the agent has not obeyed it yet.
+    pub force_pending: bool,
 }
 
 #[utoipa::path(post, path = "/v1/tenants/{tenant}/agents", tag = "agents", security(("bearer" = [])), request_body = NewAgent,
@@ -465,15 +477,17 @@ pub async fn create_agent(State(st): State<AppState>, Authn(user): Authn, Path(t
     audit::append(&mut tx, &NewEvent { tenant_id: Some(tid), actor: &user.username, action: "agent.create", target: Some(&body.name), outcome: "ok", details: json!({ "groups": body.groups }) }).await?;
     tx.commit().await?;
     notify_agent(&st, &tenant, &body.name).await;
-    Ok((StatusCode::CREATED, Json(AgentOut { name: body.name, groups: body.groups, effective_version: 0, reported_version: None, compliant: None, reported_at: None, proxy: None })))
+    Ok((StatusCode::CREATED, Json(AgentOut { name: body.name, groups: body.groups, effective_version: 0, reported_version: None, compliant: None, reported_at: None, proxy: None, facts: None, facts_at: None, remediation: None, force_pending: false })))
 }
 
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/agents", tag = "agents", security(("bearer" = [])),
     params(("tenant" = String, Path)), responses((status = 200, body = Vec<AgentOut>), (status = 404)))]
 pub async fn list_agents(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>) -> ApiResult<Json<Vec<AgentOut>>> {
     let tid = user.tenant(&st.pool, &tenant, "agents:read").await?;
-    let rows: Vec<(String, Vec<String>, i64, Option<i64>, Option<bool>, Option<i64>, Option<String>)> = sqlx::query_as(
-        "SELECT a.name, a.groups, a.effective_version, r.version, r.compliant, (EXTRACT(EPOCH FROM r.received_at))::bigint, p.name \
+    let rows: Vec<(String, Vec<String>, i64, Option<i64>, Option<bool>, Option<i64>, Option<String>, Option<serde_json::Value>, Option<i64>, Option<serde_json::Value>, bool)> = sqlx::query_as(
+        "SELECT a.name, a.groups, a.effective_version, r.version, r.compliant, (EXTRACT(EPOCH FROM r.received_at))::bigint, p.name, r.facts, (EXTRACT(EPOCH FROM r.facts_at))::bigint, \
+                CASE WHEN jsonb_typeof(r.report->'remediation') = 'object' THEN r.report->'remediation' END, \
+                COALESCE(a.force_id IS NOT NULL AND COALESCE((r.report->'remediation'->>'at')::bigint, 0) <= EXTRACT(EPOCH FROM a.forced_at), false) \
          FROM agents a LEFT JOIN agent_reports r ON r.agent_id = a.id LEFT JOIN proxies p ON p.id = a.proxy_id WHERE a.tenant_id = $1 ORDER BY a.name",
     )
     .bind(tid)
@@ -481,7 +495,7 @@ pub async fn list_agents(State(st): State<AppState>, Authn(user): Authn, Path(te
     .await?;
     Ok(Json(
         rows.into_iter()
-            .map(|(name, groups, effective_version, reported_version, compliant, reported_at, proxy)| AgentOut { name, groups, effective_version, reported_version, compliant, reported_at, proxy })
+            .map(|(name, groups, effective_version, reported_version, compliant, reported_at, proxy, facts, facts_at, remediation, force_pending)| AgentOut { name, groups, effective_version, reported_version, compliant, reported_at, proxy, facts, facts_at, remediation, force_pending })
             .collect(),
     ))
 }
@@ -746,13 +760,13 @@ pub async fn issue(st: &AppState, tenant: String, agent: String, actor: &str) ->
     let tid = tenant_id(&st.pool, &tenant).await?;
 
     let mut tx = st.pool.begin().await?;
-    let row: Option<(Uuid, Vec<String>, i64, Option<Vec<u8>>, Option<String>)> =
-        sqlx::query_as("SELECT id, groups, effective_version, effective_hash, enc_public_key FROM agents WHERE tenant_id = $1 AND name = $2 FOR UPDATE")
+    let row: Option<(Uuid, Vec<String>, i64, Option<Vec<u8>>, Option<String>, Option<i64>, Option<String>)> =
+        sqlx::query_as("SELECT id, groups, effective_version, effective_hash, enc_public_key, force_version, force_id FROM agents WHERE tenant_id = $1 AND name = $2 FOR UPDATE")
             .bind(tid)
             .bind(&agent)
             .fetch_optional(&mut *tx)
             .await?;
-    let (agent_id, groups, mut version, stored_hash, enc_key) = row.ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "agent not found"))?;
+    let (agent_id, groups, mut version, stored_hash, enc_key, force_version, force_id) = row.ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "agent not found"))?;
 
     let mut compiled = compile_for(st, tid, &agent, &groups).await?;
 
@@ -811,6 +825,7 @@ pub async fn issue(st: &AppState, tenant: String, agent: String, actor: &str) ->
             secrets: sealed,
             resources: compiled.resources,
             trust: st.trust.clone(),
+            force: force_version.zip(force_id).map(|(v, id)| delbert_wire::Force { version: v as u64, id }),
         })
         .map_err(|e| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
     Ok(Issued { token, version, conflicts: compiled.conflicts })

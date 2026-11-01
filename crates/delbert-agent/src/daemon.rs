@@ -23,6 +23,7 @@ use serde_json::{Value, json};
 use crate::{
     engine::{Ctx, Mode, Report, Status, run},
     events,
+    remediation,
     identity::Identity,
     state::State,
 };
@@ -40,6 +41,10 @@ pub struct DaemonConfig {
     /// Renew the certificate when less than this many seconds remain
     /// (default: when a third of its lifetime is left).
     pub renew_before_secs: Option<i64>,
+    /// Custom facts (`*.yaml|yml|json`), kept on the host and never reported.
+    pub facts_dir: PathBuf,
+    /// The shared facts are sent to the Core when they change and at least this often.
+    pub facts_interval: Duration,
 }
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -75,6 +80,7 @@ pub fn report_json(report: Option<&Report>, version: Option<u64>, error: Option<
                         Status::Idle => ("idle", String::new()),
                         Status::Unsupported(m) => ("unsupported", m.clone()),
                         Status::Skipped(m) => ("skipped", m.clone()),
+                        Status::NotApplicable(m) => ("not_applicable", m.clone()),
                         Status::Failed(m) => ("failed", m.clone()),
                     };
                     json!({ "id": x.id, "status": status, "detail": detail })
@@ -99,9 +105,19 @@ struct Agent<'a> {
     cfg: &'a DaemonConfig,
     client: async_nats::Client,
     key_pem: String,
+    /// The shared facts last sent and when: in memory only, a restart simply sends them again.
+    facts_sent: std::sync::Mutex<Option<(Value, std::time::Instant)>>,
 }
 
 impl Agent<'_> {
+    /// Facts go with the report when they changed, or when the last time is older than the interval.
+    fn facts_due(&self, facts: &Value) -> bool {
+        match &*self.facts_sent.lock().expect("facts lock") {
+            Some((sent, at)) => sent != facts || at.elapsed() >= self.cfg.facts_interval,
+            None => true,
+        }
+    }
+
     /// Ask the Core for the current signed policy; on success remember it.
     async fn fetch(&self) -> Result<String> {
         let (tenant, agent) = (&self.cfg.identity.meta.tenant, &self.cfg.identity.meta.agent);
@@ -187,6 +203,49 @@ impl Agent<'_> {
         }
         let cert = body["cert_pem"].as_str().context("reply without certificate")?;
         crate::identity::install_renewed(&id.dir, &new_key, cert)
+    }
+
+    /// The execution context of a policy.
+    fn context(&self, policy: &EffectivePolicy, secrets: BTreeMap<String, String>, artifacts_dir: PathBuf) -> Ctx {
+        let mut ctx = Ctx::new(self.cfg.root.clone(), artifacts_dir);
+        ctx.facts_dir = self.cfg.facts_dir.clone();
+        ctx.vars = policy.vars.clone();
+        ctx.secrets = secrets;
+        ctx.artifact_hashes = policy.artifacts.iter().map(|(n, a)| (n.clone(), a.sha256.clone())).collect();
+        ctx
+    }
+
+    /// The last known good policy, verified again (signature, target, canonical form) but judged as
+    /// of its own issue time: it has expired by now and it is older than the version that failed,
+    /// which is exactly the case this is for. Secrets and artifacts come from the policy itself and
+    /// the content-addressed cache.
+    async fn prepare_lkg(&self) -> Option<(EffectivePolicy, Ctx)> {
+        let token = fs::read_to_string(self.cfg.state_dir.join("policy.lkg.jws")).ok()?;
+        let issued_at = {
+            let payload = token.trim().split('.').nth(1)?;
+            let bytes = B64.decode(payload).ok()?;
+            serde_json::from_slice::<Value>(&bytes).ok()?["issued_at"].as_i64()?
+        };
+        let keys = fs::read_to_string(self.cfg.identity.trusted_keys()).ok()?;
+        let verifier = Verifier::from_trusted_keys(&keys).ok()?;
+        let meta = &self.cfg.identity.meta;
+        let policy = match verifier.verify(&token, &Expect { tenant: &meta.tenant, agent: &meta.agent, now: issued_at }, |_| None) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!("the last known good policy is not usable: {e}");
+                return None;
+            }
+        };
+        let secrets = self.decrypt_secrets(&policy).unwrap_or_default();
+        let artifacts_dir = if policy.artifacts.is_empty() { self.cfg.artifacts.clone() } else { self.stage_artifacts(&policy).await };
+        let ctx = self.context(&policy, secrets, artifacts_dir);
+        Some((policy, ctx))
+    }
+
+    /// Steady state while a version is quarantined: apply the last known good again (no remediation).
+    async fn enforce_lkg(&self) -> Option<Report> {
+        let (policy, ctx) = self.prepare_lkg().await?;
+        tokio::task::spawn_blocking(move || run(&policy.resources, &ctx, Mode::Apply)).await.ok()
     }
 
     /// Decrypt the secrets addressed to this agent.
@@ -293,39 +352,88 @@ impl Agent<'_> {
                     }
                 }
                 let previous = state.versions.insert(policy.name.clone(), policy.version);
+                let at = now();
+
+                // A version that was rolled back stays out until a newer one arrives or the Core
+                // releases it with a signed `force` (each decision is obeyed once).
+                let hold = remediation::gate(&mut state, policy.version, policy.force.as_ref());
                 let _ = state.save(&state_path);
 
-                let secrets = match self.decrypt_secrets(&policy) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        tracing::error!("{e:#}");
-                        BTreeMap::new()
-                    }
-                };
-                // Pinned artifacts come from the verified cache; unpinned ones (none in signed
-                // policies) would use the configured directory.
-                let artifacts_dir = if policy.artifacts.is_empty() { self.cfg.artifacts.clone() } else { self.stage_artifacts(&policy).await };
-                let mut ctx = Ctx::new(self.cfg.root.clone(), artifacts_dir);
-                ctx.vars = policy.vars.clone();
-                ctx.secrets = secrets;
-                ctx.artifact_hashes = policy.artifacts.iter().map(|(n, a)| (n.clone(), a.sha256.clone())).collect();
-                let resources = policy.resources.clone();
-                let report = tokio::task::spawn_blocking(move || run(&resources, &ctx, Mode::Apply)).await;
-                match report {
-                    Ok(report) => {
-                        events = events::derive(&events::Outcome::Applied { policy: &policy.name, version: policy.version, previous, report: &report }, now(), &mut state.events);
-                        tracing::info!(
-                            "applied policy v{} ({} resources, compliant: {})",
-                            policy.version,
-                            report.resources.len(),
-                            report.is_compliant()
-                        );
-                        report_json(Some(&report), Some(policy.version), from_cache.then_some("Core unreachable, applied cached policy").filter(|_| false), &self.trusted_kids())
-                    }
-                    Err(e) => {
-                        let error = format!("apply task failed: {e}");
-                        events = events::derive(&events::Outcome::ApplyCrashed { policy: &policy.name, version: policy.version, error: &error }, now(), &mut state.events);
-                        report_json(None, Some(policy.version), Some(&error), &self.trusted_kids())
+                if let Some(q) = hold {
+                    // Quarantined: keep the last known good in force (drift is corrected), change nothing else.
+                    let report = match q.state {
+                        remediation::State::RolledBack => self.enforce_lkg().await,
+                        _ => None,
+                    };
+                    events = Vec::new();
+                    report_json(report.as_ref(), q.running_version, Some(&format!("version {} is quarantined: {}", q.failed_version, q.reason)), &self.trusted_kids())
+                } else {
+                    let secrets = match self.decrypt_secrets(&policy) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::error!("{e:#}");
+                            BTreeMap::new()
+                        }
+                    };
+                    // Pinned artifacts come from the verified cache; unpinned ones (none in signed
+                    // policies) would use the configured directory.
+                    let artifacts_dir = if policy.artifacts.is_empty() { self.cfg.artifacts.clone() } else { self.stage_artifacts(&policy).await };
+                    let ctx = self.context(&policy, secrets, artifacts_dir);
+                    let resources = policy.resources.clone();
+                    let managed = state.managed.clone();
+                    // Only an update can be undone: steady-state cycles just correct drift.
+                    let update = state.lkg_version != Some(policy.version);
+                    let applied = tokio::task::spawn_blocking(move || {
+                        let mut report = run(&resources, &ctx, Mode::Apply);
+                        let failures = if update { remediation::evaluate(&resources, &report, &ctx, &|d| std::thread::sleep(d)) } else { Vec::new() };
+                        // End of a clean cycle: remove what this version dropped (and remember what it manages).
+                        let record = if failures.is_empty() { crate::orphans::commit(&ctx, &resources, &managed, &mut report) } else { None };
+                        (report, record, failures, ctx)
+                    })
+                    .await;
+                    match applied {
+                        Ok((report, record, failures, ctx)) => {
+                            if let Some(record) = record {
+                                state.managed = record;
+                            }
+                            let mut evs = events::derive(&events::Outcome::Applied { policy: &policy.name, version: policy.version, previous, report: &report }, at, &mut state.events);
+                            if failures.is_empty() && !report.has_failures() && token.is_some() {
+                                // A clean cycle: this is the new last known good.
+                                if let Some(t) = &token {
+                                    if write_atomic(&self.cfg.state_dir.join("policy.lkg.jws"), t.as_bytes()).is_ok() {
+                                        state.lkg_version = Some(policy.version);
+                                    }
+                                }
+                            } else if !failures.is_empty() {
+                                for f in &failures {
+                                    tracing::warn!("{}: {}", f.id, f.reason);
+                                }
+                                let lkg = self.prepare_lkg().await;
+                                let version = policy.version;
+                                let remedy = tokio::task::spawn_blocking(move || {
+                                    let lkg_ref = lkg.as_ref().map(|(p, c)| remediation::Lkg { version: p.version, resources: &p.resources, ctx: c });
+                                    remediation::remediate(&ctx, &failures, version, lkg_ref, at, &|d| std::thread::sleep(d))
+                                })
+                                .await
+                                .ok()
+                                .flatten();
+                                if let Some(remedy) = remedy {
+                                    tracing::warn!("remediation of v{}: {:?}: {}", version, remedy.quarantine.state, remedy.quarantine.steps.join("; "));
+                                    evs.extend(events::remediation_events(&remedy.quarantine, at));
+                                    if remedy.quarantine.state != remediation::State::Skipped {
+                                        state.quarantine = Some(remedy.quarantine);
+                                    }
+                                }
+                            }
+                            events = evs;
+                            tracing::info!("applied policy v{} ({} resources, compliant: {})", policy.version, report.resources.len(), report.is_compliant());
+                            report_json(Some(&report), Some(policy.version), None, &self.trusted_kids())
+                        }
+                        Err(e) => {
+                            let error = format!("apply task failed: {e}");
+                            events = events::derive(&events::Outcome::ApplyCrashed { policy: &policy.name, version: policy.version, error: &error }, at, &mut state.events);
+                            report_json(None, Some(policy.version), Some(&error), &self.trusted_kids())
+                        }
                     }
                 }
             }
@@ -351,16 +459,32 @@ impl Agent<'_> {
         }
 
         let mut payload = payload;
+        // The agent is inconsistent with the Core while a failed version is quarantined: say what
+        // happened, report the version that actually runs, and never claim to be compliant.
+        payload["remediation"] = json!(state.quarantine);
+        if let Some(q) = &state.quarantine {
+            payload["compliant"] = json!(false);
+            if q.state != remediation::State::Stopped {
+                payload["version"] = json!(q.running_version);
+            }
+        }
         let (trusted_cas, cert_issuer) = self.ca_report();
         payload["trusted_cas"] = json!(trusted_cas);
         payload["cert_issuer"] = json!(cert_issuer);
+        let facts = crate::facts::shared(&self.cfg.root);
+        let send_facts = self.facts_due(&facts);
+        if send_facts {
+            payload["facts"] = facts.clone();
+        }
         let meta = &self.cfg.identity.meta;
         let subject = format!("delbert.report.{}.{}", meta.tenant, meta.agent);
         match delbert_pki::authn::prove(&self.key_pem, "report", &meta.tenant, &meta.agent, &payload, now()) {
             Ok(proof) => {
                 let envelope = json!({ "proof": proof, "report": payload });
-                if let Err(e) = self.client.publish(subject, envelope.to_string().into()).await {
-                    tracing::warn!("cannot publish report: {e}");
+                match self.client.publish(subject, envelope.to_string().into()).await {
+                    Ok(()) if send_facts => *self.facts_sent.lock().expect("facts lock") = Some((facts, std::time::Instant::now())),
+                    Ok(()) => {}
+                    Err(e) => tracing::warn!("cannot publish report: {e}"),
                 }
             }
             Err(e) => tracing::error!("cannot sign the report: {e}"),
@@ -441,7 +565,7 @@ async fn session(cfg: &DaemonConfig, last_renewal: &mut Option<std::time::Instan
     tracing::info!("agent {}/{} connected, interval {:?}", id.meta.tenant, id.meta.agent, cfg.interval);
 
     let key_pem = id.key_pem()?;
-    let agent = Agent { cfg, client, key_pem, renew_issued_before: std::sync::atomic::AtomicI64::new(0) };
+    let agent = Agent { cfg, client, key_pem, renew_issued_before: std::sync::atomic::AtomicI64::new(0), facts_sent: std::sync::Mutex::new(None) };
     // Right after start the proxy or the Core may not be answering yet: without a policy, retry soon.
     const RETRY_WITHOUT_POLICY: Duration = Duration::from_secs(5);
     loop {

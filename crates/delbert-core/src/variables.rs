@@ -360,7 +360,7 @@ pub struct Preview {
 }
 
 /// Render every template resource of the agent's effective policy the way the agent will, except
-/// that secrets are masked and the host facts are placeholders (the Core does not know them). The
+/// that secrets are masked and the facts that stay on the host (machine id, custom facts) are placeholders; the shared facts are those the agent reported. The
 /// Core only renders text here; it never applies anything.
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/agents/{agent}/render", tag = "variables", security(("bearer" = [])),
     params(("tenant" = String, Path), ("agent" = String, Path)),
@@ -371,7 +371,20 @@ pub async fn render(State(st): State<AppState>, Authn(user): Authn, Path((tenant
     let compiled = crate::api::compile_for(&st, tid, &agent, &groups).await?;
 
     let masked: BTreeMap<&String, &str> = compiled.secrets.iter().map(|n| (n, "********")).collect();
-    let facts = json!({ "hostname": "<hostname>", "os_id": "<os_id>", "os_version_id": "<os_version_id>" });
+    // The shared facts the agent reported are real; what stays on the host is a placeholder.
+    let reported: Option<serde_json::Value> = sqlx::query_scalar("SELECT r.facts FROM agent_reports r JOIN agents a ON a.id = r.agent_id WHERE a.tenant_id = $1 AND a.name = $2")
+        .bind(tid)
+        .bind(&agent)
+        .fetch_optional(&st.pool)
+        .await?
+        .flatten();
+    let mut facts = reported.unwrap_or_else(|| json!({ "hostname": "<hostname>", "distribution": "<distribution>", "os_version": "<os_version>" }));
+    if let Some(f) = facts.as_object_mut() {
+        f.insert("os_id".into(), f.get("distribution").cloned().unwrap_or_default());
+        f.insert("os_version_id".into(), f.get("os_version").cloned().unwrap_or_default());
+        f.insert("machine_id".into(), json!("<machine_id>"));
+        f.insert("custom".into(), json!({}));
+    }
     let mut env = minijinja::Environment::new();
     env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
     env.set_keep_trailing_newline(true);

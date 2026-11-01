@@ -78,6 +78,11 @@ pub fn validate_resources(resources: &[Resource]) -> Result<(), Vec<ValidationEr
             if a.handler || b.handler {
                 continue;
             }
+            // Two resources with different conditions can both name the same thing: the agent
+            // refuses to apply them if both turn out to hold on one host.
+            if a.when.is_some() && b.when.is_some() && a.when != b.when {
+                continue;
+            }
             if let Some(what) = clash(a, b) {
                 errors.push(ValidationError::Conflict { a: a.id.clone(), b: b.id.clone(), what });
             }
@@ -136,7 +141,36 @@ fn field_err(r: &Resource, reason: impl Into<String>) -> ValidationError {
     ValidationError::Field { id: r.id.clone(), reason: reason.into() }
 }
 
+/// Longest `when` expression.
+const MAX_WHEN: usize = 256;
+
 fn check_fields(r: &Resource, errors: &mut Vec<ValidationError>) {
+    if let Some(rem) = &r.remediation {
+        const MAX_SECONDS: u32 = 3600;
+        if r.service.is_none() {
+            errors.push(field_err(r, "'remediation' applies to service resources only"));
+        }
+        let mut seconds = vec![rem.stop.graceful_seconds, rem.start.timeout_seconds];
+        if let Some(v) = &rem.verify {
+            seconds.extend([v.settle_seconds, v.timeout_seconds]);
+            if v.port == Some(0) {
+                errors.push(field_err(r, "'remediation.verify.port' must be 1-65535"));
+            }
+        }
+        if seconds.iter().any(|s| *s > MAX_SECONDS) {
+            errors.push(field_err(r, format!("remediation times are at most {MAX_SECONDS} seconds")));
+        }
+    }
+    if r.keep_if_absent_in_policy && r.file.is_none() && r.copy.is_none() && r.template.is_none() {
+        errors.push(field_err(r, "'keep_if_absent_in_policy' applies to file, copy and template only"));
+    }
+    if let Some(when) = &r.when {
+        if when.trim().is_empty() || when.len() > MAX_WHEN {
+            errors.push(field_err(r, format!("'when' must be 1 to {MAX_WHEN} characters")));
+        } else if let Err(e) = minijinja::Environment::new().compile_expression(when) {
+            errors.push(field_err(r, format!("'when' is not a valid expression: {e}")));
+        }
+    }
     let mut absolute = |path: &str| {
         if !path.starts_with('/') || path.split('/').any(|c| c == "..") {
             errors.push(field_err(r, format!("path '{path}' must be absolute and without '..'")));

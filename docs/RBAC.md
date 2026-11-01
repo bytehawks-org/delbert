@@ -40,6 +40,7 @@ Roles carry a `scope` (`global` or `tenant`): a role meant for tenants cannot be
 | `agents:write` | create, change groups, delete agents | |
 | `agents:enroll` | create / revoke enrollment keys | |
 | `agents:preview` | issue/preview the effective policy of an agent (today `effective:issue`) | |
+| `agents:remediate` | release (force) the version an agent rolled back after a failed update, or withdraw the release; tenant-admin only | |
 | `policies:read` | read policies, versions, diffs | |
 | `policies:write` | create a version (a *draft* when approval is required, else it goes live) | |
 | `policies:approve` | approve or reject a submitted version, roll back | |

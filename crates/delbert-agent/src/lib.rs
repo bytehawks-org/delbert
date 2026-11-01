@@ -7,8 +7,11 @@
 pub mod daemon;
 pub mod engine;
 pub mod events;
+pub mod facts;
 pub mod fsutil;
 pub mod identity;
+pub mod orphans;
+pub mod remediation;
 pub mod runner;
 pub mod system;
 pub mod state;
