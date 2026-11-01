@@ -34,7 +34,7 @@ use crate::{
 };
 
 /// Every permission a role may contain (besides `*` and `resource:*`).
-pub const PERMISSIONS: [&str; 36] = [
+pub const PERMISSIONS: [&str; 37] = [
     "tenants:read", "tenants:create", "tenants:delete", "tenants:settings",
     "agents:read", "agents:write", "agents:enroll", "agents:preview", "agents:remediate",
     "policies:read", "policies:write", "policies:approve",
@@ -46,7 +46,7 @@ pub const PERMISSIONS: [&str; 36] = [
     "audit:read", "audit:export", "audit:verify",
     "tokens:manage",
     "sso:read", "sso:write",
-    "content:read", "content:write", "content:sync",
+    "content:read", "content:write", "content:sync", "content:edit",
     "keys:read", "keys:write",
     "globals:read", "globals:write",
 ];

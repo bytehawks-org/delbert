@@ -185,6 +185,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/content/sources", get(crate::content::list_sources).post(crate::content::create_source))
         .route("/v1/content/sources/{name}", get(crate::content::get_source).put(crate::content::update_source).delete(crate::content::delete_source))
         .route("/v1/content/sources/{name}/sync", post(crate::content::sync_now))
+        .route("/v1/content/sources/{name}/files", get(crate::content::tree))
+        .route("/v1/content/sources/{name}/file", get(crate::content::file))
+        .route("/v1/content/sources/{name}/validate", post(crate::content::validate))
+        .route("/v1/content/sources/{name}/commits", post(crate::content::commit))
         .route("/v1/content/sources/{name}/snapshots", get(crate::content::list_snapshots))
         .route("/v1/content/sources/{name}/snapshots/{id}", get(crate::content::get_snapshot))
         .route("/v1/auth/mfa", post(auth::complete_mfa))
@@ -735,8 +739,8 @@ pub(crate) async fn compile_for(st: &AppState, tid: Uuid, agent: &str, groups: &
             tracing::error!("stored policy '{name}' no longer parses: {e}");
             ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "stored policy is invalid")
         })?;
-        let targets = &p.spec.target.groups;
-        if targets.is_empty() || targets.iter().any(|g| groups.contains(g)) {
+        let target = &p.spec.target;
+        if (target.groups.is_empty() && target.agents.is_empty()) || target.groups.iter().any(|g| groups.contains(g)) || target.agents.iter().any(|a| a == agent) {
             inputs.push(PolicyInput { name, priority: p.spec.priority.unwrap_or(0), secrets: p.spec.secrets, vars: p.spec.vars, resources: p.spec.resources });
         }
     }

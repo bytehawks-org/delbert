@@ -10,6 +10,8 @@ Design for loading policies, artifacts and tenant settings from a repository the
   - **`git`**: any git remote: a **local git server run as a component** (Forgejo/Gitea in the compose or Kubernetes stack, the same way Garage is the artifact store) or a **public/hosted one** (GitHub, GitLab, Codeberg, ...).
 - Nothing about git is written in Rust: the Core uses the `git` program, like it uses Garage for objects.
 
+> The layout described here is the original, flat one (still read). The current layout, with policies, files, templates and variables per scope (tenant, group, host), and editing from the console, is in [REPOSITORY.md](REPOSITORY.md).
+
 ## Layout of a source
 
 ```text

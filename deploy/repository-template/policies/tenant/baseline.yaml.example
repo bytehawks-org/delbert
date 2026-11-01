@@ -1,0 +1,8 @@
+# Rename to baseline.yaml (the file is called after metadata.name) and replace `example` by your tenant.
+apiVersion: delbert/v1
+kind: Policy
+metadata: { name: baseline, tenant: example }
+spec:
+  resources:
+    - id: motd
+      copy: { src: artifact://motd.txt, dest: /etc/motd, mode: "0644" }

@@ -50,7 +50,7 @@ See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI complete through
 
 ## Next steps
 
-0. Decided and pending: model the Git repositories (layout for tenants, environments, policies, templates) and an in-browser editor for policies, templates and the repositories themselves (Monaco is MIT; a full VS Code server would need per-tenant isolation).
+0. Repository layout and the online editor are done ([REPOSITORY.md](REPOSITORY.md)); next there: files and templates per group and host, shared content from a repository, schema completion and merge requests from the editor.
 
 1. The product is feature-complete for a first trial; next: run it on a real K3s cluster and publish images/packages (see ROADMAP), web e2e in CI, then the optional integrations (external key and secret providers, Operator, Windows agent). The UI is complete through M4 ([FRONTEND.md](FRONTEND.md)); a tenant "delete" is an archive.
 2. Kubernetes Operator; Windows agent study. (The CA is behind a trait, rcgen backend only: [API.md](API.md) `DELBERT_CA_BACKEND`.) (Per-action audit events from agents are done, also through the proxy: [API.md](API.md) "Agent audit events".)

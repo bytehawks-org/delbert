@@ -11,6 +11,8 @@ import { getSession } from "@/lib/session";
 const SEG = "[A-Za-z0-9._~%-]+";
 const T = `/v1/tenants/${SEG}`;
 const ALLOWED: Record<string, RegExp[]> = {
+  // Reading a repository for the editor: the file list and one file at a time.
+  GET: [new RegExp(`^/v1/content/sources/${SEG}/(files|file)$`)],
   POST: [
     new RegExp(`^${T}/policies(/validate)?$`),
     new RegExp(`^${T}/policies/${SEG}/versions/\\d+/(submit|approve|reject|activate|rollback)$`),
@@ -20,6 +22,7 @@ const ALLOWED: Record<string, RegExp[]> = {
     new RegExp(`^/v1/me/(mfa/(enroll|confirm|disable)|tokens)$`),
     new RegExp(`^/v1/sso/providers/${SEG}/test$`),
     new RegExp(`^/v1/content/sources(/${SEG}/sync)?$`),
+    new RegExp(`^/v1/content/sources/${SEG}/(validate|commits)$`),
   ],
   PUT: [new RegExp(`^${T}/(settings|assignments/${SEG})$`), new RegExp(`^${T}/secrets/${SEG}$`), new RegExp(`^${T}/(artifacts|variables)/${SEG}$`), new RegExp(`^/v1/globals/(artifacts|variables)/${SEG}$`), new RegExp(`^/v1/(users|roles|sso/providers|content/sources)/${SEG}$`), new RegExp(`^${T}/agents/${SEG}$`)],
   DELETE: [
@@ -34,16 +37,17 @@ const ALLOWED: Record<string, RegExp[]> = {
 };
 
 async function forward(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  if (!sameOrigin(request)) return forbidden();
+  // A read carries no Origin on a same-site navigation; the cookie is SameSite=Strict, so a cross-site page cannot make it.
+  if (request.method !== "GET" && !sameOrigin(request)) return forbidden();
   const path = "/" + (await params).path.join("/");
   if (!ALLOWED[request.method]?.some((re) => re.test(path))) return NextResponse.json({ error: "not available through the UI" }, { status: 404 });
-  // Only the variable layer selectors may travel in the query string.
+  // Only the variable layer selectors and the editor's file selectors may travel in the query string.
   const query = request.nextUrl.searchParams;
-  if ([...query.keys()].some((k) => k !== "scope" && k !== "target")) return NextResponse.json({ error: "not available through the UI" }, { status: 404 });
+  if ([...query.keys()].some((k) => !["scope", "target", "path", "refresh"].includes(k))) return NextResponse.json({ error: "not available through the UI" }, { status: 404 });
   const session = await getSession();
   if (!session || session.mfaPending) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 
-  const body = request.method === "DELETE" ? undefined : await request.arrayBuffer();
+  const body = request.method === "DELETE" || request.method === "GET" ? undefined : await request.arrayBuffer();
   const res = await fetch(`${CORE_URL}${path}${query.size ? `?${query}` : ""}`, {
     method: request.method,
     headers: { authorization: `Bearer ${session.token}`, ...(request.headers.get("content-type") ? { "content-type": request.headers.get("content-type")! } : {}) },
@@ -54,4 +58,4 @@ async function forward(request: NextRequest, { params }: { params: Promise<{ pat
   return new NextResponse(res.status === 204 ? null : await res.arrayBuffer(), { status: res.status, headers: { "content-type": res.headers.get("content-type") ?? "application/json" } });
 }
 
-export { forward as POST, forward as PUT, forward as DELETE };
+export { forward as GET, forward as POST, forward as PUT, forward as DELETE };

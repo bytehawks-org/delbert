@@ -14,6 +14,10 @@ podman run --rm -v "$PWD":/web:Z -w /web docker.io/library/node:22-slim npm run 
 
 The API types are generated from `openapi.json`, which the Core prints without a database: `delbert-core --print-openapi > web/openapi.json && npm run gen:api` (commit both; a Core change that breaks the UI shows up as a type error).
 
+## The repository editor (Monaco)
+
+`/content/{source}/edit` uses [Monaco](https://github.com/microsoft/monaco-editor) (MIT). `npm run dev` and `npm run build` first copy it from `node_modules/monaco-editor/min/vs` to `public/monaco/vs` (`scripts/copy-monaco.mjs`; git-ignored), and the browser loads it from this server, never from a CDN. The standalone image already carries `public/`. See [docs/REPOSITORY.md](../docs/REPOSITORY.md) and [docs/FRONTEND.md](../docs/FRONTEND.md); the browser test is `e2e/repo-editor.spec.ts` (needs a prepared source: [docs/TESTING.md](../docs/TESTING.md)).
+
 ## Run and test against a Core
 
 The e2e compose stack starts the Core and this UI (see [docs/TESTING.md](../docs/TESTING.md)); then

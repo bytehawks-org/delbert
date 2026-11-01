@@ -74,6 +74,12 @@ UI rules that follow from the product: secret values are never rendered; destruc
 4. **M3 - governance**: users, roles and the permission matrix, tenant settings, approval workflow, MFA, API tokens.
 5. **M4 - hardening (implemented)**: SSO login (done in M0), live status (SSE), dashboard, accessibility audit, performance budget, visual regression. See "M4 in practice".
 
+## Repository editor
+
+`/content/{source}/edit` (link "Edit" in the content sources table): file tree and [Monaco](https://github.com/microsoft/monaco-editor) (MIT) for a repository with the layout of [REPOSITORY.md](REPOSITORY.md). Monaco is copied from `node_modules/monaco-editor/min/vs` to `public/monaco/vs` by `scripts/copy-monaco.mjs` (the `predev` and `prebuild` scripts; git-ignored) and loaded from the console's own origin by `@monaco-editor/react`: no CDN, so it works air-gapped. Changes stay in the browser until commit; a debounced `POST .../validate` shows what the repository would look like after them; commit goes to a new branch (git) or in place (directory). The browser only reaches the Core through the allow-list of `/api/core` (`GET .../files`, `GET .../file`, `POST .../validate`, `POST .../commits`).
+
+CSP: Monaco's own `<style>` elements receive the page's nonce (a small wrapper of `document.createElement`, `nonceMonacoStyles`), and two relaxations were measured and are the only ones: `style-src-attr 'unsafe-inline'` and `font-src data:`. `worker-src` stays closed. The page, except the Monaco widget itself, passes the axe audit (`e2e/repo-editor.spec.ts`).
+
 ## M4 in practice
 
 - **Live status.** The Core publishes `GET /v1/stream` (Server-Sent Events): a hint (`audit`, `report` or `resync`, nothing else) whenever something the caller may see changed. Hints come from PostgreSQL `LISTEN/NOTIFY`, sent inside the statements that write, so they arrive after commit and work across Core replicas. The BFF passes the stream through (`/api/stream`, session added server side, 401 without one) and the `LiveRefresh` component re-renders the current route after a short debounce (React state in forms survives). If the stream is unavailable it polls every 30 s; pages with a form in progress (`/new`, `/edit`) are never refreshed. The header shows `live` / `connecting` / `updating every 30 s`.

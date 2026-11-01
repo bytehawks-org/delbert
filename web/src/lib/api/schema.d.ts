@@ -37,6 +37,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agent/{tenant}/{agent}/deliveries/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bundle fetch: `Authorization: Delbert-Agent <base64 of the proof JSON>`, proof kind
+         *     `delivery` over the delivery name.
+         */
+        get: operations["fetch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent/{tenant}/{agent}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The same batch as the NATS subject `delbert.event.<t>.<a>`, for agents that have no bus
+         *     connection (the Kubernetes Operator): body `{proof, events}`, proof kind `event`.
+         */
+        post: operations["post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/audit": {
         parameters: {
             query?: never;
@@ -231,6 +271,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/content/sources/{name}/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Git: pushes the change as a new branch for review; the tracked branch is never written. Directory: writes the files in place. The source must be `writable`. The result is validated first. */
+        post: operations["commit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/content/sources/{name}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/content/sources/{name}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["tree"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/content/sources/{name}/snapshots": {
         parameters: {
             query?: never;
@@ -273,6 +362,23 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["sync_now"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/content/sources/{name}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Checks what the repository would look like after the change, with the parser the sync uses. Writes nothing. */
+        post: operations["validate"];
         delete?: never;
         options?: never;
         head?: never;
@@ -865,6 +971,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tenants/{tenant}/agents/{agent}/remediation/force": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide that the agent applies its quarantined version again. */
+        post: operations["force"];
+        /** Withdraw a force the agent has not obeyed yet. */
+        delete: operations["cancel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tenants/{tenant}/agents/{agent}/render": {
         parameters: {
             query?: never;
@@ -874,7 +998,7 @@ export interface paths {
         };
         /**
          * Render every template resource of the agent's effective policy the way the agent will, except
-         *     that secrets are masked and the host facts are placeholders (the Core does not know them). The
+         *     that secrets are masked and the facts that stay on the host (machine id, custom facts) are placeholders; the shared facts are those the agent reported. The
          *     Core only renders text here; it never applies anything.
          */
         get: operations["render"];
@@ -961,6 +1085,38 @@ export interface paths {
         put: operations["set_tenant_assignments"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tenants/{tenant}/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tenants/{tenant}/deliveries/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get"];
+        put: operations["put"];
+        post?: never;
+        delete: operations["delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1319,10 +1475,28 @@ export interface components {
              * @description Version of the last compiled policy for this agent.
              */
             effective_version: number;
+            /**
+             * @description Host facts the agent reported about itself (OS family, distribution, version, kernel,
+             *     hostname, domain, IPs): informational, never used for a decision. Absent until reported.
+             */
+            facts?: unknown;
+            /**
+             * Format: int64
+             * @description Unix seconds when the facts were last received.
+             */
+            facts_at?: number | null;
+            /** @description A force (release of the quarantined version) was decided and the agent has not obeyed it yet. */
+            force_pending: boolean;
             groups: string[];
             name: string;
             /** @description Proxy that serves this agent, if it enrolled through one. */
             proxy?: string | null;
+            /**
+             * @description Present while the agent is inconsistent with its policy: a failed update was rolled back
+             *     (or its services stopped) and the failed version is quarantined. `state`, `failed_version`,
+             *     `running_version`, `resource`, `reason`, `at`, `steps`, `forced_kill`.
+             */
+            remediation?: unknown;
             /**
              * Format: int64
              * @description Unix seconds of the last report.
@@ -1361,7 +1535,7 @@ export interface components {
              * @description Unix seconds of the last report.
              */
             reported_at?: number | null;
-            /** @description `drifted` (reported, not compliant) or `silent` (never reported, or not for a while). */
+            /** @description `inconsistent` (rolled back or stopped, see remediation), `drifted` (reported, not compliant) or `silent` (never reported, or not for a while). */
             state: string;
             tenant: string;
         };
@@ -1437,13 +1611,60 @@ export interface components {
              */
             version?: number | null;
         };
+        ChangeSet: {
+            changes: components["schemas"]["FileChange"][];
+        };
         Comment: {
             comment?: string | null;
+        };
+        CommitBody: {
+            changes: components["schemas"]["FileChange"][];
+            message: string;
+        };
+        CommitOut: {
+            /** @description Revision the change was made on. */
+            base_revision: string;
+            /** @description The branch that was pushed (git sources); absent for a directory. */
+            branch?: string | null;
+            commit?: string | null;
+            files: number;
         };
         Conflict: {
             resolution: string;
             resources: string[];
             what: string;
+        };
+        /** @description What the Operator receives. */
+        DeliveryBundle: {
+            files: {
+                [key: string]: string;
+            };
+            /** @description Secret name → base64 of the age ciphertext for the fetching identity. */
+            sensitive: {
+                [key: string]: string;
+            };
+            variables: {
+                [key: string]: string;
+            };
+            /**
+             * Format: int64
+             * @description Unix seconds of the latest change among the inputs. Informational: a removal is not
+             *     reflected, so decide on changes by comparing content, not versions.
+             */
+            version: number;
+        };
+        DeliveryOut: {
+            /** @description Identity allowed to fetch the bundle. */
+            agent: string;
+            files: string[];
+            name: string;
+            secrets: string[];
+            /**
+             * Format: int64
+             * @description Unix seconds.
+             */
+            updated_at: number;
+            updated_by: string;
         };
         EnrollRequest: {
             agent_name: string;
@@ -1494,6 +1715,33 @@ export interface components {
             code: string;
             /** @description Also set the session cookie and return a CSRF token. */
             cookie?: boolean;
+        };
+        /** @description One file of a change set: new content (text, or base64 for binary) or a deletion. */
+        FileChange: {
+            content?: string | null;
+            content_b64?: string | null;
+            delete?: boolean;
+            path: string;
+        };
+        FileEntry: {
+            path: string;
+            size: number;
+        };
+        FileOut: {
+            content: string;
+            /** @description `utf8`, or `base64` for content that is not text. */
+            encoding: string;
+            path: string;
+            revision: string;
+        };
+        ForceBody: {
+            /** @description Why: what was corrected on the host. Goes to the audit trail. */
+            note?: string;
+            /**
+             * Format: int64
+             * @description The quarantined version to apply again (the `failed_version` of the agent's `remediation`).
+             */
+            version: number;
         };
         Issued: {
             conflicts: components["schemas"]["Conflict"][];
@@ -1571,6 +1819,13 @@ export interface components {
             groups?: string[];
             name: string;
         };
+        NewDelivery: {
+            /** @description The enrolled agent (the Operator) that fetches this delivery. */
+            agent: string;
+            /** @description Artifact names delivered as files. */
+            files?: string[];
+            secrets?: string[];
+        };
         NewEnrollmentKey: {
             /** @description Groups for agents created by enrollment. */
             groups?: string[];
@@ -1622,12 +1877,17 @@ export interface components {
         Overview: {
             /** Format: int64 */
             agents: number;
-            /** @description Drifted agents first, then the silent ones (longest silent first); at most 20. */
+            /** @description Inconsistent and drifted agents first, then the silent ones (longest silent first); at most 20. */
             attention: components["schemas"]["AttentionAgent"][];
             /** Format: int64 */
             compliant: number;
             /** Format: int64 */
             drifted: number;
+            /**
+             * Format: int64
+             * @description Of the drifted: agents that rolled back or stopped after a failed update and wait for a person.
+             */
+            inconsistent: number;
             /** Format: int64 */
             silent: number;
             /** Format: int64 */
@@ -1879,6 +2139,8 @@ export interface components {
             subdir?: string | null;
             /** @description Make the source tenant-owned (it can only touch that tenant). Ignored on update. */
             tenant?: string | null;
+            /** @description Allow editing from the console. The token must be allowed to push. */
+            writable?: boolean | null;
         };
         SourceOut: {
             auth_user?: string | null;
@@ -1898,6 +2160,8 @@ export interface components {
             subdir: string;
             /** @description Owning tenant; absent for a platform source. */
             tenant?: string | null;
+            /** @description The console may edit it (commits go to a new branch of a git remote). */
+            writable: boolean;
         };
         SyncOut: {
             changes: components["schemas"]["ChangeOut"][];
@@ -1945,6 +2209,14 @@ export interface components {
             permissions: string[];
             tenant?: string | null;
         };
+        TreeOut: {
+            files: components["schemas"]["FileEntry"][];
+            /** @description Commit id (git) or tree hash (directory) the list was read from. */
+            revision: string;
+            /** @description Owning tenant of the source; absent for a platform source. */
+            tenant?: string | null;
+            writable: boolean;
+        };
         UserOut: {
             active: boolean;
             assignments: components["schemas"]["Assignment"][];
@@ -1955,6 +2227,11 @@ export interface components {
             /** @description Replaces the whole set of assignments when present. */
             assignments?: components["schemas"]["Assignment"][] | null;
             password?: string | null;
+        };
+        ValidateOut: {
+            /** @description Problems the change would introduce, naming the files. */
+            errors: string[];
+            ok: boolean;
         };
         VariableOut: {
             /** @description A constant: lower layers cannot override it. */
@@ -2065,6 +2342,86 @@ export interface operations {
                 content?: never;
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    fetch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+                agent: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryBundle"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A secret or file of the delivery is missing */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description `{"stored": n}` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid proof or unknown agent */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2526,6 +2883,121 @@ export interface operations {
             };
         };
     };
+    commit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommitBody"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitOut"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Read-only source, or nothing changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    file: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileOut"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    tree: {
+        parameters: {
+            query?: {
+                /** @description Ask the remote first (default: what the last sync left in the mirror). */
+                refresh?: boolean;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeOut"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_snapshots: {
         parameters: {
             query?: never;
@@ -2615,6 +3087,43 @@ export interface operations {
             };
             /** @description Cannot read the source */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    validate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeSet"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidateOut"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4009,6 +4518,75 @@ export interface operations {
             };
         };
     };
+    force: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForceBody"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The agent is not quarantined at that version */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+                agent: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     render: {
         parameters: {
             query?: never;
@@ -4204,6 +4782,132 @@ export interface operations {
                 content?: never;
             };
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryOut"][];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryOut"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewDelivery"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown tenant or agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

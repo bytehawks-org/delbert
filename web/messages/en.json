@@ -472,7 +472,10 @@
     "changes": "Changes",
     "changesOf": "Changes of {revision}",
     "noChanges": "No changes.",
-    "noSnapshots": "No syncs yet."
+    "noSnapshots": "No syncs yet.",
+    "openEditor": "Edit",
+    "browse": "Browse",
+    "writable": "Editable from the console (the token must be allowed to push; commits go to a new branch)"
   },
   "agentAdmin": {
     "title": "Agents",
@@ -532,5 +535,39 @@
     "renderTitle": "Template preview",
     "renderNote": "Templates rendered as the agent will, with secrets masked and host facts as placeholders.",
     "noTemplates": "No templates apply to this agent."
+  },
+  "repo": {
+    "subtitle": "Edit the files of the repository. Nothing is written until you commit; the result is checked as the repository it would make.",
+    "back": "Content sources",
+    "unavailable": "The repository cannot be read (is the source synced?).",
+    "files": "Files",
+    "editor": "Editor",
+    "empty": "The repository has no files yet.",
+    "pick": "Pick a file, or add one with its full path (for example policies/groups/web/nginx.yaml).",
+    "newFile": "Path of a new file",
+    "add": "Add",
+    "revert": "Revert",
+    "delete": "Delete",
+    "binary": "This file is not text: it cannot be edited here.",
+    "cannotRead": "Cannot read {path}.",
+    "modified": "modified",
+    "added": "new",
+    "deleted": "deleted",
+    "ofTenant": "Repository of tenant {tenant}",
+    "platform": "Platform repository",
+    "checking": "Checking the result…",
+    "valid": "The repository stays valid with these changes.",
+    "problems": "These changes would break the repository:",
+    "changes": "Changes ({count})",
+    "message": "Commit message",
+    "commitBranch": "Commit to a new branch",
+    "commitWrite": "Write the files",
+    "committing": "Committing…",
+    "branchHelp": "The tracked branch is never written: the change is pushed as a new branch for review in your git server, and applied when it is merged.",
+    "directoryHelp": "The files are written in place and applied at the next sync.",
+    "pushed": "Pushed to branch {branch} ({count} files). Open a merge request in your git server.",
+    "written": "{count} files written. Run a sync to apply them.",
+    "readOnly": "This source is read-only: an administrator has to make it editable from the console.",
+    "noPermission": "Your role does not allow editing this repository."
   }
 }

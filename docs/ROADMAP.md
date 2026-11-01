@@ -86,6 +86,11 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Orphans: console preview of the paths a save would remove; offline CLI; `line_in_file` lines | to-do | 2026-11-01 |
 | Remediation: `verify` / `on_failure` / `stop` / `start` per service, atomic whole-policy rollback to the last known good, quarantine, inconsistent state in the Core, forced release (`agents:remediate`), audit events ([REMEDIATION.md](REMEDIATION.md)) | complete | 2026-11-01 |
 | Remediation: run on a real systemd host; Windows services and Podman containers; HTTP probe; console page to see and force an inconsistent agent | to-do | 2026-11-01 |
+| Repository layout: policies/files/templates/variables per tenant, group and host; folder-implied target; `target.agents`; variables from a repository; template repository ([REPOSITORY.md](REPOSITORY.md)) | complete | 2026-11-01 |
+| Online editor: Monaco in the console, validation as you type, commit to a new branch, `writable` sources, `content:edit` | complete | 2026-11-01 |
+| Repository: files and templates per group and host (layering by name, host > group > tenant > shared, with a preview) | to-do | 2026-11-01 |
+| Repository: shared (global) variables, files and templates from a repository; global policies | to-do | 2026-11-01 |
+| Editor: policy-schema completion (needs a YAML language service and `worker-src`), diff view, merge request opened from the console (Forgejo/GitHub/GitLab), create a repository from the template, e2e in the stack (needs a git server in compose) | to-do | 2026-11-01 |
 | Operator counterpart of remediation: rollout that misses its deadline re-applies the previous bundle | to-do | 2026-11-01 |
 | Deferred: sidecar agent with environment PSK; per-pod identity; workload auth via projected ServiceAccount token | to-do | 2026-11-01 |
 | Agent: check/apply for `file`, `copy`, `line_in_file` (local YAML mode) | complete | 2026-10-23 |

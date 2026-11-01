@@ -16,6 +16,7 @@ type Source = {
   tenant?: string | null;
   poll_secs?: number | null;
   prune: boolean;
+  writable?: boolean;
   enabled: boolean;
   auth_user?: string | null;
   has_token: boolean;
@@ -27,10 +28,10 @@ type SyncResult = { status: string; revision: string; errors: string[]; changes:
 
 const field = "rounded-md border border-border bg-surface px-2 py-1.5";
 const button = "rounded-md border border-border px-2 py-1 text-xs hover:bg-surface";
-const blank: Source = { name: "", kind: "git", location: "", branch: "main", subdir: "", tenant: null, poll_secs: null, prune: false, enabled: true, auth_user: null, has_token: false, syncedLabel: "—" };
+const blank: Source = { name: "", kind: "git", location: "", branch: "main", subdir: "", tenant: null, poll_secs: null, prune: false, writable: false, enabled: true, auth_user: null, has_token: false, syncedLabel: "—" };
 
 /** Content sources (a directory or a git repository that owns policies and artifacts) and their manual sync. */
-export function ContentSources({ sources, tenants, canWrite, canSync }: { sources: Source[]; tenants: string[]; canWrite: boolean; canSync: boolean }) {
+export function ContentSources({ sources, tenants, canWrite, canSync, canEdit }: { sources: Source[]; tenants: string[]; canWrite: boolean; canSync: boolean; canEdit: boolean }) {
   const t = useTranslations("content");
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export function ContentSources({ sources, tenants, canWrite, canSync }: { source
       tenant: draft.tenant || null,
       poll_secs: draft.poll_secs || null,
       prune: draft.prune,
+      writable: !!draft.writable,
       enabled: draft.enabled,
       auth_user: draft.kind === "git" ? draft.auth_user?.trim() || null : null,
       // absent keeps the stored token, empty removes it
@@ -123,6 +125,11 @@ export function ContentSources({ sources, tenants, canWrite, canSync }: { source
                   <button type="button" className={button} disabled={busy === s.name} onClick={() => sync(s.name)}>
                     {busy === s.name ? t("syncing") : t("syncNow")}
                   </button>
+                )}
+                {canEdit && (
+                  <Link href={`/content/${encodeURIComponent(s.name)}/edit`} className={button}>
+                    {s.writable ? t("openEditor") : t("browse")}
+                  </Link>
                 )}
                 {canWrite && (
                   <>
@@ -243,6 +250,10 @@ export function ContentSources({ sources, tenants, canWrite, canSync }: { source
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={draft.prune} onChange={(e) => set({ prune: e.target.checked })} />
               {t("prune")}
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={!!draft.writable} onChange={(e) => set({ writable: e.target.checked })} />
+              {t("writable")}
             </label>
           </div>
           <div className="flex gap-2">

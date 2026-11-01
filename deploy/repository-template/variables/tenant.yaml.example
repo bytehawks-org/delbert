@@ -1,0 +1,5 @@
+# Rename to tenant.yaml.
+vars:
+  LOG_LEVEL: info
+  REGION: eu
+locked: [REGION]      # nothing below (groups, hosts) can override a constant

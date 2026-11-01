@@ -14,6 +14,22 @@ podman run --rm --network delbert_default \
 - Integration tests (need PostgreSQL; `sqlx::test` creates a database per test): API, authentication, RBAC, audit chain, least-privilege DB role.
 - NATS test (needs `NATS_URL`, skipped otherwise): notification, signed policy pull, reports.
 
+## The repository editor (browser)
+
+`web/e2e/repo-editor.spec.ts` drives Monaco in Chromium against a Core and the built console. The e2e stack has no git server, so it needs a source prepared by hand; it is skipped without `E2E_EDIT_SOURCE`:
+
+```bash
+# a git repository with the layout of deploy/repository-template, and a Core that can read it (file://)
+git init -b main /tmp/ui-repo && cp -r deploy/repository-template/. /tmp/ui-repo/ && (cd /tmp/ui-repo && git add -A && git commit -m init)
+# Core with DELBERT_CONTENT_ALLOW_FILE=true and DELBERT_CONTENT_ALLOW_TENANT_GIT=true, a tenant "acme", then:
+#   POST /v1/content/sources {"name":"repo","kind":"git","location":"file:///tmp/ui-repo","tenant":"acme","writable":true}
+#   POST /v1/content/sources/repo/sync
+cd web && npm run build && WEB_SESSION_SECRET=<32 bytes base64url> WEB_INSECURE_COOKIES=true DELBERT_CORE_URL=http://localhost:8080 npx next start -p 3000 &
+CORE_URL=http://localhost:8080 WEB_URL=http://localhost:3000 E2E_ADMIN_PASSWORD=... E2E_EDIT_SOURCE=repo E2E_EDIT_TENANT=acme npx playwright test e2e/repo-editor.spec.ts
+```
+
+Verified on 2026-11-01 (Chromium, Monaco 0.57, a Core built from the same tree, a `file://` git remote): the editor loads from the console's origin, a file is added, a wrong name is reported by the Core and blocks the commit, the corrected file is committed to a new branch, the audit records it, the axe audit is clean outside the editor widget and no CSP violation is raised. The Core side (tree, validation, commit to a new branch, review and merge, directory sources) is covered by `crates/delbert-core/tests/repository.rs`, which runs with the rest of the suite.
+
 ## The `container` verb against a real engine
 
 Ignored by default. Needs `podman` and a local `docker.io/library/debian:13-slim`; rootless, touches only `delbert-test-*` containers and a temporary secrets directory (about a minute, most of it waiting for `sleep` to stop):

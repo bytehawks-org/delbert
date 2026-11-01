@@ -2,6 +2,13 @@
 
 ## 2026-11-01
 
+### Repository layout and the online editor
+- **Layout** ([REPOSITORY.md](REPOSITORY.md)): `policies/`, `files/`, `templates/`, `variables/` with `tenant/`, `groups/<g>/` and `hosts/<h>/` inside the tenant's tree; one repository per tenant (tree at the root) or several tenants (`tenants/<t>/`). The folder sets the policy target; a contradicting `target` rejects the snapshot. New `target.agents`. Variables come from the repository (`variables/*.yaml`: `vars`, `locked`), are owned by the source like policies, and `prune` deletes the ones that left it (migration `0024`). The old flat layout still works. README.md, `.gitkeep` and `*.example` are ignored. Files and templates per group/host are refused (not supported yet).
+- **Template repository** in `deploy/repository-template/` (validated by a test).
+- **Editor** (Core): sources can be `writable` (migration `0025`), permission `content:edit` (tenant-admin, operator); `GET .../files`, `GET .../file`, `POST .../validate` (the problems a change would introduce, with the sync's parser) and `POST .../commits` (git: a new branch `delbert/<user>-<time>`, the tracked branch is never written; directory: in place). Audited as `content.commit`.
+- **Editor** (console): `/content/{source}/edit` with Monaco served from the console itself, validation as you type, commit to a new branch; allow-list of the pass-through extended; CSP: nonce for Monaco's styles, `style-src-attr` and `font-src data:` (measured). Tests: `tests/repository.rs` (6), `e2e/repo-editor.spec.ts` (Chromium against a real Core, axe clean, no CSP violation).
+
+
 ### Containers: the `container` verb
 - **Policy:** `container` (name, image, state running/stopped/absent, ports, volumes, `env`, `env_from`, `secret_from`, restart, command, engine); validated at save, nothing privileged can be declared, secrets mounted must be listed in `spec.secrets`.
 - **Agent** (`containers.rs`): Podman or Docker through an argv; configuration hash in a label (HMAC keyed from the agent identity) and recreation on change; variables from the layered `vars`, secrets as read-only files under `/run/delbert/secrets` (never in argv or `inspect`); foreign containers refused; `Ctx.secrets_dir`.

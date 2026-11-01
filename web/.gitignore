@@ -5,3 +5,6 @@ next-env.d.ts
 *.tsbuildinfo
 test-results
 playwright-report
+
+# Monaco is copied from node_modules at dev/build time (scripts/copy-monaco.mjs)
+public/monaco

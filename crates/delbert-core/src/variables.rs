@@ -69,12 +69,12 @@ pub struct Where {
 }
 
 /// A variable name is usable as `vars.<name>` in a template.
-fn check_var_name(name: &str) -> ApiResult<()> {
+pub(crate) fn check_var_name(name: &str) -> ApiResult<()> {
     let ok = !name.is_empty() && name.len() <= 64 && name.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
     if ok { Ok(()) } else { Err(ApiError(StatusCode::UNPROCESSABLE_ENTITY, "invalid variable name (letters, digits and _, starting with a letter or _, at most 64)".into())) }
 }
 
-fn check_value(value: &Value) -> ApiResult<()> {
+pub(crate) fn check_value(value: &Value) -> ApiResult<()> {
     if value.is_null() {
         return Err(ApiError(StatusCode::UNPROCESSABLE_ENTITY, "a variable needs a value (null is not allowed)".into()));
     }
@@ -185,7 +185,7 @@ pub fn overlay(compiled: &mut Compiled, resolved: &[Resolution]) {
 
 // --- API: write ----------------------------------------------------------------------------
 
-async fn store(st: &AppState, user: &crate::auth::CurrentUser, tid: Option<sqlx::types::Uuid>, scope: &str, target: &str, name: &str, body: &NewVariable) -> ApiResult<StatusCode> {
+pub(crate) async fn store(st: &AppState, actor: &str, tid: Option<sqlx::types::Uuid>, scope: &str, target: &str, name: &str, body: &NewVariable) -> ApiResult<StatusCode> {
     check_var_name(name)?;
     check_value(&body.value)?;
     let mut tx = st.pool.begin().await?;
@@ -207,15 +207,15 @@ async fn store(st: &AppState, user: &crate::auth::CurrentUser, tid: Option<sqlx:
     .bind(name)
     .bind(&body.value)
     .bind(body.locked)
-    .bind(&user.username)
+    .bind(actor)
     .fetch_one(&mut *tx)
     .await?;
-    audit::append(&mut tx, &NewEvent { tenant_id: tid, actor: &user.username, action: "variable.set", target: Some(name), outcome: "ok", details: json!({ "scope": scope, "target": target, "locked": body.locked, "value_sha256": digest(&body.value) }) }).await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: tid, actor, action: "variable.set", target: Some(name), outcome: "ok", details: json!({ "scope": scope, "target": target, "locked": body.locked, "value_sha256": digest(&body.value) }) }).await?;
     tx.commit().await?;
     Ok(if created { StatusCode::CREATED } else { StatusCode::OK })
 }
 
-async fn remove(st: &AppState, user: &crate::auth::CurrentUser, tid: Option<sqlx::types::Uuid>, scope: &str, target: &str, name: &str) -> ApiResult<StatusCode> {
+pub(crate) async fn remove(st: &AppState, actor: &str, tid: Option<sqlx::types::Uuid>, scope: &str, target: &str, name: &str) -> ApiResult<StatusCode> {
     let mut tx = st.pool.begin().await?;
     let n = sqlx::query("DELETE FROM variables WHERE scope = $1 AND COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000') = COALESCE($2, '00000000-0000-0000-0000-000000000000') AND target = $3 AND name = $4")
         .bind(scope)
@@ -228,7 +228,7 @@ async fn remove(st: &AppState, user: &crate::auth::CurrentUser, tid: Option<sqlx
     if n == 0 {
         return Err(ApiError(StatusCode::NOT_FOUND, "variable not found".into()));
     }
-    audit::append(&mut tx, &NewEvent { tenant_id: tid, actor: &user.username, action: "variable.delete", target: Some(name), outcome: "ok", details: json!({ "scope": scope, "target": target }) }).await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: tid, actor, action: "variable.delete", target: Some(name), outcome: "ok", details: json!({ "scope": scope, "target": target }) }).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -255,7 +255,7 @@ async fn level(st: &AppState, tid: sqlx::types::Uuid, q: &Where) -> ApiResult<(&
     responses((status = 201, description = "Created"), (status = 200, description = "Updated"), (status = 422)))]
 pub async fn put_global(State(st): State<AppState>, Authn(user): Authn, Path(name): Path<String>, Json(body): Json<NewVariable>) -> ApiResult<StatusCode> {
     user.require_global("globals:write")?;
-    let status = store(&st, &user, None, "global", "", &name, &body).await?;
+    let status = store(&st, &user.username, None, "global", "", &name, &body).await?;
     crate::api::notify_all(&st).await;
     Ok(status)
 }
@@ -264,7 +264,7 @@ pub async fn put_global(State(st): State<AppState>, Authn(user): Authn, Path(nam
     params(("name" = String, Path)), responses((status = 204), (status = 404)))]
 pub async fn delete_global(State(st): State<AppState>, Authn(user): Authn, Path(name): Path<String>) -> ApiResult<StatusCode> {
     user.require_global("globals:write")?;
-    let status = remove(&st, &user, None, "global", "", &name).await?;
+    let status = remove(&st, &user.username, None, "global", "", &name).await?;
     crate::api::notify_all(&st).await;
     Ok(status)
 }
@@ -275,7 +275,8 @@ pub async fn delete_global(State(st): State<AppState>, Authn(user): Authn, Path(
 pub async fn put_variable(State(st): State<AppState>, Authn(user): Authn, Path((tenant, name)): Path<(String, String)>, Query(q): Query<Where>, Json(body): Json<NewVariable>) -> ApiResult<StatusCode> {
     let tid = user.tenant(&st.pool, &tenant, "policies:write").await?;
     let (scope, target) = level(&st, tid, &q).await?;
-    let status = store(&st, &user, Some(tid), scope, &target, &name, &body).await?;
+    crate::content::ensure_unowned(&st.pool, tid, "variable", &crate::content::variable_key(scope, &target, &name)).await?;
+    let status = store(&st, &user.username, Some(tid), scope, &target, &name, &body).await?;
     crate::api::notify_tenant(&st, &tenant, tid).await;
     Ok(status)
 }
@@ -285,7 +286,8 @@ pub async fn put_variable(State(st): State<AppState>, Authn(user): Authn, Path((
 pub async fn delete_variable(State(st): State<AppState>, Authn(user): Authn, Path((tenant, name)): Path<(String, String)>, Query(q): Query<Where>) -> ApiResult<StatusCode> {
     let tid = user.tenant(&st.pool, &tenant, "policies:write").await?;
     let (scope, target) = level(&st, tid, &q).await?;
-    let status = remove(&st, &user, Some(tid), scope, &target, &name).await?;
+    crate::content::ensure_unowned(&st.pool, tid, "variable", &crate::content::variable_key(scope, &target, &name)).await?;
+    let status = remove(&st, &user.username, Some(tid), scope, &target, &name).await?;
     crate::api::notify_tenant(&st, &tenant, tid).await;
     Ok(status)
 }

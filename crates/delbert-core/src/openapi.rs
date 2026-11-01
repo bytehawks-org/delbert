@@ -46,6 +46,7 @@ impl Modify for BearerAuth {
         crate::artifacts::put_global_artifact, crate::artifacts::list_global_artifacts,
         crate::variables::put_global, crate::variables::delete_global, crate::variables::list_global, crate::variables::put_variable, crate::variables::delete_variable,
         crate::variables::list_variables, crate::variables::resolved, crate::variables::render,
+        crate::content::tree, crate::content::file, crate::content::validate, crate::content::commit,
         crate::deliveries::list, crate::deliveries::get, crate::deliveries::put, crate::deliveries::delete, crate::deliveries::fetch, crate::agent_events::post, crate::remediation::force, crate::remediation::cancel,
         crate::proxies::create_proxy, crate::proxies::list_proxies, crate::proxies::delete_proxy, crate::proxies::enroll_proxy, crate::proxies::renew_proxy,
         crate::proxies::proxy_enroll_agent, crate::proxies::proxy_artifact,

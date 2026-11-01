@@ -40,7 +40,7 @@ const MAX_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_DIFF_BYTES: usize = 256 * 1024;
 const GIT_TIMEOUT: Duration = Duration::from_secs(120);
 
-fn err(status: StatusCode, msg: impl Into<String>) -> ApiError {
+pub(crate) fn err(status: StatusCode, msg: impl Into<String>) -> ApiError {
     ApiError(status, msg.into())
 }
 
@@ -76,6 +76,7 @@ pub(crate) struct Source {
     auth_user: Option<String>,
     auth_token: Option<Vec<u8>>,
     prune: bool,
+    writable: bool,
     enabled: bool,
     poll_secs: Option<i32>,
     last_sync_at: Option<i64>,
@@ -83,7 +84,7 @@ pub(crate) struct Source {
     last_error: Option<String>,
 }
 
-const COLUMNS: &str = "id, name, kind, tenant_id, location, branch, subdir, auth_user, auth_token, prune, enabled, poll_secs, (EXTRACT(EPOCH FROM last_sync_at))::bigint AS last_sync_at, last_revision, last_error";
+const COLUMNS: &str = "id, name, kind, tenant_id, location, branch, subdir, auth_user, auth_token, prune, writable, enabled, poll_secs, (EXTRACT(EPOCH FROM last_sync_at))::bigint AS last_sync_at, last_revision, last_error";
 
 #[derive(Serialize, ToSchema)]
 pub struct SourceOut {
@@ -97,6 +98,8 @@ pub struct SourceOut {
     pub auth_user: Option<String>,
     pub has_token: bool,
     pub prune: bool,
+    /// The console may edit it (commits go to a new branch of a git remote).
+    pub writable: bool,
     pub enabled: bool,
     pub poll_secs: Option<i32>,
     pub last_sync_at: Option<i64>,
@@ -122,6 +125,8 @@ pub struct SourceBody {
     /// Access token for https remotes; absent on update keeps the stored one, empty removes it.
     pub auth_token: Option<String>,
     pub prune: Option<bool>,
+    /// Allow editing from the console. The token must be allowed to push.
+    pub writable: Option<bool>,
     pub enabled: Option<bool>,
     /// Sync every N seconds (at least 30); absent = only on demand.
     pub poll_secs: Option<i32>,
@@ -134,13 +139,13 @@ async fn source_out(pool: &PgPool, s: Source) -> ApiResult<SourceOut> {
     };
     Ok(SourceOut {
         name: s.name, kind: s.kind, tenant, location: s.location, branch: s.branch, subdir: s.subdir, auth_user: s.auth_user, has_token: s.auth_token.is_some(),
-        prune: s.prune, enabled: s.enabled, poll_secs: s.poll_secs, last_sync_at: s.last_sync_at, last_revision: s.last_revision, last_error: s.last_error,
+        prune: s.prune, writable: s.writable, enabled: s.enabled, poll_secs: s.poll_secs, last_sync_at: s.last_sync_at, last_revision: s.last_revision, last_error: s.last_error,
     })
 }
 
 /// Permission on a source: its tenant for a tenant-owned one, a global grant for a platform one.
 /// A source the caller cannot reach at all looks missing.
-fn authorize(user: &CurrentUser, permission: &str, tenant: Option<Uuid>) -> ApiResult<()> {
+pub(crate) fn authorize(user: &CurrentUser, permission: &str, tenant: Option<Uuid>) -> ApiResult<()> {
     if user.can(permission, tenant) {
         return Ok(());
     }
@@ -148,7 +153,7 @@ fn authorize(user: &CurrentUser, permission: &str, tenant: Option<Uuid>) -> ApiR
     Err(if any { err(StatusCode::FORBIDDEN, format!("missing permission '{permission}'")) } else { err(StatusCode::NOT_FOUND, "source not found") })
 }
 
-async fn load(st: &AppState, name: &str) -> ApiResult<Source> {
+pub(crate) async fn load(st: &AppState, name: &str) -> ApiResult<Source> {
     let s: Option<Source> = sqlx::query_as(&format!("SELECT {COLUMNS} FROM content_sources WHERE name = $1")).bind(name).fetch_optional(&st.pool).await?;
     s.ok_or_else(|| err(StatusCode::NOT_FOUND, "source not found"))
 }
@@ -231,9 +236,9 @@ pub async fn create_source(State(st): State<AppState>, Authn(user): Authn, Json(
         None => None,
     };
     let mut tx = st.pool.begin().await?;
-    sqlx::query("INSERT INTO content_sources (name, kind, tenant_id, location, branch, subdir, auth_user, auth_token, prune, enabled, poll_secs) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)")
+    sqlx::query("INSERT INTO content_sources (name, kind, tenant_id, location, branch, subdir, auth_user, auth_token, prune, enabled, poll_secs, writable) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)")
         .bind(&body.name).bind(&body.kind).bind(tenant_id).bind(&body.location).bind(&branch).bind(&subdir).bind(&body.auth_user).bind(token)
-        .bind(body.prune.unwrap_or(false)).bind(body.enabled.unwrap_or(true)).bind(body.poll_secs)
+        .bind(body.prune.unwrap_or(false)).bind(body.enabled.unwrap_or(true)).bind(body.poll_secs).bind(body.writable.unwrap_or(false))
         .execute(&mut *tx)
         .await?;
     audit::append(&mut tx, &NewEvent { tenant_id, actor: &user.username, action: "content.create", target: Some(&body.name), outcome: "ok", details: json!({ "kind": body.kind, "location": body.location, "prune": body.prune.unwrap_or(false) }) }).await?;
@@ -254,8 +259,8 @@ pub async fn update_source(State(st): State<AppState>, Authn(user): Authn, Path(
     check_subdir(&subdir)?;
     check_poll(body.poll_secs)?;
     let mut tx = st.pool.begin().await?;
-    sqlx::query("UPDATE content_sources SET location = $2, branch = $3, subdir = $4, prune = $5, enabled = $6, poll_secs = $7, auth_user = COALESCE($8, auth_user), last_revision = NULL WHERE id = $1")
-        .bind(s.id).bind(&body.location).bind(&branch).bind(&subdir).bind(body.prune.unwrap_or(s.prune)).bind(body.enabled.unwrap_or(s.enabled)).bind(body.poll_secs.or(s.poll_secs)).bind(&body.auth_user)
+    sqlx::query("UPDATE content_sources SET location = $2, branch = $3, subdir = $4, prune = $5, enabled = $6, poll_secs = $7, auth_user = COALESCE($8, auth_user), writable = $9, last_revision = NULL WHERE id = $1")
+        .bind(s.id).bind(&body.location).bind(&branch).bind(&subdir).bind(body.prune.unwrap_or(s.prune)).bind(body.enabled.unwrap_or(s.enabled)).bind(body.poll_secs.or(s.poll_secs)).bind(&body.auth_user).bind(body.writable.unwrap_or(s.writable))
         .execute(&mut *tx)
         .await?;
     if let Some(t) = body.auth_token.as_deref() {
@@ -282,12 +287,12 @@ pub async fn delete_source(State(st): State<AppState>, Authn(user): Authn, Path(
 // --- reading a snapshot --------------------------------------------------------------------
 
 /// Files of a snapshot by path relative to the layout root.
-struct Snapshot {
+pub(crate) struct Snapshot {
     revision: String,
     files: BTreeMap<String, Vec<u8>>,
 }
 
-fn check_rel(path: &str) -> Result<(), String> {
+pub(crate) fn check_rel(path: &str) -> Result<(), String> {
     if path.is_empty() || path.starts_with('/') || path.split('/').any(|c| c.is_empty() || c == ".." || c == ".") {
         return Err(format!("unsafe path '{path}'"));
     }
@@ -331,7 +336,7 @@ fn read_directory(root: &FsPath) -> Result<Snapshot, String> {
     Ok(Snapshot { revision: format!("tree:{}", &hex(&h.finalize())[..16]), files })
 }
 
-async fn git(st: &AppState, args: &[&str], cwd: &FsPath, token: Option<(&str, &str)>) -> Result<Vec<u8>, String> {
+pub(crate) async fn git(st: &AppState, args: &[&str], cwd: &FsPath, token: Option<(&str, &str)>) -> Result<Vec<u8>, String> {
     let home = st.content.dir.join(".git-home");
     std::fs::create_dir_all(&home).map_err(|e| e.to_string())?;
     let protocols = match (st.content.allow_file, st.auth.cookie_secure) {
@@ -370,7 +375,9 @@ async fn git(st: &AppState, args: &[&str], cwd: &FsPath, token: Option<(&str, &s
     Ok(out.stdout)
 }
 
-async fn read_git(st: &AppState, s: &Source) -> Result<Snapshot, String> {
+/// `fetch: false` reads what the last sync left in the mirror (the editor lists files without a
+/// network round trip); `true` asks the remote first.
+async fn read_git(st: &AppState, s: &Source, fetch: bool) -> Result<Snapshot, String> {
     let mirrors = st.content.dir.join(".git-mirrors");
     std::fs::create_dir_all(&mirrors).map_err(|e| e.to_string())?;
     let mirror = mirrors.join(format!("{}.git", s.id));
@@ -382,7 +389,9 @@ async fn read_git(st: &AppState, s: &Source) -> Result<Snapshot, String> {
         _ => None,
     };
     let refspec = format!("+refs/heads/{}:refs/delbert/tracked", s.branch);
-    git(st, &["fetch", "--quiet", "--no-tags", "--prune", "--depth=1", "--", &s.location, &refspec], &mirror, token.as_ref().map(|(u, t)| (u.as_str(), t.as_str()))).await?;
+    if fetch || git(st, &["rev-parse", "--verify", "--quiet", "refs/delbert/tracked^{commit}"], &mirror, None).await.is_err() {
+        git(st, &["fetch", "--quiet", "--no-tags", "--prune", "--depth=1", "--", &s.location, &refspec], &mirror, token.as_ref().map(|(u, t)| (u.as_str(), t.as_str()))).await?;
+    }
     let rev = String::from_utf8_lossy(&git(st, &["rev-parse", "--verify", "refs/delbert/tracked^{commit}"], &mirror, None).await?).trim().to_owned();
     let tree = if s.subdir.is_empty() { rev.clone() } else { format!("{rev}:{}", s.subdir) };
     let tar_bytes = git(st, &["archive", "--format=tar", &tree], &mirror, None).await?;
@@ -413,9 +422,9 @@ async fn read_git(st: &AppState, s: &Source) -> Result<Snapshot, String> {
     Ok(Snapshot { revision: rev, files })
 }
 
-async fn read_snapshot(st: &AppState, s: &Source) -> Result<Snapshot, String> {
+pub(crate) async fn read_snapshot(st: &AppState, s: &Source, fetch: bool) -> Result<Snapshot, String> {
     match s.kind.as_str() {
-        "git" => read_git(st, s).await,
+        "git" => read_git(st, s, fetch).await,
         _ => {
             let root: PathBuf = st.content.dir.join(&s.location);
             tokio::task::spawn_blocking(move || read_directory(&root)).await.map_err(|e| e.to_string())?
@@ -424,6 +433,70 @@ async fn read_snapshot(st: &AppState, s: &Source) -> Result<Snapshot, String> {
 }
 
 // --- parsing the layout --------------------------------------------------------------------
+
+/// Name of a variable as a content item: `tenant/NAME`, `group/<group>/NAME`, `agent/<host>/NAME`.
+pub(crate) fn variable_key(scope: &str, target: &str, name: &str) -> String {
+    if target.is_empty() { format!("{scope}/{name}") } else { format!("{scope}/{target}/{name}") }
+}
+
+/// The inverse of [`variable_key`]: scope, target, name.
+fn split_variable_key(key: &str) -> Option<(&str, &str, &str)> {
+    let parts: Vec<&str> = key.split('/').collect();
+    match parts[..] {
+        [scope, name] => Some((scope, "", name)),
+        [scope, target, name] => Some((scope, target, name)),
+        _ => None,
+    }
+}
+
+/// `variables/**.yaml`: `vars` and, optionally, the names among them that are constants.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VarsFile {
+    #[serde(default)]
+    vars: BTreeMap<String, serde_json::Value>,
+    #[serde(default)]
+    locked: Vec<String>,
+}
+
+struct VarItem {
+    scope: &'static str,
+    target: String,
+    name: String,
+    value: serde_json::Value,
+    locked: bool,
+}
+
+/// Where a policy file sits: the folder says who it applies to (docs/REPOSITORY.md).
+enum Scope<'a> {
+    /// `policies/tenant/` or the old flat layout: the policy keeps whatever `target` it declares.
+    Tenant,
+    Group(&'a str),
+    Host(&'a str),
+}
+
+/// Make the target of a policy agree with its folder. A folder that implies a target and a file
+/// that declares another one is an error: the same fact must not live in two places.
+fn apply_scope(yaml: &str, scope: &Scope) -> Result<String, String> {
+    let (key, value) = match scope {
+        Scope::Tenant => return Ok(yaml.to_owned()),
+        Scope::Group(g) => ("groups", *g),
+        Scope::Host(h) => ("agents", *h),
+    };
+    let mut doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(yaml).map_err(|e| e.to_string())?;
+    let spec = doc.get_mut("spec").and_then(serde_yaml_ng::Value::as_mapping_mut).ok_or("the policy has no spec")?;
+    let target = spec.entry("target".into()).or_insert_with(|| serde_yaml_ng::Mapping::new().into());
+    let target = target.as_mapping_mut().ok_or("spec.target must be a mapping")?;
+    for other in ["groups", "agents"] {
+        let declared: Vec<String> = target.get(other).and_then(|v| v.as_sequence()).map(|s| s.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect()).unwrap_or_default();
+        let ok = declared.is_empty() || (other == key && declared == [value]);
+        if !ok {
+            return Err(format!("the folder says this policy applies to {key} [{value}], but spec.target.{other} declares {declared:?}: remove it from the file"));
+        }
+    }
+    target.insert(key.into(), vec![serde_yaml_ng::Value::from(value)].into());
+    serde_yaml_ng::to_string(&doc).map_err(|e| e.to_string())
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -436,63 +509,148 @@ struct TenantContent {
     approval_required: Option<bool>,
     policies: BTreeMap<String, String>,
     artifacts: BTreeMap<String, Vec<u8>>,
+    variables: BTreeMap<String, VarItem>,
 }
 
+/// Top-level names of a tenant's tree; anything else at the root (README, LICENSE, CI files) is ignored.
+const TENANT_TREE: [&str; 6] = ["tenant.yaml", "policies", "files", "templates", "variables", "artifacts"];
+
 /// Interpret the files; every problem is collected so the operator sees them all at once.
+///
+/// Two shapes: a repository for several tenants (`tenants/<tenant>/<tree>`) or, for a source owned
+/// by a tenant, the tree of that tenant at the root. The tree is described in docs/REPOSITORY.md;
+/// the older flat form (`policies/<name>.yaml`, `artifacts/<name>`) is still read.
 fn parse_layout(files: &BTreeMap<String, Vec<u8>>, only_tenant: Option<&str>) -> (BTreeMap<String, TenantContent>, Vec<String>) {
     let mut tenants: BTreeMap<String, TenantContent> = BTreeMap::new();
     let mut errors = Vec::new();
+    let multi = files.keys().any(|p| p.starts_with("tenants/"));
+    let mut told = false;
     for (path, content) in files {
         let parts: Vec<&str> = path.split('/').collect();
-        if parts[0] != "tenants" {
-            continue; // README, LICENSE, CI files... only what is under tenants/ is interpreted
+        // Notes kept next to the content (README.md, .gitkeep to hold an empty folder, *.example) are not content.
+        if parts.last().is_some_and(|f| *f == "README.md" || *f == ".gitkeep" || f.ends_with(".example")) {
+            continue;
         }
-        let (Some(tenant), Some(rest)) = (parts.get(1), parts.get(2..)) else {
-            errors.push(format!("{path}: expected tenants/<tenant>/..."));
+        let (tenant, rest): (&str, &[&str]) = if multi {
+            if parts[0] != "tenants" {
+                continue; // README, LICENSE, CI files... only what is under tenants/ is interpreted
+            }
+            let (Some(tenant), Some(rest)) = (parts.get(1), parts.get(2..)) else {
+                errors.push(format!("{path}: expected tenants/<tenant>/..."));
+                continue;
+            };
+            (tenant, rest)
+        } else if !TENANT_TREE.contains(&parts[0]) {
+            continue;
+        } else if let Some(t) = only_tenant {
+            (t, &parts[..])
+        } else {
+            if !told {
+                errors.push(format!("{path}: a source that belongs to no tenant keeps its content under tenants/<tenant>/"));
+                told = true;
+            }
             continue;
         };
         if let Err(e) = crate::api::check_token(tenant, "tenant") {
             errors.push(format!("{path}: {}", e.1));
             continue;
         }
-        if only_tenant.is_some_and(|t| t != *tenant) {
+        if only_tenant.is_some_and(|t| t != tenant) {
             errors.push(format!("{path}: this source may only contain tenant '{}'", only_tenant.unwrap_or_default()));
             continue;
         }
-        let t = tenants.entry((*tenant).to_owned()).or_default();
-        match rest {
-            ["tenant.yaml"] => match std::str::from_utf8(content).ok().and_then(|s| serde_yaml_ng::from_str::<TenantFile>(s).ok()) {
-                Some(f) => t.approval_required = f.approval_required,
-                None => errors.push(format!("{path}: invalid tenant settings (known: approval_required)")),
-            },
-            ["policies", file] => {
-                let Some(stem) = file.strip_suffix(".yaml").or_else(|| file.strip_suffix(".yml")) else {
-                    errors.push(format!("{path}: policies must be .yaml files"));
-                    continue;
-                };
-                match std::str::from_utf8(content) {
-                    Ok(yaml) => match crate::api::validate_policy(yaml, tenant) {
-                        Ok(name) if name == stem => {
-                            t.policies.insert(name, yaml.to_owned());
-                        }
-                        Ok(name) => errors.push(format!("{path}: metadata.name is '{name}', the file must be called {name}.yaml")),
-                        Err(e) => errors.push(format!("{path}: {}", e.1)),
-                    },
-                    Err(_) => errors.push(format!("{path}: not UTF-8")),
-                }
-            }
-            ["artifacts", name] => match check_name(name, "artifact") {
-                Ok(()) if content.len() <= crate::artifacts::MAX_ARTIFACT_BYTES => {
-                    t.artifacts.insert((*name).to_owned(), content.clone());
-                }
-                Ok(()) => errors.push(format!("{path}: artifact too large")),
-                Err(e) => errors.push(format!("{path}: {}", e.1)),
-            },
-            _ => errors.push(format!("{path}: not part of the layout (tenant.yaml, policies/<name>.yaml, artifacts/<name>)")),
+        let t = tenants.entry(tenant.to_owned()).or_default();
+        if let Err(e) = parse_tenant_file(tenant, path, rest, content, t) {
+            errors.push(format!("{path}: {e}"));
         }
     }
     (tenants, errors)
 }
+
+fn utf8(content: &[u8]) -> Result<&str, String> {
+    std::str::from_utf8(content).map_err(|_| "not UTF-8".to_owned())
+}
+
+fn yaml_stem<'a>(file: &'a str, what: &str) -> Result<&'a str, String> {
+    file.strip_suffix(".yaml").or_else(|| file.strip_suffix(".yml")).ok_or_else(|| format!("{what} must be .yaml files"))
+}
+
+fn add_policy(t: &mut TenantContent, tenant: &str, file: &str, content: &[u8], scope: Scope) -> Result<(), String> {
+    let stem = yaml_stem(file, "policies")?;
+    let yaml = apply_scope(utf8(content)?, &scope)?;
+    let name = crate::api::validate_policy(&yaml, tenant).map_err(|e| e.1)?;
+    if name != stem {
+        return Err(format!("metadata.name is '{name}', the file must be called {name}.yaml"));
+    }
+    if t.policies.insert(name.clone(), yaml).is_some() {
+        return Err(format!("policy '{name}' is declared twice (names are unique in a tenant, whatever the folder)"));
+    }
+    Ok(())
+}
+
+fn add_artifact(t: &mut TenantContent, name: &str, content: &[u8]) -> Result<(), String> {
+    check_name(name, "artifact").map_err(|e| e.1)?;
+    if content.len() > crate::artifacts::MAX_ARTIFACT_BYTES {
+        return Err("artifact too large".into());
+    }
+    // Files and templates are both artifacts: one name, one place.
+    if t.artifacts.insert(name.to_owned(), content.to_vec()).is_some() {
+        return Err(format!("artifact '{name}' is declared twice (files/, templates/ and artifacts/ share their names)"));
+    }
+    Ok(())
+}
+
+fn add_variables(t: &mut TenantContent, scope: &'static str, target: &str, content: &[u8]) -> Result<(), String> {
+    let file: VarsFile = serde_yaml_ng::from_str(utf8(content)?).map_err(|e| format!("invalid variables file (known keys: vars, locked): {e}"))?;
+    if let Some(unknown) = file.locked.iter().find(|n| !file.vars.contains_key(*n)) {
+        return Err(format!("'{unknown}' is listed in locked but has no value"));
+    }
+    for (name, value) in file.vars {
+        crate::variables::check_var_name(&name).map_err(|e| e.1)?;
+        crate::variables::check_value(&value).map_err(|e| e.1)?;
+        let locked = file.locked.contains(&name);
+        t.variables.insert(crate::content::variable_key(scope, target, &name), VarItem { scope, target: target.to_owned(), name, value, locked });
+    }
+    Ok(())
+}
+
+fn parse_tenant_file(tenant: &str, path: &str, rest: &[&str], content: &[u8], t: &mut TenantContent) -> Result<(), String> {
+    match rest {
+        ["tenant.yaml"] => {
+            let f: TenantFile = serde_yaml_ng::from_str(utf8(content)?).map_err(|_| "invalid tenant settings (known: approval_required)".to_owned())?;
+            t.approval_required = f.approval_required;
+            Ok(())
+        }
+        // Policies: the folder says where they apply.
+        ["policies", "tenant", file] | ["policies", file] => add_policy(t, tenant, file, content, Scope::Tenant),
+        ["policies", "groups", group, file] => {
+            check_name(group, "group").map_err(|e| e.1)?;
+            add_policy(t, tenant, file, content, Scope::Group(group))
+        }
+        ["policies", "hosts", host, file] => {
+            check_name(host, "host").map_err(|e| e.1)?;
+            add_policy(t, tenant, file, content, Scope::Host(host))
+        }
+        // Files and templates are artifacts; per group and per host they need layering that does not exist yet.
+        ["files" | "templates", "tenant", name] | ["artifacts", name] => add_artifact(t, name, content),
+        ["files" | "templates", "groups" | "hosts", ..] => Err("files and templates per group or host are not supported yet (planned: docs/REPOSITORY.md); keep them under tenant/".into()),
+        ["variables", "tenant.yaml"] => add_variables(t, "tenant", "", content),
+        ["variables", "groups", file] => {
+            let group = yaml_stem(file, "variables")?;
+            check_name(group, "group").map_err(|e| e.1)?;
+            add_variables(t, "group", group, content)
+        }
+        ["variables", "hosts", file] => {
+            let host = yaml_stem(file, "variables")?;
+            check_name(host, "host").map_err(|e| e.1)?;
+            add_variables(t, "agent", host, content)
+        }
+        _ => Err(format!("not part of the layout ({path}); see docs/REPOSITORY.md")),
+    }
+}
+
+mod edit;
+pub use edit::*;
 
 // --- sync ----------------------------------------------------------------------------------
 
@@ -560,7 +718,7 @@ async fn finish(st: &AppState, s: &Source, revision: Option<&str>, error: Option
 }
 
 async fn sync_locked(st: &AppState, s: &Source, actor: &str) -> ApiResult<SyncOut> {
-    let snap = match read_snapshot(st, s).await {
+    let snap = match read_snapshot(st, s, true).await {
         Ok(snap) => snap,
         Err(e) => {
             tracing::warn!("content source '{}': {e}", s.name);
@@ -599,6 +757,7 @@ async fn sync_locked(st: &AppState, s: &Source, actor: &str) -> ApiResult<SyncOu
             let present = match kind.as_str() {
                 "policy" => c.policies.contains_key(name),
                 "artifact" => c.artifacts.contains_key(name),
+                "variable" => c.variables.contains_key(name),
                 _ => false,
             };
             if present {
@@ -675,6 +834,37 @@ async fn sync_locked(st: &AppState, s: &Source, actor: &str) -> ApiResult<SyncOu
                 Err(e) => errors.push(format!("artifact {tenant}/{name}: {}", e.1)),
             }
         }
+        // Variables before policies: a policy that is live at once should see them.
+        let mut variables_changed = false;
+        for (key, v) in &c.variables {
+            let h = Sha256::digest(serde_json::to_vec(&json!([v.value, v.locked])).unwrap_or_default()).to_vec();
+            let before = previous.get(&(tid, "variable".into(), key.clone()));
+            if before == Some(&h) {
+                hashes.push((tid, "variable", key.clone(), h));
+                continue;
+            }
+            if v.scope == "agent" {
+                let known: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM agents WHERE tenant_id = $1 AND name = $2)").bind(tid).bind(&v.target).fetch_one(&st.pool).await?;
+                if !known {
+                    errors.push(format!("variable {tenant}/{key}: agent '{}' does not exist (enroll it first)", v.target));
+                    continue;
+                }
+            }
+            let old: Option<(serde_json::Value, bool)> = sqlx::query_as("SELECT value, locked FROM variables WHERE scope = $1 AND tenant_id = $2 AND target = $3 AND name = $4").bind(v.scope).bind(tid).bind(&v.target).bind(&v.name).fetch_optional(&st.pool).await?;
+            let body = crate::variables::NewVariable { value: v.value.clone(), locked: v.locked };
+            match crate::variables::store(st, &actor_name, Some(tid), v.scope, &v.target, &v.name, &body).await {
+                Ok(_) => {
+                    variables_changed = true;
+                    let diff = format!("{}+{}{}\n", old.as_ref().map_or(String::new(), |(o, l)| format!("-{o}{}\n", if *l { " (constant)" } else { "" })), v.value, if v.locked { " (constant)" } else { "" });
+                    changes.push(ChangeOut { tenant: tenant.clone(), kind: "variable".into(), name: key.clone(), change: if old.is_some() { "changed" } else { "added" }.into(), version: None, applied: true, diff: Some(diff) });
+                    hashes.push((tid, "variable", key.clone(), h));
+                }
+                Err(e) => errors.push(format!("variable {tenant}/{key}: {}", e.1)),
+            }
+        }
+        if variables_changed {
+            crate::api::notify_tenant(st, tenant, tid).await;
+        }
         for (name, yaml) in &c.policies {
             let h = Sha256::digest(yaml.as_bytes()).to_vec();
             let before = previous.get(&(tid, "policy".into(), name.clone()));
@@ -702,6 +892,17 @@ async fn sync_locked(st: &AppState, s: &Source, actor: &str) -> ApiResult<SyncOu
             let n = sqlx::query("UPDATE policies SET active = false WHERE tenant_id = $1 AND name = $2 AND active").bind(tid).bind(name).execute(&st.pool).await?.rows_affected();
             applied = n > 0;
             if applied {
+                crate::api::notify_tenant(st, &tenant, *tid).await;
+            }
+        }
+        if s.prune && kind == "variable" {
+            if let Some((scope, target, var)) = split_variable_key(name) {
+                // Already gone is fine: the goal is that it does not exist.
+                match crate::variables::remove(st, &actor_name, Some(*tid), scope, target, var).await {
+                    Ok(_) => applied = true,
+                    Err(e) if e.0 == StatusCode::NOT_FOUND => applied = true,
+                    Err(e) => errors.push(format!("variable {tenant}/{name}: {}", e.1)),
+                }
                 crate::api::notify_tenant(st, &tenant, *tid).await;
             }
         }

@@ -82,8 +82,12 @@ pub struct Spec {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Target {
+    /// Agents in any of these groups. With `agents` empty too: every agent of the tenant.
     #[serde(default)]
     pub groups: Vec<String>,
+    /// Agents with these names (a policy for one host).
+    #[serde(default)]
+    pub agents: Vec<String>,
     /// Restricted expression over `facts` and `vars`.
     #[serde(default)]
     pub when: Option<String>,

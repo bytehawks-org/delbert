@@ -64,6 +64,7 @@ This file extends and integrates the user-scoped CLAUDE.md file.
 - docs/STATUS.md (current state and handoff: read it first in a new session)
 - docs/ROTATION.md (key and certificate rotation)
 - docs/REMEDIATION.md (orphaned files, remediation and rollback)
+- docs/REPOSITORY.md (repository layout and the online editor)
 - docs/CONTENT.md (content sources: directory / git)
 - docs/DESIDERATA.md
 - docs/SCOPE.md

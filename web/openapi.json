@@ -83,6 +83,110 @@
         }
       }
     },
+    "/v1/agent/{tenant}/{agent}/deliveries/{name}": {
+      "get": {
+        "tags": [
+          "deliveries"
+        ],
+        "summary": "Bundle fetch: `Authorization: Delbert-Agent <base64 of the proof JSON>`, proof kind\n`delivery` over the delivery name.",
+        "operationId": "fetch",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryBundle"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": "A secret or file of the delivery is missing"
+          },
+          "422": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/v1/agent/{tenant}/{agent}/events": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "The same batch as the NATS subject `delbert.event.<t>.<a>`, for agents that have no bus\nconnection (the Kubernetes Operator): body `{proof, events}`, proof kind `event`.",
+        "operationId": "post",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "`{\"stored\": n}`"
+          },
+          "401": {
+            "description": "Invalid proof or unknown agent"
+          }
+        }
+      }
+    },
     "/v1/audit": {
       "get": {
         "tags": [
@@ -720,6 +824,160 @@
         ]
       }
     },
+    "/v1/content/sources/{name}/commits": {
+      "post": {
+        "tags": [
+          "content"
+        ],
+        "description": "Git: pushes the change as a new branch for review; the tracked branch is never written. Directory: writes the files in place. The source must be `writable`. The result is validated first.",
+        "operationId": "commit",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommitBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": "Read-only source, or nothing changed"
+          },
+          "422": {
+            "description": ""
+          },
+          "502": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/content/sources/{name}/file": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "operationId": "file",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/content/sources/{name}/files": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "operationId": "tree",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "refresh",
+            "in": "query",
+            "description": "Ask the remote first (default: what the last sync left in the mirror).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "502": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/content/sources/{name}/snapshots": {
       "get": {
         "tags": [
@@ -843,6 +1101,58 @@
           },
           "502": {
             "description": "Cannot read the source"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/content/sources/{name}/validate": {
+      "post": {
+        "tags": [
+          "content"
+        ],
+        "description": "Checks what the repository would look like after the change, with the parser the sync uses. Writes nothing.",
+        "operationId": "validate",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
           }
         },
         "security": [
@@ -2555,12 +2865,106 @@
         ]
       }
     },
+    "/v1/tenants/{tenant}/agents/{agent}/remediation/force": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Decide that the agent applies its quarantined version again.",
+        "operationId": "force",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": "The agent is not quarantined at that version"
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Withdraw a force the agent has not obeyed yet.",
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/tenants/{tenant}/agents/{agent}/render": {
       "get": {
         "tags": [
           "variables"
         ],
-        "summary": "Render every template resource of the agent's effective policy the way the agent will, except\nthat secrets are masked and the host facts are placeholders (the Core does not know them). The\nCore only renders text here; it never applies anything.",
+        "summary": "Render every template resource of the agent's effective policy the way the agent will, except\nthat secrets are masked and the facts that stay on the host (machine id, custom facts) are placeholders; the shared facts are those the agent reported. The\nCore only renders text here; it never applies anything.",
         "operationId": "render",
         "parameters": [
           {
@@ -2849,6 +3253,183 @@
             "description": ""
           },
           "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/tenants/{tenant}/deliveries": {
+      "get": {
+        "tags": [
+          "deliveries"
+        ],
+        "operationId": "list",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeliveryOut"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/v1/tenants/{tenant}/deliveries/{name}": {
+      "get": {
+        "tags": [
+          "deliveries"
+        ],
+        "operationId": "get",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "deliveries"
+        ],
+        "operationId": "put",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewDelivery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "404": {
+            "description": "Unknown tenant or agent"
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "deliveries"
+        ],
+        "operationId": "delete",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
             "description": ""
           }
         },
@@ -4243,7 +4824,8 @@
         "required": [
           "name",
           "groups",
-          "effective_version"
+          "effective_version",
+          "force_pending"
         ],
         "properties": {
           "compliant": {
@@ -4256,6 +4838,21 @@
             "type": "integer",
             "format": "int64",
             "description": "Version of the last compiled policy for this agent."
+          },
+          "facts": {
+            "description": "Host facts the agent reported about itself (OS family, distribution, version, kernel,\nhostname, domain, IPs): informational, never used for a decision. Absent until reported."
+          },
+          "facts_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix seconds when the facts were last received."
+          },
+          "force_pending": {
+            "type": "boolean",
+            "description": "A force (release of the quarantined version) was decided and the agent has not obeyed it yet."
           },
           "groups": {
             "type": "array",
@@ -4272,6 +4869,9 @@
               "null"
             ],
             "description": "Proxy that serves this agent, if it enrolled through one."
+          },
+          "remediation": {
+            "description": "Present while the agent is inconsistent with its policy: a failed update was rolled back\n(or its services stopped) and the failed version is quarantined. `state`, `failed_version`,\n`running_version`, `resource`, `reason`, `at`, `steps`, `forced_kill`."
           },
           "reported_at": {
             "type": [
@@ -4379,7 +4979,7 @@
           },
           "state": {
             "type": "string",
-            "description": "`drifted` (reported, not compliant) or `silent` (never reported, or not for a while)."
+            "description": "`inconsistent` (rolled back or stopped, see remediation), `drifted` (reported, not compliant) or `silent` (never reported, or not for a while)."
           },
           "tenant": {
             "type": "string"
@@ -4597,6 +5197,20 @@
           }
         }
       },
+      "ChangeSet": {
+        "type": "object",
+        "required": [
+          "changes"
+        ],
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileChange"
+            }
+          }
+        }
+      },
       "Comment": {
         "type": "object",
         "properties": {
@@ -4605,6 +5219,54 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "CommitBody": {
+        "type": "object",
+        "required": [
+          "message",
+          "changes"
+        ],
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileChange"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "CommitOut": {
+        "type": "object",
+        "required": [
+          "files",
+          "base_revision"
+        ],
+        "properties": {
+          "base_revision": {
+            "type": "string",
+            "description": "Revision the change was made on."
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The branch that was pushed (git sources); absent for a directory."
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
@@ -4626,6 +5288,91 @@
             }
           },
           "what": {
+            "type": "string"
+          }
+        }
+      },
+      "DeliveryBundle": {
+        "type": "object",
+        "description": "What the Operator receives.",
+        "required": [
+          "version",
+          "variables",
+          "files",
+          "sensitive"
+        ],
+        "properties": {
+          "files": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "sensitive": {
+            "type": "object",
+            "description": "Secret name → base64 of the age ciphertext for the fetching identity.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds of the latest change among the inputs. Informational: a removal is not\nreflected, so decide on changes by comparing content, not versions."
+          }
+        }
+      },
+      "DeliveryOut": {
+        "type": "object",
+        "required": [
+          "name",
+          "agent",
+          "secrets",
+          "files",
+          "updated_by",
+          "updated_at"
+        ],
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "Identity allowed to fetch the bundle."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "secrets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds."
+          },
+          "updated_by": {
             "type": "string"
           }
         }
@@ -4794,6 +5541,90 @@
           "cookie": {
             "type": "boolean",
             "description": "Also set the session cookie and return a CSRF token."
+          }
+        }
+      },
+      "FileChange": {
+        "type": "object",
+        "description": "One file of a change set: new content (text, or base64 for binary) or a deletion.",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content_b64": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delete": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "FileEntry": {
+        "type": "object",
+        "required": [
+          "path",
+          "size"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "FileOut": {
+        "type": "object",
+        "required": [
+          "path",
+          "revision",
+          "encoding",
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "encoding": {
+            "type": "string",
+            "description": "`utf8`, or `base64` for content that is not text."
+          },
+          "path": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          }
+        }
+      },
+      "ForceBody": {
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "note": {
+            "type": "string",
+            "description": "Why: what was corrected on the host. Goes to the audit trail."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The quarantined version to apply again (the `failed_version` of the agent's `remediation`)."
           }
         }
       },
@@ -5038,6 +5869,31 @@
           }
         }
       },
+      "NewDelivery": {
+        "type": "object",
+        "required": [
+          "agent"
+        ],
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "The enrolled agent (the Operator) that fetches this delivery."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Artifact names delivered as files."
+          },
+          "secrets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "NewEnrollmentKey": {
         "type": "object",
         "properties": {
@@ -5182,6 +6038,7 @@
           "compliant",
           "drifted",
           "silent",
+          "inconsistent",
           "attention"
         ],
         "properties": {
@@ -5194,7 +6051,7 @@
             "items": {
               "$ref": "#/components/schemas/AttentionAgent"
             },
-            "description": "Drifted agents first, then the silent ones (longest silent first); at most 20."
+            "description": "Inconsistent and drifted agents first, then the silent ones (longest silent first); at most 20."
           },
           "compliant": {
             "type": "integer",
@@ -5203,6 +6060,11 @@
           "drifted": {
             "type": "integer",
             "format": "int64"
+          },
+          "inconsistent": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Of the drifted: agents that rolled back or stopped after a failed update and wait for a person."
           },
           "silent": {
             "type": "integer",
@@ -6062,6 +6924,13 @@
               "null"
             ],
             "description": "Make the source tenant-owned (it can only touch that tenant). Ignored on update."
+          },
+          "writable": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Allow editing from the console. The token must be allowed to push."
           }
         }
       },
@@ -6075,6 +6944,7 @@
           "subdir",
           "has_token",
           "prune",
+          "writable",
           "enabled"
         ],
         "properties": {
@@ -6140,6 +7010,10 @@
               "null"
             ],
             "description": "Owning tenant; absent for a platform source."
+          },
+          "writable": {
+            "type": "boolean",
+            "description": "The console may edit it (commits go to a new branch of a git remote)."
           }
         }
       },
@@ -6313,6 +7187,36 @@
           }
         }
       },
+      "TreeOut": {
+        "type": "object",
+        "required": [
+          "revision",
+          "writable",
+          "files"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileEntry"
+            }
+          },
+          "revision": {
+            "type": "string",
+            "description": "Commit id (git) or tree hash (directory) the list was read from."
+          },
+          "tenant": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Owning tenant of the source; absent for a platform source."
+          },
+          "writable": {
+            "type": "boolean"
+          }
+        }
+      },
       "UserOut": {
         "type": "object",
         "required": [
@@ -6359,6 +7263,25 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "ValidateOut": {
+        "type": "object",
+        "required": [
+          "ok",
+          "errors"
+        ],
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Problems the change would introduce, naming the files."
+          },
+          "ok": {
+            "type": "boolean"
           }
         }
       },
@@ -6507,6 +7430,9 @@
     },
     {
       "name": "agents"
+    },
+    {
+      "name": "deliveries"
     },
     {
       "name": "enrollment"

@@ -26,6 +26,7 @@ export default async function Content() {
           tenants={(tn ?? []).map((x) => x.name)}
           canWrite={canAnywhere(me, "content:write")}
           canSync={canAnywhere(me, "content:sync")}
+          canEdit={canAnywhere(me, "content:read")}
         />
       ) : (
         <Notice>{t("denied")}</Notice>

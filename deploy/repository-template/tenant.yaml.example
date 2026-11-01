@@ -1,0 +1,2 @@
+# Rename to tenant.yaml. Four-eyes review for every policy version of this tenant:
+approval_required: true

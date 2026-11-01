@@ -14,8 +14,11 @@ export function proxy(request: NextRequest) {
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
     `style-src 'self' 'nonce-${nonce}'${dev ? " 'unsafe-inline'" : ""}`,
+    // The code editor (Monaco, served from this site) sets inline style attributes; attributes only, no inline <style> element is allowed.
+    "style-src-attr 'unsafe-inline'",
     "img-src 'self' data:",
-    "font-src 'self'",
+    // Monaco's icon font is embedded in its stylesheet as a data: URI.
+    "font-src 'self' data:",
     "connect-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
