@@ -86,7 +86,7 @@ impl FakeRunner {
             .map(|(p, code, out)| {
                 (
                     p.iter().map(|s| s.to_string()).collect(),
-                    CmdOutput { code: Some(code), stdout: out.into(), stderr: String::new() },
+                    CmdOutput { code: Some(code), stdout: out.into(), stderr: if code == 0 { String::new() } else { out.into() } },
                 )
             })
             .collect();

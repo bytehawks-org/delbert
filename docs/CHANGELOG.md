@@ -2,6 +2,11 @@
 
 ## 2026-11-01
 
+### Containers: the `container` verb
+- **Policy:** `container` (name, image, state running/stopped/absent, ports, volumes, `env`, `env_from`, `secret_from`, restart, command, engine); validated at save, nothing privileged can be declared, secrets mounted must be listed in `spec.secrets`.
+- **Agent** (`containers.rs`): Podman or Docker through an argv; configuration hash in a label (HMAC keyed from the agent identity) and recreation on change; variables from the layered `vars`, secrets as read-only files under `/run/delbert/secrets` (never in argv or `inspect`); foreign containers refused; `Ctx.secrets_dir`.
+- Tests: unit tests with a scripted engine; `tests/containers.rs` against a real Podman 5.7 (ignored by default, [TESTING.md](TESTING.md)). Docker not run.
+
 ### Remediation and rollback to the last known good
 - **Policy:** `remediation` on service resources (`verify`, `on_failure` none/stop/rollback, `stop` with an optional forced kill, `start`); validated at save.
 - **Agent** (`remediation.rs`): verification after a change, clean stop with deadline (SIGKILL only if declared), atomic whole-policy rollback to the last known good (`policy.lkg.jws`, verified as of its issue time), quarantine of the failed version, orphans removed only after verification. New events: `policy.rolled_back`, `remediation.failed|stopped|skipped`, `service.stop_forced`.

@@ -35,6 +35,14 @@ pub fn validate(policy: &Policy) -> Result<(), Vec<ValidationError>> {
     if policy.api_version != API_VERSION {
         errors.push(ValidationError::ApiVersion(policy.api_version.clone()));
     }
+    // Secrets mounted into containers must be delivered: they have to be listed.
+    for r in &policy.spec.resources {
+        for m in r.container.iter().flat_map(|c| &c.secret_from) {
+            if !policy.spec.secrets.contains(&m.secret) {
+                errors.push(ValidationError::Field { id: r.id.clone(), reason: format!("secret '{}' is not listed in spec.secrets", m.secret) });
+            }
+        }
+    }
     if let Err(e) = validate_resources(&policy.spec.resources) {
         errors.extend(e);
     }
@@ -127,6 +135,9 @@ pub fn clash(a: &Resource, b: &Resource) -> Option<String> {
     if let (Some(x), Some(y)) = (&a.service, &b.service) {
         return (x.name == y.name).then(|| format!("service '{}'", x.name));
     }
+    if let (Some(x), Some(y)) = (&a.container, &b.container) {
+        return (x.name == y.name).then(|| format!("container '{}'", x.name));
+    }
     let ((pa, ra), (pb, rb)) = (path_role(a)?, path_role(b)?);
     let conflict = pa == pb
         && match (ra, rb) {
@@ -144,7 +155,69 @@ fn field_err(r: &Resource, reason: impl Into<String>) -> ValidationError {
 /// Longest `when` expression.
 const MAX_WHEN: usize = 256;
 
+fn check_container(r: &Resource, c: &crate::ContainerSpec, errors: &mut Vec<ValidationError>) {
+    use regex::Regex;
+    let ident = Regex::new(r"^[A-Za-z_][A-Za-z0-9_]*$").expect("static");
+    let name = Regex::new(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$").expect("static");
+    let port = Regex::new(r"^(([0-9]{1,3}(\.[0-9]{1,3}){3}|\[[0-9A-Fa-f:]+\]):)?([0-9]{1,5}):([0-9]{1,5})(/(tcp|udp))?$").expect("static");
+    let in_range = |p: &str| p.parse::<u32>().is_ok_and(|n| (1..=65535).contains(&n));
+    let absolute = |p: &str| p.starts_with('/') && !p.contains('\0') && !p.split('/').any(|s| s == "..");
+    let mut bad = |reason: String| errors.push(field_err(r, reason));
+
+    if !name.is_match(&c.name) {
+        bad(format!("invalid container name '{}'", c.name));
+    }
+    match (&c.image, c.state) {
+        (None, s) if s != crate::ContainerState::Absent => bad("'image' is required unless state is absent".into()),
+        (Some(i), _) if i.is_empty() || i.len() > 255 || i.starts_with('-') || i.chars().any(|ch| ch.is_whitespace() || ch.is_control()) => bad(format!("invalid image '{i}'")),
+        _ => {}
+    }
+    for p in &c.ports {
+        match port.captures(p) {
+            Some(m) if in_range(&m[4]) && in_range(&m[5]) => {}
+            _ => bad(format!("invalid port mapping '{p}' (expected [ip:]host:container[/tcp|udp])")),
+        }
+    }
+    for v in &c.volumes {
+        let parts: Vec<&str> = v.split(':').collect();
+        let ok = matches!(parts.len(), 2 | 3) && absolute(parts[0]) && absolute(parts[1]) && parts.get(2).is_none_or(|m| matches!(*m, "ro" | "rw"));
+        if !ok {
+            bad(format!("invalid volume '{v}' (expected /host:/container[:ro|rw], absolute paths without '..')"));
+        }
+    }
+    for (k, v) in &c.env {
+        if !ident.is_match(k) || v.contains(['\0', '\n']) {
+            bad(format!("invalid environment variable '{k}'"));
+        }
+    }
+    if c.command.iter().any(|a| a.contains('\0')) {
+        bad("'command' arguments cannot contain NUL".into());
+    }
+    for k in &c.env_from {
+        if !ident.is_match(k) {
+            bad(format!("invalid variable name '{k}' in env_from"));
+        } else if c.env.contains_key(k) {
+            bad(format!("'{k}' is both in env and in env_from"));
+        }
+    }
+    let mut paths = std::collections::HashSet::new();
+    for m in &c.secret_from {
+        if !valid_name(&m.secret) {
+            bad(format!("invalid secret name '{}'", m.secret));
+        }
+        if !absolute(&m.path) || !paths.insert(m.path.as_str()) {
+            bad(format!("secret path '{}' must be absolute, without '..', and unique", m.path));
+        }
+        if m.mode.as_deref().is_some_and(|mode| !((3..=4).contains(&mode.len()) && mode.chars().all(|ch| ('0'..='7').contains(&ch)))) {
+            bad(format!("invalid mode for secret '{}'", m.secret));
+        }
+    }
+}
+
 fn check_fields(r: &Resource, errors: &mut Vec<ValidationError>) {
+    if let Some(c) = &r.container {
+        check_container(r, c, errors);
+    }
     if let Some(rem) = &r.remediation {
         const MAX_SECONDS: u32 = 3600;
         if r.service.is_none() {
@@ -396,5 +469,40 @@ spec:
         let bad = VALID.replace("/etc/nginx/nginx.conf", "etc/nginx.conf").replace("0644", "0999");
         let e = errors(&bad);
         assert_eq!(e.iter().filter(|e| matches!(e, ValidationError::Field { .. })).count(), 2);
+    }
+
+    fn container_policy(container: &str, secrets: &str) -> String {
+        format!("apiVersion: delbert/v1\nkind: Policy\nmetadata: {{ name: c, tenant: example }}\nspec:\n  secrets: [{secrets}]\n  resources:\n    - id: app\n      container:\n{container}")
+    }
+
+    const GOOD: &str = "        name: app\n        image: registry.example.com/app@sha256:abc\n        ports: [\"8080:80\", \"127.0.0.1:9090:90/tcp\"]\n        volumes: [\"/srv/app:/data:ro\"]\n        env: { MODE: prod }\n        env_from: [LOG_LEVEL]\n        secret_from: [{ secret: db, path: /run/secrets/db, mode: \"0440\" }]\n        restart: unless-stopped\n";
+
+    #[test]
+    fn a_container_is_validated_and_nothing_privileged_can_be_declared() {
+        assert!(from_yaml(&container_policy(GOOD, "db")).is_ok());
+        let bad = |what: &str, with: &str| {
+            let yaml = container_policy(&GOOD.replace(what, with), "db");
+            assert!(errors(&yaml).iter().any(|e| matches!(e, ValidationError::Field { .. })), "accepted: {with}");
+        };
+        bad("name: app", "name: \"-rm\"");
+        bad("image: registry.example.com/app@sha256:abc", "image: \"--privileged\"");
+        bad("\"8080:80\"", "\"99999:80\"");
+        bad("\"8080:80\"", "\"8080\"");
+        bad("/srv/app:/data:ro", "../etc:/data");
+        bad("/srv/app:/data:ro", "/srv/app:/data:suid");
+        bad("MODE: prod", "\"BAD NAME\": x");
+        bad("env_from: [LOG_LEVEL]", "env_from: [MODE]");
+        bad("path: /run/secrets/db", "path: secrets/db");
+        bad("\"0440\"", "\"0999\"");
+        // Capabilities, devices, host networking do not exist in the schema.
+        let yaml = container_policy(&format!("{GOOD}        privileged: true\n"), "db");
+        assert!(from_yaml(&yaml).is_err());
+        // A secret has to be listed to be delivered.
+        let yaml = container_policy(GOOD, "");
+        assert!(errors(&yaml).iter().any(|e| e.to_string().contains("not listed in spec.secrets")));
+        // An image is needed, except to remove the container.
+        let no_image = GOOD.replace("        image: registry.example.com/app@sha256:abc\n", "");
+        assert!(errors(&container_policy(&no_image, "db")).iter().any(|e| matches!(e, ValidationError::Field { .. })));
+        assert!(from_yaml(&container_policy("        name: app\n        state: absent\n", "")).is_ok());
     }
 }

@@ -14,6 +14,16 @@ podman run --rm --network delbert_default \
 - Integration tests (need PostgreSQL; `sqlx::test` creates a database per test): API, authentication, RBAC, audit chain, least-privilege DB role.
 - NATS test (needs `NATS_URL`, skipped otherwise): notification, signed policy pull, reports.
 
+## The `container` verb against a real engine
+
+Ignored by default. Needs `podman` and a local `docker.io/library/debian:13-slim`; rootless, touches only `delbert-test-*` containers and a temporary secrets directory (about a minute, most of it waiting for `sleep` to stop):
+
+```bash
+DELBERT_TEST_PODMAN=1 cargo test -p delbert-agent --test containers -- --ignored --nocapture
+```
+
+Verified on 2026-11-01 with Podman 5.7.0: created from variables and a secret file (not in `inspect`), recreated when a variable changes and when the secret rotates, repaired when the secret directory vanishes, stopped, removed with its secret files. Docker is not covered.
+
 ## Server + agents in containers (end to end, mutual TLS)
 
 `compose.e2e.yaml` runs a Core "server" (PostgreSQL 17, NATS with mTLS and authorization callout, `delbert-core` image) and two agent containers that act as managed hosts (an agent changes its own container). Everything is encrypted and authenticated with a throw-away CA.

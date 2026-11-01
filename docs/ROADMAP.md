@@ -76,7 +76,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Operator: leader election (today one replica, Recreate strategy) | to-do | 2026-11-01 |
 | Operator: push notification instead of polling; several tenants per Operator | to-do | 2026-11-01 |
 | Operator: Deployment/RBAC manifests, etcd encryption at rest documented as prerequisite, optional External Secrets backend | to-do | 2026-11-01 |
-| Containers (Podman/Docker): `env_from` / `secret_from` on the `container` resource | to-do | 2026-11-01 |
+| Containers (Podman/Docker): `container` verb with `env_from` / `secret_from`, recreation on change, secrets as files; real Podman test | complete | 2026-11-01 |
+| Containers: run against Docker; `container_volume` / `container_network`; registry credentials; healthchecks; Windows | to-do | 2026-11-01 |
 | Facts: read-only collectors, shared subset reported to the Core every 15 min or on change, local facts and `facts.d` on the host; not a CMDB (decision 2026-11-01) | complete | 2026-11-01 |
 | Facts: console page/filter on the reported facts (the API returns them; `web/` schema not regenerated); Windows collectors; more collectors (init system, package manager, container engine) | to-do | 2026-11-01 |
 | Per-resource `when` evaluated on the agent over facts and variables (`target.when` for a whole policy stays refused: groups cover it) | complete | 2026-11-01 |

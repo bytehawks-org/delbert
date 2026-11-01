@@ -23,6 +23,10 @@ pub struct Ctx {
     pub secrets: BTreeMap<String, String>,
     /// Expected SHA-256 (hex) of artifacts, by name; present when the policy pins them.
     pub artifact_hashes: BTreeMap<String, String>,
+    /// Key of the keyed hash that labels containers (see `containers.rs`); derived from the agent's identity.
+    pub hash_key: Vec<u8>,
+    /// Where container secret files are written (tmpfs on Linux); see `containers.rs`.
+    pub secrets_dir: String,
     /// Directory of custom facts (`facts.d`); empty path = none.
     pub facts_dir: PathBuf,
     /// How verbs run system tools. Commands are refused when `root` is not `/`.
@@ -32,7 +36,7 @@ pub struct Ctx {
 impl Ctx {
     pub fn new(root: PathBuf, artifacts: PathBuf) -> Self {
         let runner: Arc<dyn Runner> = if root == Path::new("/") { Arc::new(SystemRunner) } else { Arc::new(SandboxRunner) };
-        Ctx { root, artifacts, vars: BTreeMap::new(), secrets: BTreeMap::new(), artifact_hashes: BTreeMap::new(), facts_dir: PathBuf::new(), runner }
+        Ctx { root, artifacts, vars: BTreeMap::new(), secrets: BTreeMap::new(), artifact_hashes: BTreeMap::new(), facts_dir: PathBuf::new(), hash_key: Vec::new(), secrets_dir: "/run/delbert/secrets".into(), runner }
     }
 
     /// Map an absolute policy path into the root.
@@ -97,6 +101,8 @@ fn subject(r: &Resource) -> String {
         &x.name
     } else if let Some(x) = &r.service {
         &x.name
+    } else if let Some(x) = &r.container {
+        &x.name
     } else {
         return r.id.clone();
     };
@@ -134,6 +140,8 @@ fn verb_of(r: &Resource) -> Option<&dyn Verb> {
     } else if let Some(v) = &r.package {
         Some(v)
     } else if let Some(v) = &r.service {
+        Some(v)
+    } else if let Some(v) = &r.container {
         Some(v)
     } else {
         None

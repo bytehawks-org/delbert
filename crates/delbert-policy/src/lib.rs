@@ -130,6 +130,8 @@ pub struct Resource {
     pub package: Option<PackageSpec>,
     #[serde(default)]
     pub service: Option<ServiceSpec>,
+    #[serde(default)]
+    pub container: Option<ContainerSpec>,
 }
 
 impl Resource {
@@ -142,6 +144,7 @@ impl Resource {
             ("line_in_file", self.line_in_file.is_some()),
             ("package", self.package.is_some()),
             ("service", self.service.is_some()),
+            ("container", self.container.is_some()),
         ]
         .into_iter()
         .filter_map(|(name, set)| set.then_some(name))
@@ -358,4 +361,99 @@ pub struct ServiceSpec {
     pub name: String,
     pub state: Option<ServiceState>,
     pub enabled: Option<bool>,
+}
+
+// --- container -------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ContainerState {
+    /// Created and running (default).
+    #[default]
+    Running,
+    /// Created, not running.
+    Stopped,
+    /// Removed, with its secret files.
+    Absent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum RestartPolicy {
+    #[serde(rename = "no")]
+    No,
+    #[serde(rename = "on-failure")]
+    OnFailure,
+    #[serde(rename = "always")]
+    Always,
+    #[serde(rename = "unless-stopped")]
+    UnlessStopped,
+}
+
+impl RestartPolicy {
+    pub fn as_arg(self) -> &'static str {
+        match self {
+            RestartPolicy::No => "no",
+            RestartPolicy::OnFailure => "on-failure",
+            RestartPolicy::Always => "always",
+            RestartPolicy::UnlessStopped => "unless-stopped",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ContainerEngine {
+    Podman,
+    Docker,
+}
+
+/// A secret delivered to the container as a read-only file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SecretMount {
+    /// Name of a secret listed in `spec.secrets`.
+    pub secret: String,
+    /// Absolute path inside the container.
+    pub path: String,
+    /// Octal mode of the file on the host (default "0400": the container user must be able to read it).
+    #[serde(default)]
+    pub mode: Option<String>,
+}
+
+/// A Podman or Docker container, managed through the engine's command line (an argv, no shell).
+/// Nothing privileged can be declared: no `--privileged`, capabilities, devices or host networking.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ContainerSpec {
+    pub name: String,
+    /// Fully qualified image, a digest is recommended (`registry.example.com/app@sha256:...`).
+    /// Required unless `state: absent`. The image is pulled only when the container is created.
+    #[serde(default)]
+    pub image: Option<String>,
+    #[serde(default)]
+    pub state: ContainerState,
+    /// `[ip:]host_port:container_port[/tcp|udp]`.
+    #[serde(default)]
+    pub ports: Vec<String>,
+    /// `/host/path:/container/path[:ro|rw]`.
+    #[serde(default)]
+    pub volumes: Vec<String>,
+    /// Literal environment variables.
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, String>,
+    /// Names of policy variables (`vars`, shared, tenant, group and agent layers) passed as
+    /// environment variables of the same name. Variables are not secrets.
+    #[serde(default)]
+    pub env_from: Vec<String>,
+    /// Secrets as read-only files: never environment variables (those show in `inspect`).
+    #[serde(default)]
+    pub secret_from: Vec<SecretMount>,
+    #[serde(default)]
+    pub restart: Option<RestartPolicy>,
+    /// Arguments after the image: replaces the image's default command (an argv inside the container, no shell).
+    #[serde(default)]
+    pub command: Vec<String>,
+    /// Default: Podman if present, else Docker.
+    #[serde(default)]
+    pub engine: Option<ContainerEngine>,
 }

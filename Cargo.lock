@@ -1005,6 +1005,7 @@ dependencies = [
  "delbert-policy",
  "delbert-wire",
  "futures",
+ "hmac",
  "if-addrs",
  "minijinja",
  "rand_core 0.6.4",
@@ -1149,6 +1150,7 @@ name = "delbert-policy"
 version = "0.1.0"
 dependencies = [
  "minijinja",
+ "regex",
  "schemars 0.8.22",
  "serde",
  "serde_json",

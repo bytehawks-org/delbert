@@ -69,7 +69,7 @@ Rules:
 | `sysctl` | Kernel parameter | `key`, `value`, `persist` | sysctl |
 | `cron` | Scheduled job | `name`, `schedule`, `command` (subject to `command` rules) | cron |
 | `command` | Restricted exec | see ABSTRACT §3 | command |
-| `container` | Docker/Podman container | `name`, `image` (digest recommended), `state`, `ports`, `volumes`, `env`, `restart` | docker_container |
+| `container` | Docker/Podman container (**implemented**, see "Containers") | `name`, `image` (digest recommended), `state`, `ports`, `volumes`, `env`, `env_from`, `secret_from`, `restart`, `command`, `engine` | docker_container |
 | `container_volume` / `container_network` | Docker/Podman objects | `name`, `state`, driver options | docker_volume/network |
 
 Notes:
@@ -164,6 +164,34 @@ A variable can be a **constant** (`locked`): nothing below its layer can change 
 Predictability: `GET /v1/tenants/{t}/agents/{a}/variables` returns each variable as the agent receives it, with the layer it comes from and the layers it hides; `GET .../render` renders every template resource of the agent's effective policy exactly as the agent will, with secrets masked (`********`) and host facts as placeholders, and reports undefined variables as errors per template. Changing any layer changes the effective policy, so the agent's version moves and agents are told to pull.
 
 Not covered yet: variable changes do not go through the four-eyes approval of a tenant (they are authenticated, authorized and audited).
+
+## Containers
+
+The `container` verb manages a Podman or Docker container through the engine's command line (an argv, no shell). Podman is used if present, else Docker (`engine:` chooses). Linux hosts.
+
+```yaml
+spec:
+  secrets: [db]                       # secrets mounted into containers must be listed here
+  resources:
+    - id: app
+      container:
+        name: app
+        image: registry.example.com/app@sha256:...   # fully qualified, a digest is recommended
+        state: running                # running (default) | stopped | absent
+        ports: ["8080:80", "127.0.0.1:9090:90/tcp"]
+        volumes: ["/srv/app:/data:ro"]
+        env: { MODE: prod }           # literal
+        env_from: [LOG_LEVEL]         # policy variables (shared/tenant/group/agent layers) by name
+        secret_from:                  # secrets as read-only files, never as environment variables
+          - { secret: db, path: /run/secrets/db, mode: "0400" }
+        restart: unless-stopped       # no | on-failure | always | unless-stopped
+        command: [serve, --port, "80"]
+```
+
+- **Configuration from Delbert, not from the deployment:** `env_from` takes variables from the layered `vars` ([Variables](#variables)); a name that is not defined fails the resource. `secret_from` writes each secret to `/run/delbert/secrets/<container>/<secret>` (tmpfs, mode `mode`, default `0400`) and bind-mounts it read-only (`:ro,Z`, the `Z` is the private SELinux label Podman needs on Fedora/RHEL). Secrets never appear in a command line, in `inspect` or in a hash. A container that runs as a non-root user needs a readable `mode` (e.g. `0444`: the file is in a `0700` directory of the host).
+- **Recreation:** a running container cannot be edited. The agent labels what it creates with `io.bytehawks.delbert.hash`, an HMAC (key derived from the agent's identity) of image, ports, volumes, environment, secrets, restart policy and command, and **recreates** the container (`rm -f`, `run`) when it differs: a changed variable or a rotated secret does this. A secret file that went missing (`/run` is cleared by a reboot) or differs also recreates it, because a file replaced under a running container is a new inode that the bind mount does not follow. The image is pulled only when the container is created, so use a digest.
+- **Safety:** nothing privileged can be declared (no `--privileged`, capabilities, devices, host network or pid). A container that exists with the same name but without the `io.bytehawks.delbert.managed` label is never touched: the resource fails. `state: absent` removes the container and its secret files. Container names are the resource key: two resources for one name conflict.
+- Not covered yet: networks, volumes as objects (`container_volume`, `container_network`), registry credentials, healthchecks, user namespaces, Windows. **Podman 5.7 rootless is verified with a real container; Docker only through the same command line, not run.**
 
 ## Secrets and artifacts in policies
 

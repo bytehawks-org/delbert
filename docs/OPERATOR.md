@@ -19,7 +19,7 @@ Operator (in cluster, enrolled as an agent) ── applies ──▶ ConfigMap +
 ```
 
 - The Operator is the **only** component talking to the Core. It acts on its own cluster (consistent with "only agents and the Operator execute, locally").
-- Podman/Docker hosts follow a different path: the host agent resolves `env_from` / `secret_from` on the `container` resource (not implemented yet).
+- Podman/Docker hosts follow a different path: the host agent resolves `env_from` / `secret_from` on the `container` resource ([POLICY.md](POLICY.md) "Containers"): variables as environment, secrets as read-only files, the container recreated when they change.
 
 ## Core side (implemented)
 
