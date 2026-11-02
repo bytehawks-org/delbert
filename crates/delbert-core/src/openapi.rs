@@ -40,7 +40,7 @@ impl Modify for BearerAuth {
         crate::content::list_sources, crate::content::get_source, crate::content::create_source, crate::content::update_source, crate::content::delete_source,
         crate::content::sync_now, crate::content::list_snapshots, crate::content::get_snapshot,
         crate::signing::status, crate::signing::ca_status,
-        api::audit_verify, crate::audit_api::list, crate::audit_api::export,
+        api::audit_verify, api::audit_anchors, api::audit_anchor_now, crate::audit_api::list, crate::audit_api::export,
         crate::secrets::key_status, crate::secrets::reseal, crate::secrets::put_secret, crate::secrets::list_secrets, crate::secrets::delete_secret,
         crate::artifacts::put_artifact, crate::artifacts::list_artifacts, crate::artifacts::agent_download,
         crate::artifacts::put_global_artifact, crate::artifacts::list_global_artifacts,

@@ -82,6 +82,14 @@ impl Signer {
         B64.encode(self.key.verifying_key().to_bytes())
     }
 
+    /// Detached Ed25519 signature (base64url) over `domain || 0x00 || message`.
+    ///
+    /// The domain string keeps a signature made for one purpose (for example an audit
+    /// anchor) from being accepted for another (a policy), even with the same key.
+    pub fn sign_detached(&self, domain: &str, message: &[u8]) -> String {
+        B64.encode(self.key.sign(&domain_separated(domain, message)).to_bytes())
+    }
+
     pub fn sign(&self, policy: &EffectivePolicy) -> Result<String, CanonError> {
         let header = canonical::to_vec(&json!({"alg": "EdDSA", "kid": self.kid, "typ": TYP}))?;
         let mut payload = serde_json::to_value(policy).expect("policy serializes");
@@ -91,6 +99,14 @@ impl Signer {
         let sig = self.key.sign(input.as_bytes());
         Ok(format!("{input}.{}", B64.encode(sig.to_bytes())))
     }
+}
+
+fn domain_separated(domain: &str, message: &[u8]) -> Vec<u8> {
+    let mut input = Vec::with_capacity(domain.len() + 1 + message.len());
+    input.extend_from_slice(domain.as_bytes());
+    input.push(0);
+    input.extend_from_slice(message);
+    input
 }
 
 /// What the agent knows about itself and its history.
@@ -115,6 +131,13 @@ impl Verifier {
             .map_err(|_| anyhow::anyhow!("public key must be 32 bytes"))?;
         self.keys.insert(kid.to_owned(), VerifyingKey::from_bytes(&bytes)?);
         Ok(())
+    }
+
+    /// Check a signature made by [`Signer::sign_detached`] with the key `kid`.
+    pub fn verify_detached(&self, kid: &str, domain: &str, message: &[u8], signature_b64: &str) -> bool {
+        let (Some(key), Ok(sig)) = (self.keys.get(kid), B64.decode(signature_b64)) else { return false };
+        let Ok(sig) = Signature::from_slice(&sig) else { return false };
+        key.verify_strict(&domain_separated(domain, message), &sig).is_ok()
     }
 
     /// Parse lines of `<kid> <base64 public key>`; blank lines and `#` comments are ignored.

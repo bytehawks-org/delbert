@@ -17,7 +17,12 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Core: pagination of list endpoints (audit already keyset-paged) | to-do | 2026-10-24 |
 | Core: local users, customizable RBAC, sessions | complete | 2026-10-23 |
 | Core: least-privilege DB role (no UPDATE/DELETE on audit and policy versions) | complete | 2026-10-23 |
-| Audit: NDJSON export done; signed anchors for the chain, SIEM connector, retention to-do | partial | 2026-10-24 |
+| Audit: NDJSON export done; SIEM connector, retention to-do | partial | 2026-10-24 |
+| Audit: signed anchors of the hash chain (migration `0026`, periodic + on demand, verified by `GET /v1/audit/verify`; detects truncation and rewrites); adversarial tests (`tests/audit_adversarial.rs`, `tests/tenant_isolation.rs`) | complete | 2026-11-02 |
+| Enrollment endpoints: per-address throttle, then audit of failed attempts ([SECURITY-REVIEW.md](SECURITY-REVIEW.md) F-02) | to-do | 2026-11-02 |
+| Nonce cache for signed agent proofs (F-05); enrollment key bound to an agent name (F-06); dedicated audit signing key (F-04) | to-do | 2026-11-02 |
+| Independent security review of the areas listed as not reviewed in [SECURITY-REVIEW.md](SECURITY-REVIEW.md); `cargo audit`/`cargo deny` in CI | to-do | 2026-11-02 |
+| Audit: automatic export of anchors to an external sink (SIEM/WORM) and a console view of anchors | to-do | 2026-11-02 |
 | Conflicts: `priority` and `error` strategies implemented; `specificity`, per-policy/resource overrides, resolution records, impact preview to-do | partial | 2026-10-24 |
 | Core: evaluate `target.when` (restricted expression language) | to-do | 2026-10-23 |
 | Agent: daemon with NATS pull, notifications, reports, cached policy | complete | 2026-10-23 |

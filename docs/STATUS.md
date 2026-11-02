@@ -44,6 +44,10 @@ Optional environment for the real-system tests: `S3_TEST_*` (Garage), `GIT_TEST_
 - Configuration: TOML file under the environment; strict keys; `--check-config`.
 - Migrations are plain SQL run as the schema owner; the Core runs as a least-privilege role. The project is unreleased: migrations were edited/dropped columns in place before (0005, 0012).
 
+## Security and audit foundations
+
+Signed audit anchors (migration `0026`) and adversarial tests exist since 2026-11-02; open findings and the list of what was not reviewed are in [SECURITY-REVIEW.md](SECURITY-REVIEW.md). Read it before relying on the audit trail.
+
 ## Known limits
 
 See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI complete through M4 ([FRONTEND.md](FRONTEND.md)); Kubernetes Operator verified by hand on K3s 1.31.14 but with no automated end-to-end test; remediation (rollback to the last known good, [REMEDIATION.md](REMEDIATION.md)) and `service` tested with a scripted `systemctl` only, not on a real systemd host; no Windows agent; `service` only tested with a fake runner; no CRL/OCSP; proxy renewal not run live in a branch scenario ([ROTATION.md](ROTATION.md)); the Kubernetes manifests were never run on a cluster; no published images/packages; the proxy has no configuration file and its certificate does not renew.

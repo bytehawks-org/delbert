@@ -44,6 +44,8 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 | `DELBERT_CA_EXTRA_FILES`, `DELBERT_CA_RETIRE`, `DELBERT_CERT_RENEW_ISSUED_BEFORE` | Internal CA rotation: other CAs to announce, fingerprints to forget, renew certificates issued before (Unix seconds) ([ROTATION.md](ROTATION.md)) |
 | `DELBERT_SECRETS_OLD_KEY_FILES` | Previous secrets keys, comma separated, readable while re-sealing |
 | `DELBERT_POLICY_TTL_SECS` | Validity of issued policies, default 86400 |
+| `DELBERT_AUDIT_ANCHOR_SECS` | Interval of the automatic audit anchors (needs a signing key), default 3600, at least 10 |
+| `DELBERT_AUDIT_ANCHOR_KEYS` | `kid=publickey,...`: former signing keys kept only to verify the anchors they signed (see "Audit anchors") |
 | `DELBERT_CONFLICT_STRATEGY` | Comma-separated chain, `priority`, `error` (default `error`); `error` is always the implicit last resort |
 | `DELBERT_API_DOCS` | `false` disables Swagger UI and `/openapi.json` |
 
@@ -121,7 +123,9 @@ Policies, artifacts and tenant settings can come from a repository instead of th
 | `POST /v1/proxies/{site}/renew` | the proxy's proof | Proxy certificate renewal with a new key |
 | `GET /v1/audit` | `audit:read` (scoped) | Browse the trail, newest first. Filters `tenant`, `actor`, `action` (`policy.*` = prefix), `target`, `outcome`, `from`, `to` (unix seconds); keyset paging with `limit` (max 1000) and `before` = the `next` of the previous page. A tenant-scoped grant sees only its tenants' events |
 | `GET /v1/audit/export` | `audit:export` (scoped) | Same filters, NDJSON oldest first, with `occurred_at_micros`, `prev_hash` and `hash` to recompute the chain offline / feed a SIEM. The export records itself (`audit.export`) |
-| `GET /v1/audit/verify` | `audit:verify` (global) | Recompute the audit hash chain: `{events, first_bad}` |
+| `GET /v1/audit/verify` | `audit:verify` (global) | Recompute the audit hash chain and check the signed anchors against it: `{events, first_bad, anchors, first_bad_anchor}` |
+| `GET /v1/audit/anchors` | `audit:verify` (global) | The signed anchors of the chain, newest first (`?limit=`) |
+| `POST /v1/audit/anchors` | `audit:verify` (global) | Anchor the chain head now (`null` if the newest anchor already covers it); audited as `audit.anchor` |
 
 Errors are `{"error": "..."}` with 401, 403, 404, 409 (duplicate or in use), 422 (invalid input) or 503.
 
@@ -189,3 +193,11 @@ Migrations run as the schema owner. The Core runs as a login role that is a memb
 - `effective` ids are namespaced `<policy>/<resource id>`. The version of the signed policy increases only when the compiled content changes, so repeated pulls are idempotent and agents can apply their anti-rollback rule.
 - Conflicts follow [ABSTRACT.md](ABSTRACT.md) §3: identical declarations merge; different ones are resolved by the strategy chain; unresolved ones are left out (together with their dependents) and reported in `conflicts`. Only `priority` and `error` are implemented.
 - Every write, login (including failures) and every new issued version is appended to the hash-chained audit trail inside the same transaction.
+
+## Audit anchors
+
+The hash chain proves that events were not edited; it cannot prove that none were dropped or that the whole history was not rewritten and re-hashed by someone who can write to the database. An **anchor** closes that gap: the Core signs (Ed25519, with its policy-signing key, which the database does not hold, under its own signature domain `delbert-audit-anchor-v1`) the sequence number, hash and event count of the newest event. `GET /v1/audit/verify` recomputes the chain and then requires every anchor to be validly signed and to still match the event at its position and the count up to it; otherwise `first_bad_anchor` is the id of the first one that does not. Without a signing key, or with an unknown `kid`, anchors fail closed.
+
+- The Core anchors every `DELBERT_AUDIT_ANCHOR_SECS` (when the head moved) and on `POST /v1/audit/anchors`. The `audit_anchors` table is append-only like the trail (trigger, and no `UPDATE`/`DELETE` for the runtime role).
+- **Copy the anchors out of the database** (a periodic `GET /v1/audit/anchors` into a SIEM or WORM storage, together with the public key of each `kid`). Anchors held only in the same database protect against truncation and rewriting of anchored history, but whoever can delete the newest anchors *and* the newest events is only detectable against an external copy. Events after the newest anchor are covered by the chain only.
+- **Key rotation:** anchors keep verifying while their key is published. After retiring a signing key from the agents (`DELBERT_SIGNING_RETIRE_KEYS`), keep its public key in `DELBERT_AUDIT_ANCHOR_KEYS` so old anchors still verify.

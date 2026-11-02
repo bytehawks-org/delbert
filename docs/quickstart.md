@@ -99,7 +99,7 @@ Policies are immutable versions; the new one reached the agent in seconds throug
 
 ```sh
 auth "$API/v1/audit?limit=5" | jq -r '.events[] | "\(.seq) \(.action) \(.actor) \(.outcome)"'
-auth $API/v1/audit/verify | jq -c .      # {"events":11,"first_bad":null}: the hash chain is intact
+auth $API/v1/audit/verify | jq -c .      # {"events":11,"first_bad":null,"anchors":0,"first_bad_anchor":null}: the hash chain is intact
 ```
 
 Every change is an append-only, hash-chained event; `GET /v1/audit/export` produces NDJSON for a SIEM.

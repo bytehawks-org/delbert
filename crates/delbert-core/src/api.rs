@@ -54,6 +54,10 @@ pub struct AppState {
     pub trust: Option<delbert_wire::TrustUpdate>,
     /// Keys agents should know at enrollment besides the active one.
     pub published_keys: Vec<delbert_wire::TrustedKey>,
+    /// Former signing keys still needed to verify old audit anchors (`DELBERT_AUDIT_ANCHOR_KEYS`),
+    /// kept apart from `published_keys` so that retiring a key on the agents does not
+    /// invalidate the anchors it signed.
+    pub audit_keys: Vec<delbert_wire::TrustedKey>,
     pub content: ContentConfig,
     /// Whether new tenants require policy approval (`DELBERT_APPROVAL_DEFAULT`).
     pub approval_default: bool,
@@ -273,7 +277,8 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/agent/{tenant}/{agent}/events", post(crate::agent_events::post))
         .route("/v1/audit", get(crate::audit_api::list))
         .route("/v1/audit/export", get(crate::audit_api::export))
-        .route("/v1/audit/verify", get(audit_verify));
+        .route("/v1/audit/verify", get(audit_verify))
+        .route("/v1/audit/anchors", get(audit_anchors).post(audit_anchor_now));
     if state.docs {
         app = app.merge(crate::openapi::docs());
     }
@@ -838,5 +843,35 @@ pub async fn issue(st: &AppState, tenant: String, agent: String, actor: &str) ->
 #[utoipa::path(get, path = "/v1/audit/verify", tag = "audit", security(("bearer" = [])), responses((status = 200, body = audit::Verification)))]
 pub async fn audit_verify(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<audit::Verification>> {
     user.require_global("audit:verify")?;
-    Ok(Json(audit::verify(&st.pool).await?))
+    Ok(Json(audit::verify(&st.pool, &audit::anchor_keys(st.signer.as_deref(), &[st.published_keys.as_slice(), st.audit_keys.as_slice()].concat())).await?))
+}
+
+#[derive(serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct AnchorsQuery {
+    /// How many anchors, newest first (default 100, at most 1000).
+    pub limit: Option<i64>,
+}
+
+/// The signed anchors of the audit chain, newest first. Copy them somewhere the database
+/// administrators cannot write (SIEM, WORM storage): see `docs/API.md` "Audit anchors".
+#[utoipa::path(get, path = "/v1/audit/anchors", tag = "audit", security(("bearer" = [])), params(AnchorsQuery), responses((status = 200, body = Vec<audit::Anchor>)))]
+pub async fn audit_anchors(State(st): State<AppState>, Authn(user): Authn, axum::extract::Query(q): axum::extract::Query<AnchorsQuery>) -> ApiResult<Json<Vec<audit::Anchor>>> {
+    user.require_global("audit:verify")?;
+    Ok(Json(audit::anchors(&st.pool, q.limit.unwrap_or(100).clamp(1, 1000)).await?))
+}
+
+/// Anchor the chain head now (the Core also does it periodically). `null` when the newest
+/// anchor already covers the head. Audited.
+#[utoipa::path(post, path = "/v1/audit/anchors", tag = "audit", security(("bearer" = [])), responses((status = 200, body = Option<audit::Anchor>), (status = 409, description = "no signing key configured")))]
+pub async fn audit_anchor_now(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<Option<audit::Anchor>>> {
+    user.require_global("audit:verify")?;
+    let signer = st.signer.as_deref().ok_or_else(|| ApiError::new(StatusCode::CONFLICT, "no policy-signing key is configured: audit anchors cannot be signed"))?;
+    let anchor = audit::create_anchor(&st.pool, signer).await?;
+    if let Some(a) = &anchor {
+        let mut tx = st.pool.begin().await?;
+        audit::append(&mut tx, &audit::NewEvent { tenant_id: None, actor: &user.username, action: "audit.anchor", target: Some(&a.id.to_string()), outcome: "ok", details: serde_json::json!({ "seq": a.seq, "events": a.events, "kid": a.kid }) }).await?;
+        tx.commit().await?;
+    }
+    Ok(Json(anchor))
 }

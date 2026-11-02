@@ -33,7 +33,7 @@ Procedure:
 2. **Announce.** Keep signing with `k1`, add `DELBERT_SIGNING_PUBLISH_KEYS=k2=<public key>`, restart the Core. Agents learn `k2` at their next pull.
 3. **Wait** until `GET /v1/signing/keys` shows `k2` known by every agent that matters (`missing` empty). Agents that are off for longer than their policy lifetime may not learn it: do not skip this step.
 4. **Switch.** `DELBERT_SIGNING_KEY_FILE`/`KID` to `k2`; keep `k2` published (and `k1` if you want slow agents to still learn it), restart. Policies are now signed with `k2`; agents still accept `k1`.
-5. **Retire** after one policy lifetime (`DELBERT_POLICY_TTL_SECS`, default 24 h): set `DELBERT_SIGNING_RETIRE_KEYS=k1`. Agents drop `k1` when they pull a policy signed by `k2`.
+5. **Retire** (keep the old public key in `DELBERT_AUDIT_ANCHOR_KEYS`, otherwise the audit anchors it signed stop verifying: [API.md](API.md) "Audit anchors") after one policy lifetime (`DELBERT_POLICY_TTL_SECS`, default 24 h): set `DELBERT_SIGNING_RETIRE_KEYS=k1`. Agents drop `k1` when they pull a policy signed by `k2`.
 6. **Clean up** the settings after every agent reported only `k2` (or leave them: applying an update twice is a no-op).
 
 An agent that was offline through the whole sequence knows only `k1` and cannot verify policies signed with `k2`: it must be enrolled again. That is why step 3 exists.

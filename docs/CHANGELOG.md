@@ -1,5 +1,12 @@
 # Delbert - Changelog
 
+## 2026-11-02
+
+### Audit anchors and adversarial tests
+- **Signed anchors** (migration `0026`, `audit.rs`): the Core signs the head of the audit chain (sequence, hash, event count) with the policy-signing key, in its own signature domain; periodically (`DELBERT_AUDIT_ANCHOR_SECS`, default 1 h) and on `POST /v1/audit/anchors`. `GET /v1/audit/verify` now also returns `anchors` / `first_bad_anchor`; `GET /v1/audit/anchors` lists them. A bare hash chain verified fine after the newest events were deleted or after the whole history was rewritten and re-hashed; with anchors both are detected. `DELBERT_AUDIT_ANCHOR_KEYS` keeps retired keys for old anchors. `Signer::sign_detached` / `Verifier::verify_detached` in `delbert-wire`. See [API.md](API.md) "Audit anchors".
+- **Tests:** `tests/audit_adversarial.rs` (9: the known limit of the bare chain, truncation, full rewrite, forged/unknown/tampered anchors, key rotation, idempotence, append-only anchors, API and permissions) and `tests/tenant_isolation.rs` (a tenant-admin and an operator of one tenant against every tenant-scoped route of another, and an auditor's list and export). Isolation held; no defect found there.
+- [SECURITY-REVIEW.md](SECURITY-REVIEW.md): first partial review of the security-critical paths: 1 high finding (fixed by the anchors), 2 medium and 3 low/info ones open, and the list of what was not reviewed.
+
 ## 2026-11-01
 
 ### Documentation alignment

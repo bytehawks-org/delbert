@@ -208,6 +208,17 @@ async fn main() -> anyhow::Result<()> {
         })
         .transpose()?
         .unwrap_or_default();
+    // Former signing keys kept only to verify the audit anchors they signed (same `kid=publickey` format).
+    let audit_keys: Vec<delbert_wire::TrustedKey> = var("DELBERT_AUDIT_ANCHOR_KEYS")
+        .map(|v| {
+            v.split(',')
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .map(|p| p.split_once('=').map(|(kid, key)| delbert_wire::TrustedKey { kid: kid.trim().to_owned(), public_key: key.trim().to_owned() }).context("DELBERT_AUDIT_ANCHOR_KEYS entries are kid=publickey"))
+                .collect::<anyhow::Result<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
     let retired: Vec<String> = var("DELBERT_SIGNING_RETIRE_KEYS").map(|v| v.split(',').map(|k| k.trim().to_owned()).filter(|k| !k.is_empty()).collect()).unwrap_or_default();
     if let Some(s) = &signer {
         anyhow::ensure!(!retired.iter().any(|k| k == s.kid()), "DELBERT_SIGNING_RETIRE_KEYS lists the active signing key '{}'", s.kid());
@@ -235,7 +246,7 @@ async fn main() -> anyhow::Result<()> {
         ca_remove: ca_rotation.retire.clone(),
         renew_issued_before: ca_rotation.renew_issued_before,
     });
-    let state = AppState { pool, signer, trust, ca_rotation, published_keys, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, content: delbert_core::api::ContentConfig {
+    let state = AppState { pool, signer, trust, ca_rotation, published_keys, audit_keys, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, content: delbert_core::api::ContentConfig {
         dir: var("DELBERT_CONTENT_DIR").unwrap_or_else(|| "./data/content".into()).into(),
         allow_tenant_git: var("DELBERT_CONTENT_ALLOW_TENANT_GIT").as_deref() == Some("true"),
         allow_file: var("DELBERT_CONTENT_ALLOW_FILE").as_deref() == Some("true"),
@@ -260,6 +271,11 @@ async fn main() -> anyhow::Result<()> {
     delbert_core::stream::spawn_listener(state.pool.clone(), state.changes.clone());
     if state.content.poll {
         tokio::spawn(delbert_core::content::poller(state.clone()));
+    }
+    if let Some(signer) = state.signer.clone() {
+        let every = var("DELBERT_AUDIT_ANCHOR_SECS").map(|v| v.parse()).transpose().context("DELBERT_AUDIT_ANCHOR_SECS")?.unwrap_or(3600u64);
+        anyhow::ensure!(every >= 10, "DELBERT_AUDIT_ANCHOR_SECS must be at least 10");
+        tokio::spawn(delbert_core::audit::anchor_loop(state.pool.clone(), signer, std::time::Duration::from_secs(every)));
     }
     if state.bus.is_some() {
         tokio::spawn(delbert_core::bus::serve(state.clone()));
