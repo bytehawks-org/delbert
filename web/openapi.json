@@ -303,6 +303,81 @@
         ]
       }
     },
+    "/v1/audit/anchors": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "The signed anchors of the audit chain, newest first. Copy them somewhere the database\nadministrators cannot write (SIEM, WORM storage): see `docs/API.md` \"Audit anchors\".",
+        "operationId": "audit_anchors",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many anchors, newest first (default 100, at most 1000).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Anchor"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Anchor the chain head now (the Core also does it periodically). `null` when the newest\nanchor already covers the head. Audited.",
+        "operationId": "audit_anchor_now",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Anchor"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "no signing key configured"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/v1/audit/export": {
       "get": {
         "tags": [
@@ -4905,6 +4980,49 @@
           }
         }
       },
+      "Anchor": {
+        "type": "object",
+        "description": "A signed anchor of the chain head, as stored and exported.",
+        "required": [
+          "id",
+          "at_micros",
+          "seq",
+          "hash",
+          "events",
+          "kid",
+          "signature"
+        ],
+        "properties": {
+          "at_micros": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Microseconds since the Unix epoch, as signed."
+          },
+          "events": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "hash": {
+            "type": "string",
+            "description": "Lowercase hex of the head event's hash."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kid": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "signature": {
+            "type": "string",
+            "description": "Detached Ed25519 signature (base64url); verify with the published key `kid`."
+          }
+        }
+      },
       "ArtifactOut": {
         "type": "object",
         "required": [
@@ -5477,6 +5595,13 @@
           "groups"
         ],
         "properties": {
+          "agent_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The only agent name that may use the key, if bound."
+          },
           "expires_at": {
             "type": "integer",
             "format": "int64"
@@ -5897,6 +6022,13 @@
       "NewEnrollmentKey": {
         "type": "object",
         "properties": {
+          "agent_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Bind the key to this agent name: no other agent can enroll with it. Recommended; without it\nthe key enrolls any name of the tenant."
+          },
           "groups": {
             "type": "array",
             "items": {
@@ -7326,9 +7458,16 @@
       "Verification": {
         "type": "object",
         "required": [
-          "events"
+          "events",
+          "anchors"
         ],
         "properties": {
+          "anchors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Signed anchors checked against the chain.",
+            "minimum": 0
+          },
           "events": {
             "type": "integer",
             "format": "int64",
@@ -7341,6 +7480,14 @@
             ],
             "format": "int64",
             "description": "Sequence number of the first event that does not match the chain."
+          },
+          "first_bad_anchor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Id of the first anchor that does not match: a bad signature, a missing or different\nevent at its position (truncation, rewrite) or a different event count."
           }
         }
       },

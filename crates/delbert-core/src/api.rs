@@ -185,6 +185,11 @@ impl From<sqlx::Error> for ApiError {
             if db.is_foreign_key_violation() {
                 return ApiError::new(StatusCode::CONFLICT, "still in use");
             }
+            // 22021: a NUL byte or invalid UTF-8 in a text value; 22P05: `\u0000` in a JSON value.
+            // PostgreSQL cannot store them: the client sent bad data, not the server failed.
+            if matches!(db.code().as_deref(), Some("22021" | "22P05")) {
+                return ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "the request contains characters that cannot be stored (NUL)");
+            }
         }
         tracing::error!("database error: {e}");
         ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
@@ -193,6 +198,9 @@ impl From<sqlx::Error> for ApiError {
 
 impl From<audit::AuditError> for ApiError {
     fn from(e: audit::AuditError) -> Self {
+        if let audit::AuditError::Db(db) = e {
+            return db.into();
+        }
         tracing::error!("audit error: {e}");
         ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
     }

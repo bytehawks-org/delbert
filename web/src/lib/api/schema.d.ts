@@ -93,6 +93,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/audit/anchors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The signed anchors of the audit chain, newest first. Copy them somewhere the database
+         *     administrators cannot write (SIEM, WORM storage): see `docs/API.md` "Audit anchors".
+         */
+        get: operations["audit_anchors"];
+        put?: never;
+        /**
+         * Anchor the chain head now (the Core also does it periodically). `null` when the newest
+         *     anchor already covers the head. Audited.
+         */
+        post: operations["audit_anchor_now"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/audit/export": {
         parameters: {
             query?: never;
@@ -1511,6 +1535,25 @@ export interface components {
         AgentUpdate: {
             groups: string[];
         };
+        /** @description A signed anchor of the chain head, as stored and exported. */
+        Anchor: {
+            /**
+             * Format: int64
+             * @description Microseconds since the Unix epoch, as signed.
+             */
+            at_micros: number;
+            /** Format: int64 */
+            events: number;
+            /** @description Lowercase hex of the head event's hash. */
+            hash: string;
+            /** Format: int64 */
+            id: number;
+            kid: string;
+            /** Format: int64 */
+            seq: number;
+            /** @description Detached Ed25519 signature (base64url); verify with the published key `kid`. */
+            signature: string;
+        };
         ArtifactOut: {
             name: string;
             /** @description `tenant` or `global` (inherited from the platform). */
@@ -1694,6 +1737,8 @@ export interface components {
             max_uses: number;
         };
         EnrollmentKeyOut: {
+            /** @description The only agent name that may use the key, if bound. */
+            agent_name?: string | null;
             /** Format: int64 */
             expires_at: number;
             groups: string[];
@@ -1827,6 +1872,11 @@ export interface components {
             secrets?: string[];
         };
         NewEnrollmentKey: {
+            /**
+             * @description Bind the key to this agent name: no other agent can enroll with it. Recommended; without it
+             *     the key enrolls any name of the tenant.
+             */
+            agent_name?: string | null;
             /** @description Groups for agents created by enrollment. */
             groups?: string[];
             /**
@@ -2250,6 +2300,11 @@ export interface components {
             value: unknown;
         };
         Verification: {
+            /**
+             * Format: int64
+             * @description Signed anchors checked against the chain.
+             */
+            anchors: number;
             /** Format: int64 */
             events: number;
             /**
@@ -2257,6 +2312,12 @@ export interface components {
              * @description Sequence number of the first event that does not match the chain.
              */
             first_bad?: number | null;
+            /**
+             * Format: int64
+             * @description Id of the first anchor that does not match: a bad signature, a missing or different
+             *     event at its position (truncation, rewrite) or a different event count.
+             */
+            first_bad_anchor?: number | null;
         };
         VersionDetail: components["schemas"]["VersionOut"] & {
             /** @description The tenant requires approval before a version goes live (readable by anyone who can read the policy). */
@@ -2471,6 +2532,54 @@ export interface operations {
             };
             /** @description Unknown or unreachable tenant */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    audit_anchors: {
+        parameters: {
+            query?: {
+                /** @description How many anchors, newest first (default 100, at most 1000). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Anchor"][];
+                };
+            };
+        };
+    };
+    audit_anchor_now: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": null | components["schemas"]["Anchor"];
+                };
+            };
+            /** @description no signing key configured */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
