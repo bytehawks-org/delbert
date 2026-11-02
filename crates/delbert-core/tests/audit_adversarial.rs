@@ -228,3 +228,25 @@ async fn an_external_copy_of_the_anchors_catches_what_the_database_cannot(pool: 
 fn rand_suffix() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as u64
 }
+
+#[sqlx::test]
+async fn a_dedicated_audit_key_signs_anchors_and_older_ones_still_verify(pool: PgPool) {
+    use std::sync::Arc;
+    let admin = common::admin_client(common::state(pool.clone(), vec![delbert_core::compile::Strategy::Error], None)).await;
+    // First anchor with the policy-signing key (the default)...
+    let (_, a1) = admin.call("POST", "/v1/audit/anchors", None).await;
+    assert_eq!(a1["kid"], "k1");
+    // ...then the operator configures a dedicated key. Same database, new process state.
+    let mut st = common::state(pool.clone(), vec![delbert_core::compile::Strategy::Error], None);
+    st.audit_signer = Some(Arc::new(signer(5, "audit1")));
+    let admin = common::admin_client(st).await;
+    let (_, a2) = admin.call("POST", "/v1/audit/anchors", None).await;
+    assert_eq!(a2["kid"], "audit1", "{a2}");
+    let v = admin.call("GET", "/v1/audit/verify", None).await.1;
+    assert_eq!((v["anchors"].as_u64(), v["first_bad_anchor"].is_null()), (Some(2), true), "{v}");
+
+    // Without the audit key's public half (a Core that does not know it) its anchors do not verify.
+    let plain = common::admin_client(common::state(pool, vec![delbert_core::compile::Strategy::Error], None)).await;
+    let v = plain.call("GET", "/v1/audit/verify", None).await.1;
+    assert!(!v["first_bad_anchor"].is_null(), "{v}");
+}

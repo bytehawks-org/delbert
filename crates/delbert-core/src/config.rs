@@ -50,6 +50,8 @@ pub const KEYS: &[(&str, &str, bool)] = &[
     ("policy.ttl_secs", "DELBERT_POLICY_TTL_SECS", false),
     ("policy.conflict_strategy", "DELBERT_CONFLICT_STRATEGY", false),
     ("policy.approval_default", "DELBERT_APPROVAL_DEFAULT", false),
+    ("audit.signing_key_file", "DELBERT_AUDIT_SIGNING_KEY_FILE", false),
+    ("audit.signing_kid", "DELBERT_AUDIT_SIGNING_KID", false),
     ("audit.anchor_secs", "DELBERT_AUDIT_ANCHOR_SECS", false),
     ("audit.anchor_file", "DELBERT_AUDIT_ANCHOR_FILE", false),
     ("audit.anchor_keys", "DELBERT_AUDIT_ANCHOR_KEYS", false),

@@ -58,6 +58,8 @@ pub struct AppState {
     /// kept apart from `published_keys` so that retiring a key on the agents does not
     /// invalidate the anchors it signed.
     pub audit_keys: Vec<delbert_wire::TrustedKey>,
+    /// Dedicated key for the audit anchors (`DELBERT_AUDIT_SIGNING_KEY_FILE`); the policy-signing key is used when absent.
+    pub audit_signer: Option<Arc<Signer>>,
     /// File each new audit anchor is appended to as an NDJSON line (`DELBERT_AUDIT_ANCHOR_FILE`).
     pub audit_anchor_file: Option<std::path::PathBuf>,
     pub content: ContentConfig,
@@ -75,6 +77,19 @@ pub struct CaRotation {
 }
 
 impl AppState {
+    /// The key that signs audit anchors: the dedicated one if configured, else the policy-signing key.
+    pub fn anchor_signer(&self) -> Option<Arc<Signer>> {
+        self.audit_signer.clone().or_else(|| self.signer.clone())
+    }
+
+    /// Every public key an audit anchor may have been signed with: the current signers, the published
+    /// and the retired-but-kept ones, so a switch of key does not invalidate older anchors.
+    pub fn anchor_verifier(&self) -> delbert_wire::Verifier {
+        let mut keys: Vec<delbert_wire::TrustedKey> = self.published_keys.iter().chain(&self.audit_keys).cloned().collect();
+        keys.extend(self.signer.iter().map(|s| delbert_wire::TrustedKey { kid: s.kid().to_owned(), public_key: s.public_key_b64() }));
+        audit::anchor_keys(self.audit_signer.as_deref(), &keys)
+    }
+
     /// PEM bundle handed to enrolling components: the active CA first, then the announced ones.
     pub fn ca_bundle(&self) -> Option<String> {
         let ca = self.pki.as_ref()?;
@@ -849,7 +864,7 @@ pub async fn issue(st: &AppState, tenant: String, agent: String, actor: &str) ->
 #[utoipa::path(get, path = "/v1/audit/verify", tag = "audit", security(("bearer" = [])), responses((status = 200, body = audit::Verification)))]
 pub async fn audit_verify(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<audit::Verification>> {
     user.require_global("audit:verify")?;
-    Ok(Json(audit::verify(&st.pool, &audit::anchor_keys(st.signer.as_deref(), &[st.published_keys.as_slice(), st.audit_keys.as_slice()].concat())).await?))
+    Ok(Json(audit::verify(&st.pool, &st.anchor_verifier()).await?))
 }
 
 #[derive(serde::Deserialize, utoipa::IntoParams)]
@@ -872,8 +887,8 @@ pub async fn audit_anchors(State(st): State<AppState>, Authn(user): Authn, axum:
 #[utoipa::path(post, path = "/v1/audit/anchors", tag = "audit", security(("bearer" = [])), responses((status = 200, body = Option<audit::Anchor>), (status = 409, description = "no signing key configured")))]
 pub async fn audit_anchor_now(State(st): State<AppState>, Authn(user): Authn) -> ApiResult<Json<Option<audit::Anchor>>> {
     user.require_global("audit:verify")?;
-    let signer = st.signer.as_deref().ok_or_else(|| ApiError::new(StatusCode::CONFLICT, "no policy-signing key is configured: audit anchors cannot be signed"))?;
-    let anchor = audit::create_anchor(&st.pool, signer).await?;
+    let signer = st.anchor_signer().ok_or_else(|| ApiError::new(StatusCode::CONFLICT, "no signing key is configured: audit anchors cannot be signed"))?;
+    let anchor = audit::create_anchor(&st.pool, &signer).await?;
     if let Some(a) = &anchor {
         audit::emit(a, st.audit_anchor_file.as_deref()).await;
         let mut tx = st.pool.begin().await?;

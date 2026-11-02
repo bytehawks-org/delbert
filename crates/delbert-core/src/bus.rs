@@ -241,8 +241,12 @@ pub(crate) async fn ingest_report(state: &AppState, tenant: &str, agent: &str, e
 ///
 /// The current key is tried first, then the previous one (kept while a renewal is being
 /// confirmed). The first proof made with the new key retires the old one.
+///
+/// A proof is accepted once: a captured one cannot be presented again inside its time window
+/// (`replay.rs`). Use [`proven_at`] for what may legitimately arrive twice (reports, events).
 pub(crate) async fn proven(state: &AppState, kind: &str, tenant: &str, agent: &str, body: &Value, proof: Option<&Proof>) -> bool {
-    proven_at(state, kind, tenant, agent, body, proof, now()).await
+    let at = now();
+    proven_at(state, kind, tenant, agent, body, proof, at).await && proof.is_some_and(|p| crate::replay::first_use(&format!("{kind}:{tenant}/{agent}"), &p.nonce, at))
 }
 
 /// Like [`proven`], judging freshness as of `at` (a proxy vouches for when it received a report).

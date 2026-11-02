@@ -108,3 +108,27 @@ async fn forged_forwarded_for_entries_do_not_bypass_the_throttle(pool: PgPool) {
     // Another real client behind the same proxy is unaffected.
     assert_eq!(from(&admin, "10.9.8.1, 192.0.2.51", "/v1/enroll", &bad_enroll("dlb_x")).await, S::UNAUTHORIZED);
 }
+
+/// F-06: a key bound to an agent name cannot enroll another agent.
+#[sqlx::test]
+async fn a_key_bound_to_a_name_enrolls_only_that_agent(pool: PgPool) {
+    let admin = admin_client(state(pool, vec![Strategy::Error], None)).await;
+    admin.call("POST", "/v1/tenants", Some(json!({ "name": "acme" }))).await;
+    admin.call("POST", "/v1/tenants/acme/agents", Some(json!({ "name": "db-1" }))).await; // pre-created, not enrolled
+    let (s, key) = admin.call("POST", "/v1/tenants/acme/enrollment-keys", Some(json!({ "groups": ["web"], "agent_name": "web-1", "max_uses": 5 }))).await;
+    assert_eq!(s, S::CREATED, "{key}");
+    let psk = key["key"].as_str().unwrap();
+    let as_agent = |name: &str| {
+        let (_, csr) = delbert_pki::new_identity(name).unwrap();
+        json!({ "psk": psk, "agent_name": name, "csr_pem": csr, "enc_public_key": age::x25519::Identity::generate().to_public().to_string() })
+    };
+    // Another agent, even a pre-created one, is refused like any bad key, and counted as a failure.
+    assert_eq!(from(&admin, "192.0.2.7", "/v1/enroll", &as_agent("db-1")).await, S::UNAUTHORIZED);
+    assert_eq!(count(&admin, "enroll.denied").await, 1);
+    assert_eq!(from(&admin, "192.0.2.7", "/v1/enroll", &as_agent("web-1")).await, S::OK);
+    let (_, keys) = admin.call("GET", "/v1/tenants/acme/enrollment-keys", None).await;
+    assert_eq!(keys[0]["agent_name"], "web-1");
+    // Names that are not subject tokens cannot be bound.
+    let (s, _) = admin.call("POST", "/v1/tenants/acme/enrollment-keys", Some(json!({ "agent_name": "a.b" }))).await;
+    assert_eq!(s, S::UNPROCESSABLE_ENTITY);
+}

@@ -46,6 +46,7 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 | `DELBERT_SECRETS_OLD_KEY_FILES` | Previous secrets keys, comma separated, readable while re-sealing |
 | `DELBERT_POLICY_TTL_SECS` | Validity of issued policies, default 86400 |
 | `DELBERT_AUDIT_ANCHOR_SECS` | Interval of the automatic audit anchors (needs a signing key), default 3600, at least 10 |
+| `DELBERT_AUDIT_SIGNING_KEY_FILE` / `DELBERT_AUDIT_SIGNING_KID` | Optional dedicated key (same format as the policy key, `delbert-sign keygen`) for the audit anchors; must differ from the policy-signing key. Without it the policy-signing key signs the anchors; anchors signed with another key keep verifying while its public key is known (`DELBERT_AUDIT_ANCHOR_KEYS` for a retired one) |
 | `DELBERT_AUDIT_ANCHOR_FILE` | File each new audit anchor is appended to as an NDJSON line (put it on storage the database administrators cannot write) |
 | `DELBERT_AUDIT_ANCHOR_KEYS` | `kid=publickey,...`: former signing keys kept only to verify the anchors they signed (see "Audit anchors") |
 | `DELBERT_CONFLICT_STRATEGY` | Comma-separated chain, `priority`, `error` (default `error`); `error` is always the implicit last resort |
@@ -200,7 +201,7 @@ Migrations run as the schema owner. The Core runs as a login role that is a memb
 
 The hash chain proves that events were not edited; it cannot prove that none were dropped or that the whole history was not rewritten and re-hashed by someone who can write to the database. An **anchor** closes that gap: the Core signs (Ed25519, with its policy-signing key, which the database does not hold, under its own signature domain `delbert-audit-anchor-v1`) the sequence number, hash and event count of the newest event. `GET /v1/audit/verify` recomputes the chain and then requires every anchor to be validly signed and to still match the event at its position and the count up to it; otherwise `first_bad_anchor` is the id of the first one that does not. Without a signing key, or with an unknown `kid`, anchors fail closed.
 
-- The Core anchors every `DELBERT_AUDIT_ANCHOR_SECS` (when the head moved) and on `POST /v1/audit/anchors`. The `audit_anchors` table is append-only like the trail (trigger, and no `UPDATE`/`DELETE` for the runtime role).
+- The key is the policy-signing key, or the dedicated `DELBERT_AUDIT_SIGNING_KEY_FILE` one. The Core anchors every `DELBERT_AUDIT_ANCHOR_SECS` (when the head moved) and on `POST /v1/audit/anchors`. The `audit_anchors` table is append-only like the trail (trigger, and no `UPDATE`/`DELETE` for the runtime role).
 - **Emission:** each new anchor is written to the log as a JSON line (target `audit.anchor`) and, with `DELBERT_AUDIT_ANCHOR_FILE`, appended to that file. Check a copy **without the database**: `delbert-sign verify-anchors anchors.ndjson --trusted-keys trusted-keys.txt --audit-export export.ndjson` (signatures, order, and that each anchor still matches the event at its position in the export; exit 3 on a problem).
 - **Copy the anchors out of the database** (a periodic `GET /v1/audit/anchors` into a SIEM or WORM storage, together with the public key of each `kid`). Anchors held only in the same database protect against truncation and rewriting of anchored history, but whoever can delete the newest anchors *and* the newest events is only detectable against an external copy. Events after the newest anchor are covered by the chain only.
 - **Key rotation:** anchors keep verifying while their key is published. After retiring a signing key from the agents (`DELBERT_SIGNING_RETIRE_KEYS`), keep its public key in `DELBERT_AUDIT_ANCHOR_KEYS` so old anchors still verify.
@@ -208,3 +209,8 @@ The hash chain proves that events were not edited; it cannot prove that none wer
 ## Enrollment throttle
 
 `POST /v1/enroll` and `POST /v1/proxies/enroll` are unauthenticated. After 10 rejected keys from one client address in 10 minutes (agents enrolling through a proxy count against `proxy:<site>`) they answer **429** before looking at the key, so a right key is not confirmed to someone being throttled. Rejected keys are audited as `enroll.denied` (source address, never the key) up to that ceiling per address and 200 per window overall; the first refused request of a throttled address is audited once as `enroll.throttled`. The address is the connection's, or the first `X-Forwarded-For` entry with `DELBERT_TRUST_FORWARDED`.
+
+## Enrollment keys bound to an agent, and replay protection
+
+- `POST /v1/tenants/{t}/enrollment-keys` accepts `agent_name`: the key then enrolls only that agent (any other name, even of a pre-created agent, is refused like an invalid key and counts towards the throttle). Recommended whenever the agent name is known in advance; `GET` shows it.
+- A signed agent request (policy pull, certificate renewal, artifact download, delivery bundle) is accepted once: its nonce is remembered for about two minutes, so a captured proof cannot be presented again. The memory is per Core process. Reports and event batches are idempotent and may legitimately be forwarded twice by a proxy, so they are not covered.

@@ -42,6 +42,10 @@ conflict_strategy = "error"       # comma-separated chain: priority, error
 approval_default = false          # true: new tenants require policy approval
 
 [audit]
+# Optional dedicated key for the anchors (a different key from the policy-signing one, other custody);
+# generate with `delbert-sign keygen audit1`. Without it the policy-signing key signs them.
+# signing_key_file = "/etc/delbert/audit1.key"
+# signing_kid = "audit1"
 # The head of the audit hash chain is signed with the key above every anchor_secs (default 3600).
 # Append each anchor to a file on storage the database administrators cannot write, or collect the
 # `audit.anchor` log lines; check a copy with `delbert-sign verify-anchors`.

@@ -1,0 +1,23 @@
+# cargo-audit configuration (docs/SECURITY-REVIEW.md F-08). Every ignored advisory is a reviewed
+# decision with a reason; revisit them when the dependency named next to it is updated. A NEW
+# advisory fails the audit workflow.
+
+[advisories]
+ignore = [
+    # zip 3.0.0: only a *build* dependency of utoipa-swagger-ui, which unpacks the Swagger UI
+    # archive bundled with that crate while compiling. Delbert never extracts a ZIP at runtime.
+    # Fix: utoipa-swagger-ui built against zip >= 9.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+    # quick-xml 0.38.4 via object_store (S3 artifact store): parses XML answers of the S3 service the
+    # operator configured; the risk is a hostile or compromised S3 endpoint exhausting memory/CPU.
+    # Fix: object_store release using quick-xml >= 0.41.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+    # rsa 0.9.10 (Marvin attack) and crypto-bigint 0.5.5 via openidconnect: Delbert only *verifies*
+    # RS256 ID-token signatures with the provider's public key; it performs no RSA decryption or
+    # private-key operation, which is what the timing attacks need. No patched rsa exists.
+    "RUSTSEC-2023-0071",
+    "RUSTSEC-2026-0387",
+]

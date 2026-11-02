@@ -45,8 +45,13 @@ fn parse_args() -> anyhow::Result<(Option<String>, bool)> {
 }
 
 fn load_signer() -> anyhow::Result<Option<Arc<Signer>>> {
-    let (Some(path), Some(kid)) = (var("DELBERT_SIGNING_KEY_FILE"), var("DELBERT_SIGNING_KID")) else {
-        tracing::warn!("DELBERT_SIGNING_KEY_FILE / DELBERT_SIGNING_KID not set: signed policies cannot be issued");
+    load_key("DELBERT_SIGNING_KEY_FILE", "DELBERT_SIGNING_KID", "signed policies cannot be issued")
+}
+
+/// The Ed25519 key in `$file_var` (base64url seed) with the key id in `$kid_var`.
+fn load_key(file_var: &str, kid_var: &str, consequence: &str) -> anyhow::Result<Option<Arc<Signer>>> {
+    let (Some(path), Some(kid)) = (var(file_var), var(kid_var)) else {
+        tracing::warn!("{file_var} / {kid_var} not set: {consequence}");
         return Ok(None);
     };
     let seed: [u8; 32] = B64
@@ -197,6 +202,15 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let signer = load_signer()?;
+    // Optional dedicated key for the audit anchors (otherwise the policy-signing key signs them).
+    let audit_signer = match (var("DELBERT_AUDIT_SIGNING_KEY_FILE"), var("DELBERT_AUDIT_SIGNING_KID")) {
+        (None, None) => None,
+        (Some(_), Some(_)) => load_key("DELBERT_AUDIT_SIGNING_KEY_FILE", "DELBERT_AUDIT_SIGNING_KID", "audit anchors use the policy-signing key")?,
+        _ => anyhow::bail!("DELBERT_AUDIT_SIGNING_KEY_FILE and DELBERT_AUDIT_SIGNING_KID must be set together"),
+    };
+    if let (Some(a), Some(p)) = (&audit_signer, &signer) {
+        anyhow::ensure!(a.public_key_b64() != p.public_key_b64(), "the audit signing key must differ from the policy-signing key");
+    }
     // Signing-key rotation (docs/ROTATION.md): keys agents should learn, and key ids they should drop.
     let published_keys: Vec<delbert_wire::TrustedKey> = var("DELBERT_SIGNING_PUBLISH_KEYS")
         .map(|v| {
@@ -246,7 +260,7 @@ async fn main() -> anyhow::Result<()> {
         ca_remove: ca_rotation.retire.clone(),
         renew_issued_before: ca_rotation.renew_issued_before,
     });
-    let state = AppState { pool, signer, trust, ca_rotation, published_keys, audit_keys, audit_anchor_file: var("DELBERT_AUDIT_ANCHOR_FILE").map(Into::into), ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, content: delbert_core::api::ContentConfig {
+    let state = AppState { pool, signer, trust, ca_rotation, published_keys, audit_keys, audit_signer, audit_anchor_file: var("DELBERT_AUDIT_ANCHOR_FILE").map(Into::into), ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, content: delbert_core::api::ContentConfig {
         dir: var("DELBERT_CONTENT_DIR").unwrap_or_else(|| "./data/content".into()).into(),
         allow_tenant_git: var("DELBERT_CONTENT_ALLOW_TENANT_GIT").as_deref() == Some("true"),
         allow_file: var("DELBERT_CONTENT_ALLOW_FILE").as_deref() == Some("true"),
@@ -277,7 +291,7 @@ async fn main() -> anyhow::Result<()> {
     if state.content.poll {
         tokio::spawn(delbert_core::content::poller(state.clone()));
     }
-    if let Some(signer) = state.signer.clone() {
+    if let Some(signer) = state.anchor_signer() {
         let every = var("DELBERT_AUDIT_ANCHOR_SECS").map(|v| v.parse()).transpose().context("DELBERT_AUDIT_ANCHOR_SECS")?.unwrap_or(3600u64);
         anyhow::ensure!(every >= 10, "DELBERT_AUDIT_ANCHOR_SECS must be at least 10");
         tokio::spawn(delbert_core::audit::anchor_loop(state.pool.clone(), signer, std::time::Duration::from_secs(every), state.audit_anchor_file.clone()));

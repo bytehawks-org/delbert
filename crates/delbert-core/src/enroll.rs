@@ -44,6 +44,10 @@ pub struct NewEnrollmentKey {
     /// Groups for agents created by enrollment.
     #[serde(default)]
     pub groups: Vec<String>,
+    /// Bind the key to this agent name: no other agent can enroll with it. Recommended; without it
+    /// the key enrolls any name of the tenant.
+    #[serde(default)]
+    pub agent_name: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -63,6 +67,8 @@ pub struct EnrollmentKeyOut {
     pub expires_at: i64,
     pub revoked: bool,
     pub groups: Vec<String>,
+    /// The only agent name that may use the key, if bound.
+    pub agent_name: Option<String>,
 }
 
 #[utoipa::path(post, path = "/v1/tenants/{tenant}/enrollment-keys", tag = "enrollment", security(("bearer" = [])), request_body = NewEnrollmentKey,
@@ -73,6 +79,9 @@ pub async fn create_key(State(st): State<AppState>, Authn(user): Authn, Path(ten
         return Err(ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("ttl_hours must be 1-{MAX_TTL_HOURS} and max_uses 1-10000")));
     }
     body.groups.iter().try_for_each(|g| check_name(g, "group"))?;
+    if let Some(name) = &body.agent_name {
+        check_token(name, "agent")?;
+    }
     let tid = user.tenant(&st.pool, &tenant, "agents:enroll").await?;
 
     let mut raw = [0u8; 32];
@@ -81,8 +90,8 @@ pub async fn create_key(State(st): State<AppState>, Authn(user): Authn, Path(ten
 
     let mut tx = st.pool.begin().await?;
     let (id, expires_at): (Uuid, i64) = sqlx::query_as(
-        "INSERT INTO enrollment_keys (tenant_id, secret_hash, groups, max_uses, expires_at, created_by) \
-         VALUES ($1, $2, $3, $4, now() + make_interval(hours => $5), $6) RETURNING id, (EXTRACT(EPOCH FROM expires_at))::bigint",
+        "INSERT INTO enrollment_keys (tenant_id, secret_hash, groups, max_uses, expires_at, created_by, agent_name) \
+         VALUES ($1, $2, $3, $4, now() + make_interval(hours => $5), $6, $7) RETURNING id, (EXTRACT(EPOCH FROM expires_at))::bigint",
     )
     .bind(tid)
     .bind(key_hash(&key))
@@ -90,9 +99,10 @@ pub async fn create_key(State(st): State<AppState>, Authn(user): Authn, Path(ten
     .bind(max_uses)
     .bind(ttl as i32)
     .bind(&user.username)
+    .bind(&body.agent_name)
     .fetch_one(&mut *tx)
     .await?;
-    audit::append(&mut tx, &NewEvent { tenant_id: Some(tid), actor: &user.username, action: "enrollment-key.create", target: Some(&id.to_string()), outcome: "ok", details: json!({ "max_uses": max_uses, "ttl_hours": ttl, "groups": body.groups }) }).await?;
+    audit::append(&mut tx, &NewEvent { tenant_id: Some(tid), actor: &user.username, action: "enrollment-key.create", target: Some(&id.to_string()), outcome: "ok", details: json!({ "max_uses": max_uses, "ttl_hours": ttl, "groups": body.groups, "agent_name": body.agent_name }) }).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(EnrollmentKeyCreated { id: id.to_string(), key, expires_at, max_uses })))
 }
@@ -101,13 +111,13 @@ pub async fn create_key(State(st): State<AppState>, Authn(user): Authn, Path(ten
     params(("tenant" = String, Path)), responses((status = 200, body = Vec<EnrollmentKeyOut>), (status = 404)))]
 pub async fn list_keys(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>) -> ApiResult<Json<Vec<EnrollmentKeyOut>>> {
     let tid = user.tenant(&st.pool, &tenant, "agents:enroll").await?;
-    let rows: Vec<(Uuid, i32, i32, i64, bool, Vec<String>)> = sqlx::query_as(
-        "SELECT id, uses, max_uses, (EXTRACT(EPOCH FROM expires_at))::bigint, revoked, groups FROM enrollment_keys WHERE tenant_id = $1 ORDER BY created_at DESC",
+    let rows: Vec<(Uuid, i32, i32, i64, bool, Vec<String>, Option<String>)> = sqlx::query_as(
+        "SELECT id, uses, max_uses, (EXTRACT(EPOCH FROM expires_at))::bigint, revoked, groups, agent_name FROM enrollment_keys WHERE tenant_id = $1 ORDER BY created_at DESC",
     )
     .bind(tid)
     .fetch_all(&st.pool)
     .await?;
-    Ok(Json(rows.into_iter().map(|(id, uses, max_uses, expires_at, revoked, groups)| EnrollmentKeyOut { id: id.to_string(), uses, max_uses, expires_at, revoked, groups }).collect()))
+    Ok(Json(rows.into_iter().map(|(id, uses, max_uses, expires_at, revoked, groups, agent_name)| EnrollmentKeyOut { id: id.to_string(), uses, max_uses, expires_at, revoked, groups, agent_name }).collect()))
 }
 
 #[utoipa::path(delete, path = "/v1/tenants/{tenant}/enrollment-keys/{id}", tag = "enrollment", security(("bearer" = [])),
@@ -239,18 +249,19 @@ pub async fn do_enroll(st: &AppState, req: EnrollRequest, proxy_id: Option<Uuid>
     age::x25519::Recipient::from_str(&req.enc_public_key).map_err(|_| ApiError(StatusCode::UNPROCESSABLE_ENTITY, "enc_public_key is not an age recipient".into()))?;
 
     let mut tx = st.pool.begin().await?;
-    let key: Option<(Uuid, Uuid, String, Vec<String>, i32, i32, bool, bool)> = sqlx::query_as(
-        "SELECT k.id, k.tenant_id, t.name, k.groups, k.max_uses, k.uses, k.revoked, k.expires_at > now() \
+    let key: Option<(Uuid, Uuid, String, Vec<String>, i32, i32, bool, bool, Option<String>)> = sqlx::query_as(
+        "SELECT k.id, k.tenant_id, t.name, k.groups, k.max_uses, k.uses, k.revoked, k.expires_at > now(), k.agent_name \
          FROM enrollment_keys k JOIN tenants t ON t.id = k.tenant_id WHERE k.secret_hash = $1 FOR UPDATE OF k",
     )
     .bind(key_hash(&req.psk))
     .fetch_optional(&mut *tx)
     .await?;
-    let Some((key_id, tid, tenant, groups, max_uses, uses, revoked, valid)) = key else {
+    let Some((key_id, tid, tenant, groups, max_uses, uses, revoked, valid, bound_to)) = key else {
         drop(tx);
         return Err(fail(&st.pool, throttle_key, "agent", None).await);
     };
-    if revoked || !valid || uses >= max_uses {
+    // A key bound to a name is as good as no key for any other name (same answer, counted as a failure).
+    if revoked || !valid || uses >= max_uses || bound_to.as_deref().is_some_and(|n| n != req.agent_name) {
         drop(tx);
         return Err(fail(&st.pool, throttle_key, "agent", None).await);
     }

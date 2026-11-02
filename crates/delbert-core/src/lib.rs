@@ -29,3 +29,4 @@ pub mod compile;
 pub mod enroll;
 pub mod facts;
 pub mod remediation;
+pub mod replay;

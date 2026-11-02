@@ -1,0 +1,26 @@
+name: audit
+
+# Known vulnerabilities in the dependencies (docs/SECURITY-REVIEW.md F-08). New advisories appear
+# without any code change, so this also runs weekly. Reviewed exceptions live in .cargo/audit.toml.
+on:
+  push:
+    branches: [main]
+    paths: [Cargo.lock, .cargo/audit.toml, .github/workflows/audit.yml]
+  pull_request:
+    paths: [Cargo.lock, .cargo/audit.toml, .github/workflows/audit.yml]
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-24.04
+    container: docker.io/library/rust:1.99-alpine
+    steps:
+      - run: apk add --no-cache git musl-dev openssl-dev openssl-libs-static pkgconf
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
