@@ -15,6 +15,7 @@ pub const KEYS: &[(&str, &str, bool)] = &[
     ("server.tls_key_file", "DELBERT_TLS_KEY_FILE", false),
     ("server.api_docs", "DELBERT_API_DOCS", false),
     ("server.trust_forwarded", "DELBERT_TRUST_FORWARDED", false),
+    ("server.trust_forwarded_hops", "DELBERT_TRUST_FORWARDED_HOPS", false),
     ("server.cookie_insecure", "DELBERT_COOKIE_INSECURE", false),
     ("server.public_url", "DELBERT_PUBLIC_URL", false),
     ("server.ui_url", "DELBERT_UI_URL", false),

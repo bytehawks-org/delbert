@@ -20,7 +20,7 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Audit: NDJSON export done; SIEM connector, retention to-do | partial | 2026-10-24 |
 | Audit: signed anchors of the hash chain (migration `0026`, periodic + on demand, verified by `GET /v1/audit/verify`; detects truncation and rewrites); adversarial tests (`tests/audit_adversarial.rs`, `tests/tenant_isolation.rs`) | complete | 2026-11-02 |
 | Enrollment endpoints: per-address throttle and bounded audit of failed attempts (migration `0027`, [SECURITY-REVIEW.md](SECURITY-REVIEW.md) F-02) | complete | 2026-11-02 |
-| `X-Forwarded-For` trusted-hop count for the throttles (F-09) | to-do | 2026-11-02 |
+| `X-Forwarded-For` trusted-hop count (`DELBERT_TRUST_FORWARDED_HOPS`) for the throttles and sessions (F-09) | complete | 2026-11-02 |
 | Nonce cache for signed agent proofs (F-05); enrollment key bound to an agent name (F-06); dedicated audit signing key (F-04) | to-do | 2026-11-02 |
 | Independent security review of the areas listed as not reviewed in [SECURITY-REVIEW.md](SECURITY-REVIEW.md); `cargo audit`/`cargo deny` in CI | to-do | 2026-11-02 |
 | Audit: anchors emitted to the log and to a file (`DELBERT_AUDIT_ANCHOR_FILE`), offline check with `delbert-sign verify-anchors` | complete | 2026-11-02 |

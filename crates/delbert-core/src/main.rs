@@ -254,6 +254,11 @@ async fn main() -> anyhow::Result<()> {
     }, auth: delbert_core::api::AuthConfig {
         cookie_secure: var("DELBERT_COOKIE_INSECURE").as_deref() != Some("true"),
         trust_forwarded: var("DELBERT_TRUST_FORWARDED").as_deref() == Some("true"),
+        forwarded_hops: {
+            let hops: usize = var("DELBERT_TRUST_FORWARDED_HOPS").map(|v| v.parse()).transpose().context("DELBERT_TRUST_FORWARDED_HOPS")?.unwrap_or(1);
+            anyhow::ensure!((1..=10).contains(&hops), "DELBERT_TRUST_FORWARDED_HOPS must be 1-10");
+            hops
+        },
         mfa: match var("DELBERT_MFA_REQUIRED").as_deref().unwrap_or("none") {
             "none" => delbert_core::api::MfaPolicy::Optional,
             "admins" => delbert_core::api::MfaPolicy::Admins,

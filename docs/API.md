@@ -32,7 +32,8 @@ JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/sw
 | `DELBERT_CONTENT_POLL` | `false` disables the background polling of sources with `poll_secs` (default on) |
 | `DELBERT_MFA_REQUIRED` | `none` (default), `admins` (users with a global role) or `all`: who must set up TOTP. Without it such a user only reaches the profile and the enrolment endpoints |
 | `DELBERT_COOKIE_INSECURE` | `true` drops the `Secure` flag of the session cookie (plain-HTTP development only) |
-| `DELBERT_TRUST_FORWARDED` | `true` takes the client address from `X-Forwarded-For` (only behind a trusted reverse proxy **that replaces the header**: the first entry is used, so a proxy that appends lets clients choose their address); used for login throttling, enrollment throttling and the session list |
+| `DELBERT_TRUST_FORWARDED` | `true` takes the client address from `X-Forwarded-For` (only behind trusted reverse proxies); used for login throttling, enrollment throttling and the session list |
+| `DELBERT_TRUST_FORWARDED_HOPS` | With the above: how many trusted reverse proxies append to `X-Forwarded-For`, default 1 (1-10). The client is the entry that many from the right; entries further left are client-supplied and ignored. A single proxy that replaces or appends: 1. CDN then ingress: 2. A shorter list, or an entry that is not an IP address, falls back to the connection's address |
 | `DELBERT_APPROVAL_DEFAULT` | `true` = new tenants require policy approval (default `false`) |
 | `DATABASE_URL` | PostgreSQL connection of the runtime role (member of `delbert_app`, see Database) (required) |
 | `DATABASE_MIGRATE_URL` | Schema owner connection used only to run migrations; defaults to `DATABASE_URL` |

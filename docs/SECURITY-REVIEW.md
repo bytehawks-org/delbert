@@ -13,7 +13,7 @@ A first, partial review of the security-critical paths, done by reading the code
 | F-05 | Low | Signed requests and reports (`delbert-pki::authn`) carry a timestamp and a nonce, but the Core keeps no nonce cache: a captured proof can be replayed within the 60 s window. Impact is small (reports are ordered by their own `at`; a replayed `renew` yields a certificate for the original CSR, useless without the private key) and capture needs the TLS-protected bus. | Open |
 | F-06 | Low | An enrollment key is tenant-wide, not bound to an agent name: its holder can claim any pre-created, not yet enrolled agent name of that tenant (and its group set). Keys are short-lived and single-use by default. | Open (consider binding a key to a name) |
 | F-07 | Info | The authorization callout does not verify the signature of the request JWT it receives on `$SYS.REQ.USER.AUTH`; it relies on NATS permissions keeping every client away from that subject. `xkey` encryption/verification of callout messages is already on the roadmap. | Open (hardening) |
-| F-09 | Medium | With `DELBERT_TRUST_FORWARDED=true` the client address is the **first** entry of `X-Forwarded-For`, which the client controls when the reverse proxy appends instead of overwriting the header. The login and enrollment throttles can then be sidestepped by rotating the header. Safe only if the ingress replaces the header. | Open: document (done), then a hop count (`DELBERT_TRUST_FORWARDED_HOPS`, take the entry added by the last trusted proxy) |
+| F-09 | Medium | With `DELBERT_TRUST_FORWARDED=true` the client address was the **first** entry of `X-Forwarded-For`, which the client controls when the reverse proxy appends instead of overwriting the header: the login and enrollment throttles could be sidestepped by rotating the header, and free-form text ended up in throttle keys and audit details. | **Fixed** (2026-11-02): the entry `DELBERT_TRUST_FORWARDED_HOPS` from the right is used (default 1), it must be an IP address, otherwise the connection's address is used. Tests: `auth::client_address_tests`, `tests/enroll_throttle.rs` |
 | F-08 | Info | `cargo audit` / `cargo deny` were not run (no network access to the advisory database in the review environment). | Open |
 
 ## Checked and found sound
@@ -31,6 +31,5 @@ Needs a human reviewer, in this order: the agent's apply path (symlinks, ownersh
 
 ## Next steps
 
-1. F-09: a trusted-hop count for `X-Forwarded-For`.
-2. Ship the audit trail itself (not only the anchors) to the external sink, and a console view of the anchors.
-3. F-05, F-06, F-04, then a review of the "Not reviewed" list by someone who did not write the code.
+1. Ship the audit trail itself (not only the anchors) to the external sink, and a console view of the anchors.
+2. F-05, F-06, F-04, then a review of the "Not reviewed" list by someone who did not write the code.

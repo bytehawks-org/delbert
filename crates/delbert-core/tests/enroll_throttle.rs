@@ -89,3 +89,22 @@ async fn legitimate_enrollment_is_unaffected(pool: PgPool) {
     let _ = enroll_agent(&admin, "acme", "agent-1").await;
     assert_eq!(count(&admin, "enroll.denied").await, 0);
 }
+
+/// F-09: a client that fills the left of `X-Forwarded-For` with addresses of its choosing cannot
+/// shed its throttle; only the entry added by the trusted proxy counts.
+#[sqlx::test]
+async fn forged_forwarded_for_entries_do_not_bypass_the_throttle(pool: PgPool) {
+    let mut st = state(pool, vec![Strategy::Error], None);
+    st.auth.trust_forwarded = true;
+    let admin = admin_client(st).await;
+    for i in 0..10 {
+        // The proxy appended the real address (192.0.2.50); the client invented the rest.
+        assert_eq!(from(&admin, &format!("10.9.8.{i}, 192.0.2.50"), "/v1/enroll", &bad_enroll("dlb_x")).await, S::UNAUTHORIZED);
+    }
+    assert_eq!(from(&admin, "10.9.8.77, 192.0.2.50", "/v1/enroll", &bad_enroll("dlb_x")).await, S::TOO_MANY_REQUESTS);
+    // A text that is no address is not a throttle key either: it falls back to the peer, never to a free-form string.
+    let (_, export) = admin.text("GET", "/v1/audit/export").await;
+    assert!(export.contains("192.0.2.50") && !export.contains("10.9.8."), "{export}");
+    // Another real client behind the same proxy is unaffected.
+    assert_eq!(from(&admin, "10.9.8.1, 192.0.2.51", "/v1/enroll", &bad_enroll("dlb_x")).await, S::UNAUTHORIZED);
+}

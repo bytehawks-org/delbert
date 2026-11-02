@@ -106,8 +106,12 @@ impl Default for ContentConfig {
 pub struct AuthConfig {
     /// Add `Secure` to the session cookie (turn off only for plain-HTTP development).
     pub cookie_secure: bool,
-    /// Take the client address from `X-Forwarded-For` (only behind a trusted reverse proxy).
+    /// Take the client address from `X-Forwarded-For` (only behind trusted reverse proxies).
     pub trust_forwarded: bool,
+    /// How many trusted reverse proxies append to `X-Forwarded-For`: the client is the entry that
+    /// many from the right (1 = the address the single, nearest proxy saw). Entries further left are
+    /// client-supplied and ignored. Only used with `trust_forwarded`.
+    pub forwarded_hops: usize,
     /// Who must have a second factor.
     pub mfa: MfaPolicy,
     /// Public base URL of the Core (`https://delbert.example.com`): single sign-on redirect URIs.
@@ -137,7 +141,7 @@ pub enum MfaPolicy {
 
 impl Default for AuthConfig {
     fn default() -> Self {
-        AuthConfig { cookie_secure: true, trust_forwarded: false, mfa: MfaPolicy::Optional, public_url: None, ui_url: None, local_login: LocalLogin::All }
+        AuthConfig { cookie_secure: true, trust_forwarded: false, forwarded_hops: 1, mfa: MfaPolicy::Optional, public_url: None, ui_url: None, local_login: LocalLogin::All }
     }
 }
 

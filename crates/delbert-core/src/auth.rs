@@ -343,12 +343,49 @@ impl FromRequestParts<AppState> for ClientIp {
     type Rejection = std::convert::Infallible;
 
     async fn from_request_parts(parts: &mut Parts, st: &AppState) -> Result<Self, Self::Rejection> {
-        let forwarded = st.auth.trust_forwarded.then(|| parts.headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()).and_then(|v| v.split(',').next())).flatten();
-        let ip = forwarded
-            .map(|v| v.trim().to_owned())
-            .or_else(|| parts.extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip().to_string()))
-            .unwrap_or_else(|| "unknown".into());
-        Ok(ClientIp(ip))
+        let peer = parts.extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip().to_string());
+        let forwarded = st.auth.trust_forwarded.then(|| parts.headers.get_all("x-forwarded-for").iter().filter_map(|v| v.to_str().ok()).collect::<Vec<_>>().join(","));
+        Ok(ClientIp(client_address(forwarded.as_deref(), st.auth.forwarded_hops, peer)))
+    }
+}
+
+/// The client address behind `hops` trusted reverse proxies, each of which appends the address it
+/// saw to `X-Forwarded-For` (several header lines count as one list). Only the entries the trusted
+/// proxies added are believed: the one `hops` from the right; everything left of it is whatever the
+/// client sent. If the list is shorter than `hops` or the entry is not an IP address (the request
+/// did not come through the proxies we expect), the connection's own address is used.
+pub fn client_address(forwarded: Option<&str>, hops: usize, peer: Option<String>) -> String {
+    let from_header = forwarded.and_then(|list| {
+        let entries: Vec<&str> = list.split(',').map(str::trim).collect();
+        let entry = entries.len().checked_sub(hops).and_then(|i| entries.get(i))?;
+        entry.parse::<std::net::IpAddr>().ok().map(|ip| ip.to_string())
+    });
+    from_header.or(peer).unwrap_or_else(|| "unknown".into())
+}
+
+#[cfg(test)]
+mod client_address_tests {
+    use super::client_address;
+
+    fn ca(f: Option<&str>, hops: usize) -> String {
+        client_address(f, hops, Some("10.0.0.1".into()))
+    }
+
+    #[test]
+    fn only_entries_added_by_trusted_proxies_are_believed() {
+        // One proxy that appends: the client forged the left entries, the proxy added the real address.
+        assert_eq!(ca(Some("6.6.6.6, 203.0.113.7"), 1), "203.0.113.7");
+        assert_eq!(ca(Some("203.0.113.7"), 1), "203.0.113.7"); // proxy that replaces the header
+        // Two trusted hops (CDN, then ingress): the client is the second from the right.
+        assert_eq!(ca(Some("6.6.6.6, 203.0.113.7, 198.51.100.2"), 2), "203.0.113.7");
+        assert_eq!(ca(Some("2001:db8::1"), 1), "2001:db8::1");
+        // Not enough entries, not an address, or no header: the peer.
+        assert_eq!(ca(Some("203.0.113.7"), 2), "10.0.0.1");
+        assert_eq!(ca(Some("not-an-ip"), 1), "10.0.0.1");
+        assert_eq!(ca(Some("1.2.3.4, <script>"), 1), "10.0.0.1");
+        assert_eq!(ca(Some(""), 1), "10.0.0.1");
+        assert_eq!(ca(None, 1), "10.0.0.1");
+        assert_eq!(client_address(None, 1, None), "unknown");
     }
 }
 
