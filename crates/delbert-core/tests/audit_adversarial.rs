@@ -184,3 +184,47 @@ async fn api_anchors_verify_and_permissions(pool: PgPool) {
     assert_eq!(aud.call("POST", "/v1/audit/anchors", None).await.0, S::FORBIDDEN);
     assert_eq!(aud.call("GET", "/v1/audit/verify", None).await.0, S::FORBIDDEN);
 }
+
+#[sqlx::test]
+async fn an_external_copy_of_the_anchors_catches_what_the_database_cannot(pool: PgPool) {
+    // The sink is a file the database administrator cannot reach.
+    let dir = std::env::temp_dir().join(format!("delbert-anchors-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join(format!("anchors-{}.ndjson", rand_suffix()));
+    let mut st = common::state(pool.clone(), vec![delbert_core::compile::Strategy::Error], None);
+    st.audit_anchor_file = Some(file.clone());
+    let admin = common::admin_client(st).await;
+    for i in 0..3 {
+        admin.call("POST", "/v1/tenants", Some(json!({ "name": format!("t{i}") }))).await;
+    }
+    assert!(admin.call("POST", "/v1/audit/anchors", None).await.1.is_object());
+    let keys = {
+        let mut v = delbert_wire::Verifier::default();
+        v.add_key("k1", &common::signing_key_public()).unwrap();
+        v
+    };
+    let anchors = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(anchors.lines().count(), 1);
+
+    // Untouched: the copy matches the live export.
+    let (_, export) = admin.text("GET", "/v1/audit/export").await;
+    assert_eq!(delbert_wire::anchor::check(&keys, &anchors, Some(&export)), (1, vec![]));
+
+    // The insider drops the newest events AND the anchors table is wiped: the database alone
+    // can no longer tell (no anchors left), but the external copy still convicts the export.
+    sqlx::query("ALTER TABLE audit_events DISABLE TRIGGER USER").execute(&pool).await.unwrap();
+    sqlx::query("ALTER TABLE audit_anchors DISABLE TRIGGER USER").execute(&pool).await.unwrap();
+    sqlx::query("DELETE FROM audit_anchors").execute(&pool).await.unwrap();
+    sqlx::query("DELETE FROM audit_events WHERE seq > 2").execute(&pool).await.unwrap();
+    let v = admin.call("GET", "/v1/audit/verify", None).await.1;
+    assert_eq!((v["first_bad"].is_null(), v["anchors"].as_u64()), (true, Some(0)), "the database alone sees nothing wrong: {v}");
+    let (_, export) = admin.text("GET", "/v1/audit/export").await;
+    let (checked, problems) = delbert_wire::anchor::check(&keys, &anchors, Some(&export));
+    assert_eq!(checked, 1);
+    assert!(problems.iter().any(|p| p.contains("truncated")), "{problems:?}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+fn rand_suffix() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as u64
+}

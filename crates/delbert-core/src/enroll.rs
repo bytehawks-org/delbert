@@ -154,16 +154,88 @@ fn denied() -> ApiError {
     ApiError(StatusCode::UNAUTHORIZED, "invalid enrollment key".into())
 }
 
+// --- throttle and audit of failed enrollments (docs/SECURITY-REVIEW.md F-02) ---------------
+//
+// The enrollment endpoints are unauthenticated. Failures are counted per client address (or per
+// proxy for agents enrolling through one); past `MAX_FAILURES` in `WINDOW_MINUTES` the key is
+// refused with 429 *before* the enrollment key is even looked at, so a right key does not
+// reveal itself to someone who is being throttled. Failures reach the audit trail (action
+// `enroll.denied`) only up to `MAX_FAILURES` per key and `GLOBAL_AUDIT_CAP` overall per window,
+// and a throttled key is recorded once (`enroll.throttled`): the append-only trail cannot be
+// grown at will by an anonymous caller, yet the first attempts of a guessing run are always on record.
+
+const WINDOW_MINUTES: i32 = 10;
+const MAX_FAILURES: i64 = 10;
+const GLOBAL_AUDIT_CAP: i64 = 200;
+
+/// Refuse a throttled key (429). Call before looking at the enrollment key.
+pub(crate) async fn check_throttle(pool: &sqlx::PgPool, key: &str, what: &str) -> ApiResult<()> {
+    let failures: i64 = sqlx::query_scalar("SELECT count(*) FROM enroll_attempts WHERE key = $1 AND kind = 'failure' AND at > now() - make_interval(mins => $2)")
+        .bind(key)
+        .bind(WINDOW_MINUTES)
+        .fetch_one(pool)
+        .await?;
+    if failures < MAX_FAILURES {
+        return Ok(());
+    }
+    // Record the throttling once per window: the insert only happens when no row is there yet.
+    let mut tx = pool.begin().await?;
+    let first = sqlx::query(
+        "INSERT INTO enroll_attempts (key, kind) SELECT $1, 'throttled' \
+         WHERE NOT EXISTS (SELECT 1 FROM enroll_attempts WHERE key = $1 AND kind = 'throttled' AND at > now() - make_interval(mins => $2))",
+    )
+    .bind(key)
+    .bind(WINDOW_MINUTES)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected()
+        == 1;
+    if first {
+        audit::append(&mut tx, &NewEvent { tenant_id: None, actor: "anonymous", action: "enroll.throttled", target: Some(what), outcome: "denied", details: json!({ "key": key, "failures": failures, "window_minutes": WINDOW_MINUTES }) }).await?;
+    }
+    tx.commit().await?;
+    Err(ApiError(StatusCode::TOO_MANY_REQUESTS, "too many failed enrollments from this address; try again later".into()))
+}
+
+/// Record a rejected enrollment key and answer 401 (the same answer for every reason). `what` is
+/// the endpoint (`agent` / `proxy`); `name` the proxy name when one was given. The key itself is never stored.
+pub(crate) async fn fail(pool: &sqlx::PgPool, key: &str, what: &str, name: Option<&str>) -> ApiError {
+    match record_failure(pool, key, what, name).await {
+        Ok(()) => denied(),
+        Err(e) => e,
+    }
+}
+
+async fn record_failure(pool: &sqlx::PgPool, key: &str, what: &str, name: Option<&str>) -> ApiResult<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("INSERT INTO enroll_attempts (key, kind) VALUES ($1, 'failure')").bind(key).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM enroll_attempts WHERE at < now() - interval '1 day'").execute(&mut *tx).await?;
+    let (mine, all): (i64, i64) = sqlx::query_as(
+        "SELECT count(*) FILTER (WHERE key = $1), count(*) FROM enroll_attempts WHERE kind = 'failure' AND at > now() - make_interval(mins => $2)",
+    )
+    .bind(key)
+    .bind(WINDOW_MINUTES)
+    .fetch_one(&mut *tx)
+    .await?;
+    if mine <= MAX_FAILURES && all <= GLOBAL_AUDIT_CAP {
+        audit::append(&mut tx, &NewEvent { tenant_id: None, actor: "anonymous", action: "enroll.denied", target: name.or(Some(what)), outcome: "denied", details: json!({ "key": key, "endpoint": what }) }).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
 #[utoipa::path(post, path = "/v1/enroll", tag = "enrollment", request_body = EnrollRequest,
     responses((status = 200, body = EnrollResponse), (status = 401, description = "Invalid enrollment key"), (status = 409, description = "Agent already enrolled"), (status = 422)))]
-pub async fn enroll(State(st): State<AppState>, Json(req): Json<EnrollRequest>) -> ApiResult<Json<EnrollResponse>> {
-    Ok(Json(do_enroll(&st, req, None).await?))
+pub async fn enroll(State(st): State<AppState>, crate::auth::ClientIp(ip): crate::auth::ClientIp, Json(req): Json<EnrollRequest>) -> ApiResult<Json<EnrollResponse>> {
+    Ok(Json(do_enroll(&st, req, None, &ip).await?))
 }
 
 /// Enrollment proper. `proxy_id` is set when the agent enrolls through a proxy, which then serves it.
-pub async fn do_enroll(st: &AppState, req: EnrollRequest, proxy_id: Option<Uuid>) -> ApiResult<EnrollResponse> {
+/// `throttle_key` is the client address, or `proxy:<site>` for an enrollment relayed by a proxy.
+pub async fn do_enroll(st: &AppState, req: EnrollRequest, proxy_id: Option<Uuid>, throttle_key: &str) -> ApiResult<EnrollResponse> {
     let ca = st.pki.as_ref().ok_or_else(|| ApiError(StatusCode::SERVICE_UNAVAILABLE, "enrollment is not configured (no CA)".into()))?;
     check_token(&req.agent_name, "agent")?;
+    check_throttle(&st.pool, throttle_key, "agent").await?;
     age::x25519::Recipient::from_str(&req.enc_public_key).map_err(|_| ApiError(StatusCode::UNPROCESSABLE_ENTITY, "enc_public_key is not an age recipient".into()))?;
 
     let mut tx = st.pool.begin().await?;
@@ -174,9 +246,13 @@ pub async fn do_enroll(st: &AppState, req: EnrollRequest, proxy_id: Option<Uuid>
     .bind(key_hash(&req.psk))
     .fetch_optional(&mut *tx)
     .await?;
-    let Some((key_id, tid, tenant, groups, max_uses, uses, revoked, valid)) = key else { return Err(denied()) };
+    let Some((key_id, tid, tenant, groups, max_uses, uses, revoked, valid)) = key else {
+        drop(tx);
+        return Err(fail(&st.pool, throttle_key, "agent", None).await);
+    };
     if revoked || !valid || uses >= max_uses {
-        return Err(denied());
+        drop(tx);
+        return Err(fail(&st.pool, throttle_key, "agent", None).await);
     }
 
     let existing: Option<(Uuid, bool)> =

@@ -246,7 +246,7 @@ async fn main() -> anyhow::Result<()> {
         ca_remove: ca_rotation.retire.clone(),
         renew_issued_before: ca_rotation.renew_issued_before,
     });
-    let state = AppState { pool, signer, trust, ca_rotation, published_keys, audit_keys, ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, content: delbert_core::api::ContentConfig {
+    let state = AppState { pool, signer, trust, ca_rotation, published_keys, audit_keys, audit_anchor_file: var("DELBERT_AUDIT_ANCHOR_FILE").map(Into::into), ttl_secs, strategies: Arc::new(strategies), bus, docs: var("DELBERT_API_DOCS").as_deref() != Some("false"), secrets_key, pki, agent_cert_days, public_nats_url: var("DELBERT_PUBLIC_NATS_URL"), approval_default: var("DELBERT_APPROVAL_DEFAULT").as_deref() == Some("true"), blobs, content: delbert_core::api::ContentConfig {
         dir: var("DELBERT_CONTENT_DIR").unwrap_or_else(|| "./data/content".into()).into(),
         allow_tenant_git: var("DELBERT_CONTENT_ALLOW_TENANT_GIT").as_deref() == Some("true"),
         allow_file: var("DELBERT_CONTENT_ALLOW_FILE").as_deref() == Some("true"),
@@ -275,7 +275,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(signer) = state.signer.clone() {
         let every = var("DELBERT_AUDIT_ANCHOR_SECS").map(|v| v.parse()).transpose().context("DELBERT_AUDIT_ANCHOR_SECS")?.unwrap_or(3600u64);
         anyhow::ensure!(every >= 10, "DELBERT_AUDIT_ANCHOR_SECS must be at least 10");
-        tokio::spawn(delbert_core::audit::anchor_loop(state.pool.clone(), signer, std::time::Duration::from_secs(every)));
+        tokio::spawn(delbert_core::audit::anchor_loop(state.pool.clone(), signer, std::time::Duration::from_secs(every), state.audit_anchor_file.clone()));
     }
     if state.bus.is_some() {
         tokio::spawn(delbert_core::bus::serve(state.clone()));

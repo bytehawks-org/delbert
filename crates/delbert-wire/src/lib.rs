@@ -4,6 +4,7 @@
 //! serializes it with JCS (RFC 8785) and signs it as a JWS (EdDSA, RFC 7515/8037).
 //! Agents call [`Verifier::verify`] before acting on anything.
 
+pub mod anchor;
 pub mod canonical;
 pub mod jws;
 pub mod model;

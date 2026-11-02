@@ -198,8 +198,9 @@ pub struct ProxyEnrollResponse {
 
 #[utoipa::path(post, path = "/v1/proxies/enroll", tag = "proxies", request_body = ProxyEnrollRequest,
     responses((status = 200, body = ProxyEnrollResponse), (status = 401, description = "Invalid enrollment key"), (status = 422)))]
-pub async fn enroll_proxy(State(st): State<AppState>, Json(req): Json<ProxyEnrollRequest>) -> ApiResult<Json<ProxyEnrollResponse>> {
+pub async fn enroll_proxy(State(st): State<AppState>, crate::auth::ClientIp(ip): crate::auth::ClientIp, Json(req): Json<ProxyEnrollRequest>) -> ApiResult<Json<ProxyEnrollResponse>> {
     let ca = st.pki.as_ref().ok_or_else(|| ApiError(StatusCode::SERVICE_UNAVAILABLE, "enrollment is not configured (no CA)".into()))?;
+    crate::enroll::check_throttle(&st.pool, &ip, "proxy").await?;
     let mut tx = st.pool.begin().await?;
     let row: Option<(Uuid, Vec<String>)> = sqlx::query_as(
         "SELECT id, dns_names FROM proxies WHERE name = $1 AND enroll_secret_hash = $2 AND enroll_expires_at > now() AND public_key IS NULL FOR UPDATE",
@@ -208,7 +209,10 @@ pub async fn enroll_proxy(State(st): State<AppState>, Json(req): Json<ProxyEnrol
     .bind(Sha256::digest(req.psk.as_bytes()).to_vec())
     .fetch_optional(&mut *tx)
     .await?;
-    let Some((id, dns_names)) = row else { return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid enrollment key".into())) };
+    let Some((id, dns_names)) = row else {
+        drop(tx);
+        return Err(crate::enroll::fail(&st.pool, &ip, "proxy", Some(&req.name)).await);
+    };
     let signed = ca.sign_proxy_csr(&req.csr_pem, &req.name, &dns_names, st.agent_cert_days).map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("invalid CSR: {e}")))?;
     sqlx::query("UPDATE proxies SET public_key = $2, enrolled_at = now(), enroll_secret_hash = NULL, enroll_expires_at = NULL WHERE id = $1").bind(id).bind(&signed.public_key).execute(&mut *tx).await?;
     audit::append(&mut tx, &NewEvent { tenant_id: None, actor: &format!("proxy-enrollment:{}", req.name), action: "proxy.enroll", target: Some(&req.name), outcome: "ok", details: json!({}) }).await?;
@@ -255,7 +259,7 @@ pub async fn proxy_enroll_agent(State(st): State<AppState>, headers: HeaderMap, 
     let (site, proof) = proxy_header(&headers).ok_or_else(unauthorized)?;
     let proxy_id = proxy_proven(&st, &site, "enroll-agent", &body, Some(&proof)).await.ok_or_else(unauthorized)?;
     let req = EnrollRequest::deserialize(&body).map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
-    Ok(Json(crate::enroll::do_enroll(&st, req, Some(proxy_id)).await?))
+    Ok(Json(crate::enroll::do_enroll(&st, req, Some(proxy_id), &format!("proxy:{site}")).await?))
 }
 
 // --- artifacts through a proxy ------------------------------------------------------------------------

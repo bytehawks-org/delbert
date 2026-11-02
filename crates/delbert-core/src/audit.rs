@@ -120,13 +120,32 @@ pub struct Verification {
     pub first_bad_anchor: Option<i64>,
 }
 
-/// Domain separation of anchor signatures from every other use of the signing key.
-const ANCHOR_DOMAIN: &str = "delbert-audit-anchor-v1";
+use delbert_wire::anchor::DOMAIN as ANCHOR_DOMAIN;
 
-/// The exact bytes an anchor signs: JCS of its fields (hash as lowercase hex).
+/// The exact bytes an anchor signs (see `delbert_wire::anchor`, which also checks exported copies offline).
 fn anchor_document(seq: i64, hash: &[u8], events: i64, at: DateTime<Utc>, kid: &str) -> Result<Vec<u8>, AuditError> {
     let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-    Ok(delbert_wire::canonical::to_vec(&json!({ "v": 1, "seq": seq, "hash": hex, "events": events, "at": at.timestamp_micros(), "kid": kid }))?)
+    Ok(delbert_wire::anchor::document(seq, &hex, events, at.timestamp_micros(), kid)?)
+}
+
+/// Hand a new anchor to the outside world: a structured log line (collected like any other log)
+/// and, when configured, one NDJSON line appended to `file` (a volume that a shipper or WORM
+/// storage picks up). Failures are logged, never fatal: the anchor is in the database anyway.
+pub async fn emit(anchor: &Anchor, file: Option<&std::path::Path>) {
+    let Ok(line) = serde_json::to_string(anchor) else { return };
+    tracing::info!(target: "audit.anchor", "{line}");
+    if let Some(path) = file {
+        use tokio::io::AsyncWriteExt;
+        let written = async {
+            let mut f = tokio::fs::OpenOptions::new().create(true).append(true).open(path).await?;
+            f.write_all(format!("{line}\n").as_bytes()).await?;
+            f.sync_data().await
+        }
+        .await;
+        if let Err(e) = written {
+            tracing::error!("cannot append the audit anchor to {}: {e}", path.display());
+        }
+    }
 }
 
 /// A signed anchor of the chain head, as stored and exported.
@@ -183,10 +202,10 @@ pub fn anchor_keys(signer: Option<&delbert_wire::Signer>, published: &[delbert_w
 }
 
 /// Anchor the chain head every `every` (when a signing key is configured), forever.
-pub async fn anchor_loop(pool: PgPool, signer: std::sync::Arc<delbert_wire::Signer>, every: std::time::Duration) {
+pub async fn anchor_loop(pool: PgPool, signer: std::sync::Arc<delbert_wire::Signer>, every: std::time::Duration, file: Option<std::path::PathBuf>) {
     loop {
         match create_anchor(&pool, &signer).await {
-            Ok(Some(a)) => tracing::info!(seq = a.seq, events = a.events, "audit chain anchored"),
+            Ok(Some(a)) => emit(&a, file.as_deref()).await,
             Ok(None) => {}
             Err(e) => tracing::error!("audit anchor failed: {e}"),
         }

@@ -58,6 +58,8 @@ pub struct AppState {
     /// kept apart from `published_keys` so that retiring a key on the agents does not
     /// invalidate the anchors it signed.
     pub audit_keys: Vec<delbert_wire::TrustedKey>,
+    /// File each new audit anchor is appended to as an NDJSON line (`DELBERT_AUDIT_ANCHOR_FILE`).
+    pub audit_anchor_file: Option<std::path::PathBuf>,
     pub content: ContentConfig,
     /// Whether new tenants require policy approval (`DELBERT_APPROVAL_DEFAULT`).
     pub approval_default: bool,
@@ -869,6 +871,7 @@ pub async fn audit_anchor_now(State(st): State<AppState>, Authn(user): Authn) ->
     let signer = st.signer.as_deref().ok_or_else(|| ApiError::new(StatusCode::CONFLICT, "no policy-signing key is configured: audit anchors cannot be signed"))?;
     let anchor = audit::create_anchor(&st.pool, signer).await?;
     if let Some(a) = &anchor {
+        audit::emit(a, st.audit_anchor_file.as_deref()).await;
         let mut tx = st.pool.begin().await?;
         audit::append(&mut tx, &audit::NewEvent { tenant_id: None, actor: &user.username, action: "audit.anchor", target: Some(&a.id.to_string()), outcome: "ok", details: serde_json::json!({ "seq": a.seq, "events": a.events, "kid": a.kid }) }).await?;
         tx.commit().await?;

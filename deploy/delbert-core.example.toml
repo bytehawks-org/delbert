@@ -41,6 +41,14 @@ ttl_secs = 86400
 conflict_strategy = "error"       # comma-separated chain: priority, error
 approval_default = false          # true: new tenants require policy approval
 
+[audit]
+# The head of the audit hash chain is signed with the key above every anchor_secs (default 3600).
+# Append each anchor to a file on storage the database administrators cannot write, or collect the
+# `audit.anchor` log lines; check a copy with `delbert-sign verify-anchors`.
+# anchor_file = "/var/lib/delbert/audit-anchors.ndjson"
+# Former signing keys kept only to verify the anchors they signed: "kid=publickey,kid=publickey"
+# anchor_keys = ""
+
 [auth]
 mfa_required = "admins"           # none | admins | all
 # local_login = "admins"          # with SSO in charge: only break-glass administrators keep a password

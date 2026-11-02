@@ -43,6 +43,18 @@ enum Cmd {
         #[arg(long, default_value_t = 86_400)]
         ttl_secs: i64,
     },
+    /// Check a copy of the audit anchors (NDJSON) offline: signatures, order and, with an export
+    /// of the audit trail, that each anchor matches the event at its position. Exit 3 on a problem.
+    VerifyAnchors {
+        /// NDJSON anchors: the file the Core appends to (`DELBERT_AUDIT_ANCHOR_FILE`) or the collected log lines.
+        anchors: PathBuf,
+        /// Trusted keys file (`<kid> <base64 public key>` per line), as for agents.
+        #[arg(long)]
+        trusted_keys: PathBuf,
+        /// NDJSON export of the audit trail (`GET /v1/audit/export`).
+        #[arg(long)]
+        audit_export: Option<PathBuf>,
+    },
 }
 
 fn now() -> i64 {
@@ -87,6 +99,22 @@ fn main() -> anyhow::Result<()> {
                 force: None,
             };
             println!("{}", Signer::new(SigningKey::from_bytes(&seed), kid).sign(&effective)?);
+        }
+        Cmd::VerifyAnchors { anchors, trusted_keys, audit_export } => {
+            let keys = delbert_wire::Verifier::from_trusted_keys(&fs::read_to_string(&trusted_keys).with_context(|| format!("reading {}", trusted_keys.display()))?)?;
+            let export = audit_export.map(|p| fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))).transpose()?;
+            let (checked, problems) = delbert_wire::anchor::check(&keys, &fs::read_to_string(&anchors).with_context(|| format!("reading {}", anchors.display()))?, export.as_deref());
+            for p in &problems {
+                eprintln!("PROBLEM: {p}");
+            }
+            if checked == 0 && problems.is_empty() {
+                eprintln!("no anchors in {}", anchors.display());
+                std::process::exit(3);
+            }
+            if !problems.is_empty() {
+                std::process::exit(3);
+            }
+            println!("{checked} anchors verified");
         }
     }
     Ok(())

@@ -195,7 +195,7 @@ What to back up, and how often it matters:
 
 NATS (JetStream) and the agents' local state need no backup: agents rebuild from the Core, and they keep their identity on disk.
 
-Restore: 1) recreate PostgreSQL and restore the dump, 2) restore the key files and the artifact store/content directories, 3) start the Core with the same configuration (migrations are idempotent), 4) start NATS with the same issuer key. Agents reconnect on their own. The audit trail's hash chain is restored with the database; verify it with `GET /v1/audit/verify` afterwards (it also checks the signed anchors, which need the same signing key, or its public key in `DELBERT_AUDIT_ANCHOR_KEYS`). Keep an external copy of `GET /v1/audit/anchors`: it is what proves the trail was not truncated. Test a restore before you need one.
+Restore: 1) recreate PostgreSQL and restore the dump, 2) restore the key files and the artifact store/content directories, 3) start the Core with the same configuration (migrations are idempotent), 4) start NATS with the same issuer key. Agents reconnect on their own. The audit trail's hash chain is restored with the database; verify it with `GET /v1/audit/verify` afterwards (it also checks the signed anchors, which need the same signing key, or its public key in `DELBERT_AUDIT_ANCHOR_KEYS`). Keep an external copy of the anchors (`DELBERT_AUDIT_ANCHOR_FILE` on storage the database administrators cannot write, or your log collector): it is what proves the trail was not truncated; check it with `delbert-sign verify-anchors` ([API.md](API.md) "Audit anchors"). Test a restore before you need one.
 
 ## Upgrades
 
