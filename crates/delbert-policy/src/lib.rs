@@ -21,13 +21,40 @@ pub const API_VERSION: &str = "delbert/v1";
 pub enum PolicyError {
     #[error("invalid YAML: {0}")]
     Yaml(#[from] serde_yaml_ng::Error),
+    #[error("YAML too complex: {0}")]
+    TooComplex(String),
     #[error("invalid policy: {}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))]
     Invalid(Vec<ValidationError>),
 }
 
+/// Most `[` and `{` characters a YAML document may contain.
+///
+/// The YAML parser (libyaml) takes time **quadratic** in the nesting of flow collections: measured,
+/// 80 KB of `[` kept a core busy for 15 s and 320 KB of `{a: ` for 37 s, so a request body of a few
+/// MiB could stall a Core worker for minutes (docs/SECURITY-REVIEW.md F-10). Nesting needs one
+/// bracket per level, so bounding their number bounds the work (about 10 ms at the limit). Real
+/// policies, variables and tenant files have a handful; large inline text belongs in an artifact.
+pub const MAX_FLOW_BRACKETS: usize = 2_000;
+
+/// Refuse, before parsing, a document that could make the parser slow. Applied by [`from_yaml`] and
+/// [`parse_yaml`]; call it yourself before any other `serde_yaml_ng` parse of untrusted text.
+pub fn guard_yaml(input: &str) -> Result<(), PolicyError> {
+    let brackets = input.bytes().filter(|b| matches!(b, b'[' | b'{')).count();
+    if brackets > MAX_FLOW_BRACKETS {
+        return Err(PolicyError::TooComplex(format!("{brackets} '[' or '{{' characters, at most {MAX_FLOW_BRACKETS} are accepted (move large inline text to an artifact)")));
+    }
+    Ok(())
+}
+
+/// Parse untrusted YAML into `T` after [`guard_yaml`].
+pub fn parse_yaml<T: serde::de::DeserializeOwned>(input: &str) -> Result<T, PolicyError> {
+    guard_yaml(input)?;
+    Ok(serde_yaml_ng::from_str(input)?)
+}
+
 /// Parse and validate a policy. Nothing invalid is ever returned.
 pub fn from_yaml(input: &str) -> Result<Policy, PolicyError> {
-    let policy: Policy = serde_yaml_ng::from_str(input)?;
+    let policy: Policy = parse_yaml(input)?;
     validate(&policy).map_err(PolicyError::Invalid)?;
     Ok(policy)
 }

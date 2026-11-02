@@ -483,7 +483,7 @@ fn apply_scope(yaml: &str, scope: &Scope) -> Result<String, String> {
         Scope::Group(g) => ("groups", *g),
         Scope::Host(h) => ("agents", *h),
     };
-    let mut doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(yaml).map_err(|e| e.to_string())?;
+    let mut doc: serde_yaml_ng::Value = delbert_policy::parse_yaml(yaml).map_err(|e| e.to_string())?;
     let spec = doc.get_mut("spec").and_then(serde_yaml_ng::Value::as_mapping_mut).ok_or("the policy has no spec")?;
     let target = spec.entry("target".into()).or_insert_with(|| serde_yaml_ng::Mapping::new().into());
     let target = target.as_mapping_mut().ok_or("spec.target must be a mapping")?;
@@ -601,7 +601,7 @@ fn add_artifact(t: &mut TenantContent, name: &str, content: &[u8]) -> Result<(),
 }
 
 fn add_variables(t: &mut TenantContent, scope: &'static str, target: &str, content: &[u8]) -> Result<(), String> {
-    let file: VarsFile = serde_yaml_ng::from_str(utf8(content)?).map_err(|e| format!("invalid variables file (known keys: vars, locked): {e}"))?;
+    let file: VarsFile = delbert_policy::parse_yaml(utf8(content)?).map_err(|e| format!("invalid variables file (known keys: vars, locked): {e}"))?;
     if let Some(unknown) = file.locked.iter().find(|n| !file.vars.contains_key(*n)) {
         return Err(format!("'{unknown}' is listed in locked but has no value"));
     }
@@ -617,7 +617,7 @@ fn add_variables(t: &mut TenantContent, scope: &'static str, target: &str, conte
 fn parse_tenant_file(tenant: &str, path: &str, rest: &[&str], content: &[u8], t: &mut TenantContent) -> Result<(), String> {
     match rest {
         ["tenant.yaml"] => {
-            let f: TenantFile = serde_yaml_ng::from_str(utf8(content)?).map_err(|_| "invalid tenant settings (known: approval_required)".to_owned())?;
+            let f: TenantFile = delbert_policy::parse_yaml(utf8(content)?).map_err(|_| "invalid tenant settings (known: approval_required)".to_owned())?;
             t.approval_required = f.approval_required;
             Ok(())
         }

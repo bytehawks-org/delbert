@@ -54,6 +54,10 @@ Rules:
 - Artifacts (`artifact://`) are referenced by name; the signed policy pins their SHA-256.
 - Unknown keys are errors (typed deserialization, `deny_unknown_fields`).
 
+## Limits of the YAML document
+
+A policy (and the variables and tenant files of a content repository) may contain at most 2000 `[` and `{` characters in total; more is refused with "YAML too complex". The parser slows down quadratically with the nesting of flow collections, so the bound keeps one request from stalling the Core. Real files have a handful; put large inline text (JSON, configuration) in an artifact and reference it with `artifact://`. The request body limit (2 MiB by default) applies on top.
+
 ## Verbs (phase 1)
 
 | Verb | Purpose | Main parameters | Ansible analogue |

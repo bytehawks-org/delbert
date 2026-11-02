@@ -22,7 +22,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Enrollment endpoints: per-address throttle and bounded audit of failed attempts (migration `0027`, [SECURITY-REVIEW.md](SECURITY-REVIEW.md) F-02) | complete | 2026-11-02 |
 | `X-Forwarded-For` trusted-hop count (`DELBERT_TRUST_FORWARDED_HOPS`) for the throttles and sessions (F-09) | complete | 2026-11-02 |
 | Nonce cache for signed agent proofs (F-05, `replay.rs`); enrollment key bound to an agent name (F-06, migration `0028`); dedicated audit signing key (F-04) | complete | 2026-11-02 |
-| Callout hardening: pinned NATS server nkey and `xkey` (F-07); fuzzing and a maintained YAML parser (F-10); `cargo deny` | to-do | 2026-11-02 |
+| Callout hardening: pinned NATS server nkey and `xkey` (F-07); a maintained YAML parser instead of `unsafe-libyaml`; fuzzing of the artifact upload; `cargo deny` | to-do | 2026-11-02 |
+| YAML parsing DoS (quadratic in nesting) closed by `guard_yaml`; mutation tests of the policy parser, CSRs and certificates (F-10) | complete | 2026-11-02 |
 | `cargo audit` in CI (workflow `audit`, weekly too; reviewed exceptions in `.cargo/audit.toml`) | complete | 2026-11-02 |
 | Independent security review of the areas listed as not reviewed in [SECURITY-REVIEW.md](SECURITY-REVIEW.md) | to-do | 2026-11-02 |
 | Audit: anchors emitted to the log and to a file (`DELBERT_AUDIT_ANCHOR_FILE`), offline check with `delbert-sign verify-anchors` | complete | 2026-11-02 |
