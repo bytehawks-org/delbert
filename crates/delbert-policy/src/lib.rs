@@ -27,6 +27,23 @@ pub enum PolicyError {
     Invalid(Vec<ValidationError>),
 }
 
+/// Instructions one template rendering or `when` evaluation may execute.
+///
+/// MiniJinja has no limit of its own: `{% for a in range(100000) %}{% for b in range(100000) %}`
+/// ran for ever (measured), which would freeze the Core's render preview and, worse, an agent
+/// applying the policy on a managed host (docs/SECURITY-REVIEW.md F-12). A real template uses a
+/// few thousand instructions; this ceiling is hit in well under a second.
+pub const TEMPLATE_FUEL: u64 = 5_000_000;
+
+/// The one way templates and `when` expressions are evaluated everywhere (Core preview, agent):
+/// undefined variables are errors and the work is bounded by [`TEMPLATE_FUEL`].
+pub fn template_env() -> minijinja::Environment<'static> {
+    let mut env = minijinja::Environment::new();
+    env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+    env.set_fuel(Some(TEMPLATE_FUEL));
+    env
+}
+
 /// Most `[` and `{` characters a YAML document may contain.
 ///
 /// The YAML parser (libyaml) takes time **quadratic** in the nesting of flow collections: measured,

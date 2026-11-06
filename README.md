@@ -6,7 +6,7 @@ Administration console (Next.js, EN + IT): [web/README.md](web/README.md) · Sta
 
 Status and handoff: [docs/STATUS.md](docs/STATUS.md) · Operator: [docs/OPERATOR.md](docs/OPERATOR.md) · RBAC v2: [docs/RBAC.md](docs/RBAC.md) · Frontend: [docs/FRONTEND.md](docs/FRONTEND.md) · Repository layout and editor: [docs/REPOSITORY.md](docs/REPOSITORY.md) · Remediation and orphans: [docs/REMEDIATION.md](docs/REMEDIATION.md)
 
-Design: [docs/ABSTRACT.md](docs/ABSTRACT.md) · Scope: [docs/SCOPE.md](docs/SCOPE.md) · Policy format: [docs/POLICY.md](docs/POLICY.md) · Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md) · Changes: [docs/CHANGELOG.md](docs/CHANGELOG.md)
+Security: [docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md) · [docs/ASVS.md](docs/ASVS.md) · Design: [docs/ABSTRACT.md](docs/ABSTRACT.md) · Scope: [docs/SCOPE.md](docs/SCOPE.md) · Policy format: [docs/POLICY.md](docs/POLICY.md) · Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md) · Changes: [docs/CHANGELOG.md](docs/CHANGELOG.md)
 
 ## Status
 

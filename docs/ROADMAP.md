@@ -26,6 +26,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | YAML parsing DoS (quadratic in nesting) closed by `guard_yaml`; mutation tests of the policy parser, CSRs and certificates (F-10) | complete | 2026-11-02 |
 | Hostile input: NUL bytes answer 422 instead of 500 everywhere; artifact names, hashes and size limit tested (F-11) | complete | 2026-11-02 |
 | `web/openapi.json` and the generated client regenerated (audit anchors, `agent_name` on enrollment keys, verify fields); console views for anchors and name-bound keys | partial | 2026-11-02 |
+| ASVS 4.0.3 L2 self-assessment ([ASVS.md](ASVS.md)); template evaluation bounded by fuel (F-12); security headers on every API answer (F-13) | complete | 2026-11-02 |
+| ASVS gaps: SSRF filter for configurable URLs; self-service password change, maximum length, breached-password check; security log for access-control failures; general API rate limit; MFA for administrators by default; TLS 1.3-only policy | to-do | 2026-11-02 |
 | `cargo audit` in CI (workflow `audit`, weekly too; reviewed exceptions in `.cargo/audit.toml`) | complete | 2026-11-02 |
 | Independent security review of the areas listed as not reviewed in [SECURITY-REVIEW.md](SECURITY-REVIEW.md) | to-do | 2026-11-02 |
 | Audit: anchors emitted to the log and to a file (`DELBERT_AUDIT_ANCHOR_FILE`), offline check with `delbert-sign verify-anchors` | complete | 2026-11-02 |

@@ -162,6 +162,28 @@ impl Default for AuthConfig {
 
 // --- errors -------------------------------------------------------------------------
 
+/// Response headers for the JSON API: no caching of tokens, secrets lists or the audit trail by a
+/// browser or an intermediary, no content sniffing, no rendering as a page. Headers a handler set
+/// itself are kept.
+async fn api_security_headers(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    use axum::http::HeaderValue;
+    let docs = req.uri().path().starts_with("/swagger-ui") || req.uri().path() == "/openapi.json";
+    let mut resp = next.run(req).await;
+    if docs {
+        return resp; // the documentation is a page with its own scripts
+    }
+    let h = resp.headers_mut();
+    for (name, value) in [
+        ("cache-control", "no-store"),
+        ("x-content-type-options", "nosniff"),
+        ("referrer-policy", "no-referrer"),
+        ("content-security-policy", "default-src 'none'; frame-ancestors 'none'"),
+    ] {
+        h.entry(name).or_insert(HeaderValue::from_static(value));
+    }
+    resp
+}
+
 pub struct ApiError(pub StatusCode, pub String);
 
 impl ApiError {
@@ -311,7 +333,7 @@ pub fn router(state: AppState) -> Router {
     if state.docs {
         app = app.merge(crate::openapi::docs());
     }
-    app.with_state(state)
+    app.layer(axum::middleware::from_fn(api_security_headers)).with_state(state)
 }
 
 #[utoipa::path(get, path = "/healthz", tag = "system", responses((status = 200, description = "OK"), (status = 503, description = "Database unavailable")))]

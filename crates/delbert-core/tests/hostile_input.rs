@@ -61,3 +61,25 @@ async fn nul_bytes_never_cause_a_server_error(pool: PgPool) {
         assert!(s.as_u16() < 500, "{method} {uri} {body:?} answered {s}: {b}");
     }
 }
+
+/// ASVS 8.2.1 / 14.4: API answers (data, errors, downloads) are not cacheable, sniffable or framable;
+/// the Swagger UI, which is a page, is left alone.
+#[sqlx::test]
+async fn api_answers_carry_security_headers(pool: PgPool) {
+    use axum::http::{Request, header};
+    use tower::ServiceExt;
+    let admin = admin_client(state(pool, vec![Strategy::Error], None)).await;
+    for (uri, auth) in [("/v1/me", true), ("/v1/me", false), ("/healthz", false), ("/v1/nope", true)] {
+        let mut req = Request::builder().uri(uri);
+        if auth {
+            req = req.header(header::AUTHORIZATION, format!("Bearer {}", admin.token.clone().unwrap()));
+        }
+        let resp = admin.app.clone().oneshot(req.body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let h = resp.headers();
+        assert_eq!(h.get("cache-control").map(|v| v.to_str().unwrap()), Some("no-store"), "{uri}");
+        assert_eq!(h.get("x-content-type-options").map(|v| v.to_str().unwrap()), Some("nosniff"), "{uri}");
+        assert!(h.get("content-security-policy").unwrap().to_str().unwrap().contains("frame-ancestors 'none'"), "{uri}");
+    }
+    let resp = admin.app.clone().oneshot(Request::builder().uri("/openapi.json").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+    assert!(resp.headers().get("content-security-policy").is_none(), "the documentation routes keep their own headers");
+}

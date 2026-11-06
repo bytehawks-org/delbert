@@ -205,8 +205,7 @@ fn run_one(r: &Resource, ctx: &Ctx, mode: Mode) -> Status {
 /// evaluated is an error, not "false": a resource is never applied (or silently dropped) by guess.
 fn applies(r: &Resource, facts: &serde_json::Value, ctx: &Ctx) -> Result<bool, String> {
     let Some(when) = &r.when else { return Ok(true) };
-    let mut env = minijinja::Environment::new();
-    env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+    let env = delbert_policy::template_env();
     let expression = env.compile_expression(when).map_err(|e| format!("when: {e:#}"))?;
     let value = expression.eval(minijinja::context! { facts => facts, vars => &ctx.vars }).map_err(|e| format!("when: {e:#}"))?;
     Ok(value.is_true())

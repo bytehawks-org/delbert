@@ -181,8 +181,7 @@ fn render(spec: &TemplateSpec, ctx: &Ctx) -> Result<Vec<u8>> {
     let source = String::from_utf8(artifact_bytes(ctx, &spec.src)?).context("template is not valid UTF-8")?;
     let mut vars: BTreeMap<&String, &serde_json::Value> = ctx.vars.iter().collect();
     vars.extend(spec.vars.iter());
-    let mut env = minijinja::Environment::new();
-    env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+    let mut env = delbert_policy::template_env();
     env.set_keep_trailing_newline(true);
     let out = env
         .render_str(&source, minijinja::context! { vars => vars, secrets => &ctx.secrets, facts => ctx.facts() })

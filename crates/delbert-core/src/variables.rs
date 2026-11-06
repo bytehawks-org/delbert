@@ -387,8 +387,7 @@ pub async fn render(State(st): State<AppState>, Authn(user): Authn, Path((tenant
         f.insert("machine_id".into(), json!("<machine_id>"));
         f.insert("custom".into(), json!({}));
     }
-    let mut env = minijinja::Environment::new();
-    env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+    let mut env = delbert_policy::template_env();
     env.set_keep_trailing_newline(true);
 
     let mut templates = Vec::new();
