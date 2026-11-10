@@ -61,14 +61,14 @@ Rules:
 | `file` | Path state | `path`, `state` (file, directory, link, absent), `owner`, `group`, `mode`, `target` | file |
 | `copy` | Static file from artifact or inline | `src`/`content`, `dest`, `owner`, `group`, `mode` | copy |
 | `template` | Rendered file | `src`, `dest`, `vars`, ownership/mode | template |
-| `line_in_file` | Ensure a line | `path`, `line`, `regexp`, `state`, `insert_after`/`insert_before` | lineinfile |
-| `block_in_file` | Ensure a marked block | `path`, `block`, `marker` | blockinfile |
+| `line_in_file` | Ensure a line is there, or (`state: absent`) that it is not | `path`, `line`, `regexp`, `state`, `insert_after`/`insert_before` | lineinfile |
+| `block_in_file` | Ensure a marked block (**implemented**) | `path`, `block`, `marker`, `state` | blockinfile |
 | `get_url` | Download | `url`, `dest`, `sha256` (**mandatory**), ownership/mode | get_url |
 | `package` | OS packages | `name`, `state` (present, absent, latest); backend auto-detected (apt, dnf, zypper, apk) | package |
 | `service` | Service manager (systemd) | `name`, `state` (started, stopped, restarted, reloaded), `enabled` | service |
-| `user` / `group` | Local accounts | `name`, `state`, `uid`/`gid`, `shell`, `groups` | user, group |
-| `sysctl` | Kernel parameter | `key`, `value`, `persist` | sysctl |
-| `cron` | Scheduled job | `name`, `schedule`, `command` (subject to `command` rules) | cron |
+| `user` / `group` | Local accounts (**implemented**, see "Users and groups") | `name`, `state`, `uid`/`gid`, `group`, `groups`, `shell`, `home`, `comment`, `system`, `create_home` | user, group |
+| `sysctl` | Kernel parameter (**implemented**) | `key`, `value`, `persist` | sysctl |
+| `cron` | Scheduled job (**implemented**, off by default: see "Scheduled jobs") | `name`, `schedule`, `user`, `command` (argv), `env`, `state` | cron |
 | `command` | Restricted exec | see ABSTRACT §3 | command |
 | `container` | Docker/Podman container (**implemented**, see "Containers") | `name`, `image` (digest recommended), `state`, `ports`, `volumes`, `env`, `env_from`, `secret_from`, `restart`, `command`, `engine` | docker_container |
 | `container_volume` / `container_network` | Docker/Podman objects | `name`, `state`, driver options | docker_volume/network |
@@ -76,7 +76,7 @@ Rules:
 Notes:
 
 - `template` uses **MiniJinja** (Jinja2-compatible, Apache-2.0), sandboxed: no file, env or exec access. Rendering happens **on the agent**, so secrets in `vars` never need to be rendered by the server.
-- `line_in_file`/`block_in_file` are idempotent by construction (regexp match or marker); they never append blindly.
+- `line_in_file`/`block_in_file` are idempotent by construction (regexp match or marker); they never append blindly. See "Lines and blocks".
 - `get_url` without `sha256` is rejected at validation.
 - `command` is the only verb that runs arbitrary programs; all others use native implementations.
 - Kubernetes objects are not a host verb: they are managed by the in-cluster Operator via CRDs (`kube-rs`), using the same signed-policy mechanism.
@@ -91,8 +91,9 @@ Several policies can reach the same endpoint. Each verb defines a **resource key
 | `line_in_file` | path + `regexp` (or the line itself) |
 | `block_in_file` | path + `marker` |
 | `package`, `service` | name |
-| `user`, `group` | name |
+| `user`, `group` | name (each in its own namespace) |
 | `sysctl` | key |
+| `cron` | name |
 | `container*` | kind + name |
 
 Same key and identical normalized parameters → merged. Same key, different parameters → **conflict**. Disjoint parts of one object (different lines of one file) do not conflict. Resolution happens only in the Core (the agent receives a single, already resolved, signed policy).
@@ -127,6 +128,79 @@ Within a single policy the same rules are already enforced at validation time: t
 - `service` (systemd): `started`/`stopped` and `enabled` are states; `restarted`/`reloaded` are one-shot actions allowed **only on handlers**, otherwise they could never converge.
 - `template`: MiniJinja, rendered on the agent with `vars` (see "Variables" below) and `facts` (see "Facts"). Undefined variables are errors; no loader, no file or command access. Trailing newlines are preserved.
 - System commands are executed as argv vectors (no shell) and are refused when the agent runs with a sandbox `--root`.
+
+## Lines and blocks
+
+```yaml
+- id: no-root-ssh              # make sure a setting is there, replacing whatever the line said
+  line_in_file: { path: /etc/ssh/sshd_config, regexp: '^#?\s*PermitRootLogin\b', line: "PermitRootLogin no" }
+- id: no-debug                 # remove a configuration line: every line that matches goes
+  line_in_file: { path: /etc/app/app.conf, regexp: '^\s*debug\s*=', line: "", state: absent }
+- id: no-legacy-host           # without regexp: the exact line
+  line_in_file: { path: /etc/hosts, line: "10.0.0.9 legacy", state: absent }
+- id: backends                 # several lines kept together between two markers
+  block_in_file:
+    path: /etc/hosts
+    marker: "# {mark} app backends"
+    block: |
+      10.0.0.1 db
+      10.0.0.2 cache
+```
+
+- `line_in_file` with `state: absent` removes all the lines matching `regexp` (or equal to `line`); `line` is required by the format and ignored when a `regexp` is given. A missing file is compliant.
+- `block_in_file` writes `block` between a BEGIN and an END line made from `marker` (`{mark}` is replaced; default `# {mark} DELBERT MANAGED BLOCK`). The block is replaced in place when the markers exist and appended at the end otherwise; `state: absent` removes it with its markers. Give each block of a file its own marker: two blocks with the same marker are a conflict. A BEGIN without its END fails the resource (the file is not guessed at). The file must exist (`file` creates it); a `copy`/`template` of the same path is a conflict.
+- Neither is removed when it leaves the policy (unlike files): declare `state: absent` for a version, then drop the resource.
+
+## Users and groups
+
+```yaml
+- id: deploy-group
+  group: { name: deploy, gid: 1800 }
+- id: deploy-user
+  user: { name: deploy, uid: 1800, group: deploy, groups: [www-data], shell: /bin/bash, home: /home/deploy, comment: "Deploy user", create_home: true }
+  depends_on: [deploy-group]
+- id: former-employee
+  user: { name: jdoe, state: absent }
+```
+
+- Local accounts only: the state is read from `/etc/passwd` and `/etc/group`, changes go through `groupadd`/`groupmod`/`groupdel` and `useradd`/`usermod`/`userdel` (argv, no shell), which keep `shadow` and `gshadow` consistent. LDAP/AD accounts are neither seen nor touched. The tools must be installed (they are on every mainstream distribution; on Alpine add the `shadow` package).
+- **No password is ever set:** a new account is locked for password login. Give access with keys (`copy` to `~/.ssh/authorized_keys`) or `sudo` rules delivered as files.
+- **`root`, uid 0 and gid 0 are refused** by validation: no policy can create a second superuser or change the first.
+- Only what is declared is compared and changed (`uid`, primary `group`, `shell`, `home`, `comment`). `groups` is **additive**: the user is added to the listed groups, other memberships are left alone. `system` and `create_home` matter only when the account is created; changing `home` later does not move the directory.
+- `state: absent` runs `userdel` / `groupdel`: the home directory and the user's files stay where they are, nothing is deleted by inference.
+- The primary group must exist before the user: declare it and use `depends_on`.
+- Not on Windows.
+
+## Kernel parameters
+
+```yaml
+- id: forwarding
+  sysctl: { key: net.ipv4.ip_forward, value: "1" }
+```
+
+The value is read and written directly in `/proc/sys` (no command is run) and, unless `persist: false`, also written to `/etc/sysctl.d/90-delbert-<key>.conf` so it survives a reboot. Values compare with runs of blanks as one. An unknown key fails the resource. Removing the resource leaves the value and the file in place. Not on Windows.
+
+## Scheduled jobs
+
+```yaml
+- id: nightly-backup
+  cron:
+    name: backup                      # the file /etc/cron.d/backup
+    schedule: "30 2 * * 1-5"          # five fields, or @hourly @daily @weekly @monthly @yearly @reboot
+    user: backup                      # the account it runs as (default root): system-wide or per user
+    command: [/usr/local/bin/backup.sh, --target, /srv/backup]
+    env: { MAILTO: ops@example.com }
+```
+
+A scheduled job is a way to run a program, so it follows the rules of the `command` resource ([ABSTRACT.md](ABSTRACT.md) §3):
+
+- **Off by default, enabled only on the host.** The executable (`command[0]`, an absolute path) must be on the agent's local allow-list: `DELBERT_CRON_ALLOW=/usr/local/bin/backup.sh:/usr/bin/certbot` in `/etc/delbert/agent.env` (or `--cron-allow`). Without it every `cron` resource fails with a message that says so. No policy, variable or fact can change the list.
+- **An argv, not a shell line.** Each argument is quoted when the cron line is written, and `%` is escaped, so pipes, redirections, `;`, `$(...)` are plain text for the program. Need a pipeline? Deliver a script with `copy` and schedule the script.
+- `env` accepts only `MAILTO`, `MAILFROM`, `CRON_TZ`, `TZ`, `LANG`, `LC_ALL`, `RANDOM_DELAY` (not `SHELL` or `PATH`, which would choose what really runs).
+- One job per resource, one file per job (`/etc/cron.d/<name>`, mode 0644, written crash-safely); the agent runs nothing itself. A file of that name that Delbert did not write is never replaced or removed. `state: absent` removes the job and needs no allow-list. A job that merely leaves the policy stays: remove it with `state: absent`.
+- Per-user crontabs (`crontab -e` spool) are not edited: a job for a user is a job in `/etc/cron.d` with `user:`. `/etc/cron.d` must exist (a cron daemon is installed). Not on Windows (Scheduled Tasks are a separate verb to design).
+
+The allow-list is a guard against mistakes and against a job nobody on the host agreed to, not a sandbox: a policy can also deliver files, so trust in the Core's signing key remains the boundary.
 
 ## Facts
 

@@ -176,3 +176,15 @@ What was run, and how to repeat it ([install.md](install.md) has the summary tab
 - **Packages:** nfpm was not available where this was developed, so the package *content* was laid down by hand in `debian:13-slim` and `fedora:latest` containers (binaries, units, configuration files, the maintainer scripts run in order) and the checks of `packaging/test-packages.sh` passed on both: service accounts, modes, `delbert-core --check-config` on the packaged `core.toml` after `delbert-pki bootstrap`, agent `apply`/`check`. The real `.deb`/`.rpm` are built and installed by the `packaging` CI job.
 - **Windows:** `cargo zigbuild --target x86_64-pc-windows-gnu -p delbert-agent -p delbert-proxy -p delbert-pki -p delbert-wire --tests --bins` compiles and links. Nothing was executed on Windows; `packaging/windows/smoke-test.ps1` and the MSI install run in the `windows` CI job.
 - **Helm chart:** not rendered locally; `helm lint` and two `helm template` variants run in the `packaging` CI job.
+
+## The account, cron, sysctl and block verbs on a real root
+
+Unit tests use a fake command runner and a sandbox root. To see the real tools, run the static agent as root in a throw-away `debian:13-slim` container (`mkdir /etc/cron.d` first: the image has no cron) with a policy that declares a group, a user in it (uid, supplementary group, shell, home, `create_home`), `user: { name: games, state: absent }`, a `cron` job, a `block_in_file` and a `line_in_file` with `state: absent`:
+
+```sh
+delbert-agent check policy.yaml                                              # drift, exit 2
+delbert-agent apply policy.yaml --cron-allow /usr/local/bin/backup.sh        # everything "changed", exit 0
+DELBERT_CRON_ALLOW=/usr/local/bin/backup.sh delbert-agent check policy.yaml  # everything "ok", exit 0
+```
+
+Seen on 2026-11-10: `deploy:x:1800:1800:Deploy user:/home/deploy:/bin/bash`, `groups=1800(deploy),33(www-data)`, the home created, `games` gone, `/etc/cron.d/backup` 0644 root with `30 2 * * 1-5 deploy /usr/local/bin/backup.sh --to '/srv/backup dir' 100\%`, both `debug` lines removed and the block appended. `sysctl` was exercised only against a sandbox tree (`/proc/sys` is read-only in an unprivileged container), and no cron daemon read the file.

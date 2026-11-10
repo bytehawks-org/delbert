@@ -136,6 +136,16 @@ pub struct Resource {
     pub service: Option<ServiceSpec>,
     #[serde(default)]
     pub container: Option<ContainerSpec>,
+    #[serde(default)]
+    pub block_in_file: Option<BlockInFileSpec>,
+    #[serde(default)]
+    pub user: Option<UserSpec>,
+    #[serde(default)]
+    pub group: Option<GroupSpec>,
+    #[serde(default)]
+    pub cron: Option<CronSpec>,
+    #[serde(default)]
+    pub sysctl: Option<SysctlSpec>,
 }
 
 impl Resource {
@@ -149,6 +159,11 @@ impl Resource {
             ("package", self.package.is_some()),
             ("service", self.service.is_some()),
             ("container", self.container.is_some()),
+            ("block_in_file", self.block_in_file.is_some()),
+            ("user", self.user.is_some()),
+            ("group", self.group.is_some()),
+            ("cron", self.cron.is_some()),
+            ("sysctl", self.sysctl.is_some()),
         ]
         .into_iter()
         .filter_map(|(name, set)| set.then_some(name))
@@ -227,6 +242,122 @@ pub struct LineInFileSpec {
     pub state: Presence,
     pub insert_after: Option<String>,
     pub insert_before: Option<String>,
+}
+
+/// A block of lines kept between two marker lines, so it can be found again, replaced and
+/// removed without touching the rest of the file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BlockInFileSpec {
+    pub path: String,
+    /// The lines between the markers (required unless `state: absent`).
+    #[serde(default)]
+    pub block: String,
+    /// Marker line; `{mark}` becomes `BEGIN` and `END`. Give each block of one file its own
+    /// marker. Default: `# {mark} DELBERT MANAGED BLOCK`.
+    #[serde(default)]
+    pub marker: Option<String>,
+    #[serde(default)]
+    pub state: Presence,
+}
+
+impl BlockInFileSpec {
+    pub const DEFAULT_MARKER: &'static str = "# {mark} DELBERT MANAGED BLOCK";
+
+    /// The marker template in use.
+    pub fn marker(&self) -> &str {
+        self.marker.as_deref().unwrap_or(Self::DEFAULT_MARKER)
+    }
+}
+
+/// A local group (`/etc/group`; directory services are not touched).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GroupSpec {
+    pub name: String,
+    #[serde(default)]
+    pub state: Presence,
+    #[serde(default)]
+    pub gid: Option<u32>,
+    /// Create it as a system group (only when it is created).
+    #[serde(default)]
+    pub system: bool,
+}
+
+/// A local user (`/etc/passwd`; directory services are not touched). No password is ever set:
+/// the account is created locked, access comes from keys delivered with `copy`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UserSpec {
+    pub name: String,
+    #[serde(default)]
+    pub state: Presence,
+    #[serde(default)]
+    pub uid: Option<u32>,
+    /// Primary group (must exist: declare it with `group` and `depends_on`).
+    #[serde(default)]
+    pub group: Option<String>,
+    /// Supplementary groups the user must be a member of. Additive: memberships that are not
+    /// listed are left alone.
+    #[serde(default)]
+    pub groups: Vec<String>,
+    #[serde(default)]
+    pub shell: Option<String>,
+    #[serde(default)]
+    pub home: Option<String>,
+    /// The GECOS field (full name).
+    #[serde(default)]
+    pub comment: Option<String>,
+    /// Create it as a system account (only when it is created).
+    #[serde(default)]
+    pub system: bool,
+    /// Create the home directory when the user is created (default: no).
+    #[serde(default)]
+    pub create_home: bool,
+}
+
+/// A scheduled job: one file in `/etc/cron.d`, run as `user`. The command is an argv (quoted
+/// for cron, no shell syntax), and its executable must be on the agent's **local** allow-list:
+/// without one the agent refuses every cron resource (docs/POLICY.md "Scheduled jobs").
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CronSpec {
+    /// Name of the job: the file is `/etc/cron.d/<name>`.
+    pub name: String,
+    #[serde(default)]
+    pub state: Presence,
+    /// Five cron fields (`"30 2 * * 1-5"`) or `@hourly`, `@daily`, `@weekly`, `@monthly`,
+    /// `@yearly`, `@reboot`. Required unless `state: absent`.
+    #[serde(default)]
+    pub schedule: Option<String>,
+    /// Account the job runs as (default `root`).
+    #[serde(default)]
+    pub user: Option<String>,
+    /// Executable (absolute path) and its arguments. Required unless `state: absent`.
+    #[serde(default)]
+    pub command: Vec<String>,
+    /// Variables set for the job, from a closed list: `MAILTO`, `MAILFROM`, `CRON_TZ`, `TZ`,
+    /// `LANG`, `LC_ALL`, `RANDOM_DELAY` (not `SHELL` or `PATH`: they would choose what runs).
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+}
+
+/// A kernel parameter: set now (`/proc/sys`) and, unless `persist: false`, at every boot
+/// (`/etc/sysctl.d/90-delbert-<key>.conf`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SysctlSpec {
+    /// Dotted name, e.g. `net.ipv4.ip_forward`.
+    pub key: String,
+    pub value: String,
+    #[serde(default = "SysctlSpec::default_persist")]
+    pub persist: bool,
+}
+
+impl SysctlSpec {
+    fn default_persist() -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]

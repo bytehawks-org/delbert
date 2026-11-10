@@ -2,6 +2,13 @@
 
 ## 2026-11-10
 
+### More verbs: `block_in_file`, `user`, `group`, `cron`, `sysctl`
+- **Policy:** five new verbs, validated at save and again on the agent ([POLICY.md](POLICY.md): "Lines and blocks", "Users and groups", "Kernel parameters", "Scheduled jobs"). Conflict keys: user name, group name, cron job name, sysctl key, path + marker. `root`, uid 0 and gid 0 cannot be managed. Removing a configuration line was already there: `line_in_file` with `state: absent` (now documented with examples).
+- **Agent:** `block_in_file` (marked block, replaced in place, removed with its markers); `group`/`user` through the shadow tools, state read from the local files, no password, additive memberships; `sysctl` read and written in `/proc/sys` plus `/etc/sysctl.d/90-delbert-<key>.conf`; `cron` as one file in `/etc/cron.d` with the command quoted from an argv.
+- **`cron` is off by default:** the executable must be on the agent's local allow-list (`DELBERT_CRON_ALLOW` / `--cron-allow`, also on `check`/`apply`), a closed list of variables, foreign files never touched.
+- **Compatibility:** an agent older than this release rejects a policy that uses the new verbs (unknown field): upgrade the agents first. None of the new verbs works on Windows (`block_in_file` does).
+- Tests: 12 agent unit tests, 3 validation tests; the whole set run on a real Debian 13 root with the real `useradd`/`groupadd`/`userdel` ([TESTING.md](TESTING.md)).
+
 ### Installers for containers, Kubernetes and packages; Windows agent (preview)
 - **Keys in one step:** `delbert-pki bootstrap --core-dns ... --nats-dns ...` creates the CA, the certificates of the Core and NATS, the Core's NATS client certificate, the secrets key, the NATS issuer and the signing key `k1`; existing files are kept.
 - **Containers** (`deploy/container`): `compose.yaml` for Podman or Docker with a one-shot service that creates the keys in a volume, PostgreSQL with the runtime role, NATS with the callout, Core and web UI; `install.sh --host <name>` writes `.env` with random passwords and starts it. The `tools` image owns `/keys` as uid 10001. Run for real (Core healthy, a static agent enrolled and applied a policy).

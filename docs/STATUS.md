@@ -6,7 +6,7 @@ Snapshot for whoever continues the work (updated 2026-11-10). Design lives in [A
 
 | Crate | Role | Notes |
 |-------|------|-------|
-| `delbert-policy` | YAML policy model, JSON Schema, validation | verbs: `file`, `copy`, `template`, `line_in_file`, `package`, `service` |
+| `delbert-policy` | YAML policy model, JSON Schema, validation | verbs: `file`, `copy`, `template`, `line_in_file`, `block_in_file`, `package`, `service`, `container`, `user`, `group`, `cron`, `sysctl` |
 | `delbert-wire` | effective policy, JCS (RFC 8785), Ed25519 JWS sign/verify, signing-key rotation (`trust` updates) | `delbert-sign` CLI |
 | `delbert-pki` | internal CA behind a trait (rcgen backend), Ed25519 CSR signing, agent request proofs | `delbert-pki` CLI; `bootstrap` creates every key of a new installation |
 | `delbert-natsauth` | NATS authorization-callout building blocks | shared by Core and Proxy |
@@ -18,7 +18,7 @@ Snapshot for whoever continues the work (updated 2026-11-10). Design lives in [A
 | `delbert-operator` | Kubernetes Operator | `DelbertBinding` CRD, rendering, identity, bundle fetch and reconcile loop ([OPERATOR.md](OPERATOR.md)); verified by hand on K3s 1.31.14 (manifests in `deploy/kubernetes/operator`, image target `operator`); no CI test, no leader election. Target Kubernetes >= 1.31. Design: [ABSTRACT.md](ABSTRACT.md) §5 |
 | `web/` (Next.js) | administration UI, milestones M0-M4 (complete) | backend-for-frontend, see [web/README.md](../web/README.md) |
 
-About 185 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
+About 200 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
 
 ## Run it
 

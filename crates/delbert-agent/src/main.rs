@@ -42,6 +42,17 @@ struct HostArgs {
     /// Treat this directory as `/` (sandbox for experiments and tests).
     #[arg(long, default_value = "/")]
     root: PathBuf,
+    #[command(flatten)]
+    local: LocalArgs,
+}
+
+/// Settings that only the administrator of this host can give: no policy can change them.
+#[derive(Args, Clone)]
+struct LocalArgs {
+    /// Executables that `cron` resources may schedule: absolute paths separated by ':'.
+    /// Empty (the default): every cron resource is refused.
+    #[arg(long, env = "DELBERT_CRON_ALLOW", value_delimiter = ':')]
+    cron_allow: Vec<String>,
 }
 
 #[derive(Args)]
@@ -136,6 +147,8 @@ struct DaemonArgs {
     artifacts: PathBuf,
     #[arg(long, default_value = "/")]
     root: PathBuf,
+    #[command(flatten)]
+    local: LocalArgs,
     /// Renew the certificate when less than this many seconds remain (default: a third of its lifetime).
     #[arg(long, env = "DELBERT_RENEW_BEFORE_SECS")]
     renew_before_secs: Option<i64>,
@@ -198,6 +211,7 @@ fn print(report: &Report) {
 fn execute(resources: &[Resource], vars: BTreeMap<String, serde_json::Value>, host: HostArgs, mode: Mode) -> ExitCode {
     let mut ctx = Ctx::new(host.root, host.artifacts);
     ctx.vars = vars;
+    ctx.cron_allow = host.local.cron_allow.into_iter().filter(|p| !p.is_empty()).collect();
     let report = run(resources, &ctx, mode);
     print(&report);
     if report.has_failures() {
@@ -253,6 +267,7 @@ async fn daemon(a: DaemonArgs) -> anyhow::Result<()> {
         root: a.root,
         renew_before_secs: a.renew_before_secs,
         facts_dir: a.facts_dir,
+        cron_allow: a.local.cron_allow.into_iter().filter(|p| !p.is_empty()).collect(),
         facts_interval: std::time::Duration::from_secs(a.facts_interval_secs.max(60)),
     })
     .await

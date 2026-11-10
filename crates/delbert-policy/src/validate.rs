@@ -112,6 +112,8 @@ enum Role<'a> {
     Copy,
     /// One line, identified by its `regexp` or its text (`line_in_file`).
     Line(&'a str),
+    /// One marked block, identified by its marker (`block_in_file`).
+    Block(&'a str),
 }
 
 fn path_role(r: &Resource) -> Option<(&str, Role<'_>)> {
@@ -121,6 +123,8 @@ fn path_role(r: &Resource) -> Option<(&str, Role<'_>)> {
         Some((&c.dest, Role::Copy))
     } else if let Some(t) = &r.template {
         Some((&t.dest, Role::Copy))
+    } else if let Some(b) = &r.block_in_file {
+        Some((&b.path, Role::Block(b.marker())))
     } else {
         r.line_in_file.as_ref().map(|l| (l.path.as_str(), Role::Line(l.regexp.as_deref().unwrap_or(&l.line))))
     }
@@ -138,11 +142,26 @@ pub fn clash(a: &Resource, b: &Resource) -> Option<String> {
     if let (Some(x), Some(y)) = (&a.container, &b.container) {
         return (x.name == y.name).then(|| format!("container '{}'", x.name));
     }
+    if let (Some(x), Some(y)) = (&a.user, &b.user) {
+        return (x.name == y.name).then(|| format!("user '{}'", x.name));
+    }
+    if let (Some(x), Some(y)) = (&a.group, &b.group) {
+        return (x.name == y.name).then(|| format!("group '{}'", x.name));
+    }
+    if let (Some(x), Some(y)) = (&a.cron, &b.cron) {
+        return (x.name == y.name).then(|| format!("cron job '{}'", x.name));
+    }
+    if let (Some(x), Some(y)) = (&a.sysctl, &b.sysctl) {
+        return (x.key == y.key).then(|| format!("sysctl '{}'", x.key));
+    }
     let ((pa, ra), (pb, rb)) = (path_role(a)?, path_role(b)?);
+    // Lines and blocks are parts of a file: they clash with each other only on the same line or
+    // marker, never with the `file` that owns existence and attributes, always with a `copy`.
     let conflict = pa == pb
         && match (ra, rb) {
-            (Role::Line(x), Role::Line(y)) => x == y,
-            (Role::File, Role::Line(_)) | (Role::Line(_), Role::File) => false,
+            (Role::Line(x), Role::Line(y)) | (Role::Block(x), Role::Block(y)) => x == y,
+            (Role::Line(_), Role::Block(_)) | (Role::Block(_), Role::Line(_)) => false,
+            (Role::File, Role::Line(_) | Role::Block(_)) | (Role::Line(_) | Role::Block(_), Role::File) => false,
             _ => true,
         };
     conflict.then(|| format!("path '{pa}'"))
@@ -263,6 +282,9 @@ fn check_fields(r: &Resource, errors: &mut Vec<ValidationError>) {
     if let Some(l) = &r.line_in_file {
         absolute(&l.path);
     }
+    if let Some(b) = &r.block_in_file {
+        absolute(&b.path);
+    }
 
     let modes = [
         r.file.as_ref().and_then(|f| f.mode.as_deref()),
@@ -317,6 +339,111 @@ fn check_fields(r: &Resource, errors: &mut Vec<ValidationError>) {
     if let Some(l) = &r.line_in_file {
         if l.insert_after.is_some() && l.insert_before.is_some() {
             errors.push(field_err(r, "use only one of 'insert_after' or 'insert_before'"));
+        }
+    }
+    check_more_verbs(r, errors);
+}
+
+/// `block_in_file`, `group`, `user`, `cron`, `sysctl`.
+fn check_more_verbs(r: &Resource, errors: &mut Vec<ValidationError>) {
+    use crate::Presence;
+    let mut bad = |reason: String| errors.push(field_err(r, reason));
+    // One line of text for a passwd field, a cron line or a marker: nothing that could start a new line or field.
+    let one_line = |s: &str| !s.chars().any(char::is_control);
+    let account = |name: &str| {
+        let mut chars = name.chars();
+        (1..=32).contains(&name.len())
+            && chars.next().is_some_and(|c| c.is_ascii_lowercase() || c == '_')
+            && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+    };
+    let unix_path = |p: &str| p.starts_with('/') && one_line(p) && !p.contains(':') && !p.split('/').any(|c| c == "..");
+
+    if let Some(b) = &r.block_in_file {
+        let marker = b.marker();
+        if !marker.contains("{mark}") || !one_line(marker) {
+            bad("'marker' must be one line containing {mark}".into());
+        }
+        if b.state == Presence::Present && b.block.is_empty() {
+            bad("block_in_file requires 'block'".into());
+        }
+        // The markers must stay recognisable: a block cannot contain them.
+        if ["BEGIN", "END"].iter().any(|m| b.block.lines().any(|l| l == marker.replace("{mark}", m))) {
+            bad("'block' must not contain its own marker lines".into());
+        }
+    }
+    if let Some(g) = &r.group {
+        if !account(&g.name) {
+            bad(format!("invalid group name '{}'", g.name));
+        }
+        // The superuser's group is never managed from a policy.
+        if g.name == "root" || g.gid == Some(0) {
+            bad("the root group (gid 0) cannot be managed".into());
+        }
+    }
+    if let Some(u) = &r.user {
+        if !account(&u.name) {
+            bad(format!("invalid user name '{}'", u.name));
+        }
+        // No policy may create a second superuser or change the first.
+        if u.name == "root" || u.uid == Some(0) {
+            bad("root (uid 0) cannot be managed".into());
+        }
+        for g in u.group.iter().chain(&u.groups) {
+            if !account(g) {
+                bad(format!("invalid group name '{g}'"));
+            }
+        }
+        for p in u.shell.iter().chain(&u.home) {
+            if !unix_path(p) {
+                bad(format!("'{p}' must be an absolute path without ':' or '..'"));
+            }
+        }
+        if u.comment.as_deref().is_some_and(|c| !one_line(c) || c.contains(':')) {
+            bad("'comment' must be one line without ':'".into());
+        }
+    }
+    if let Some(c) = &r.cron {
+        let name_ok = (1..=64).contains(&c.name.len()) && c.name.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-');
+        if !name_ok {
+            // cron ignores files whose name has a dot or other characters.
+            bad(format!("invalid cron job name '{}' (letters, digits, '_' and '-')", c.name));
+        }
+        if c.user.as_deref().is_some_and(|u| !account(u)) {
+            bad(format!("invalid user name '{}'", c.user.as_deref().unwrap_or_default()));
+        }
+        if c.state == Presence::Present {
+            let field = |f: &str| !f.is_empty() && f.chars().all(|ch| ch.is_ascii_alphanumeric() || "*/,-".contains(ch));
+            let schedule_ok = c.schedule.as_deref().is_some_and(|s| {
+                matches!(s, "@reboot" | "@yearly" | "@annually" | "@monthly" | "@weekly" | "@daily" | "@midnight" | "@hourly")
+                    || (s.split_whitespace().count() == 5 && s.split_whitespace().all(field))
+            });
+            if !schedule_ok {
+                bad("'schedule' must be five cron fields (\"30 2 * * *\") or @hourly, @daily, @weekly, @monthly, @yearly, @reboot".into());
+            }
+            match c.command.first() {
+                None => bad("cron requires 'command' (an argv: executable and arguments)".into()),
+                Some(exe) if !unix_path(exe) => bad(format!("the executable '{exe}' must be an absolute path")),
+                Some(_) => {}
+            }
+            if c.command.iter().any(|a| !one_line(a)) {
+                bad("'command' arguments must not contain control characters".into());
+            }
+        }
+        // A closed list: SHELL, PATH, BASH_ENV and the like would choose what really runs.
+        for (k, v) in &c.env {
+            if !matches!(k.as_str(), "MAILTO" | "MAILFROM" | "CRON_TZ" | "TZ" | "LANG" | "LC_ALL" | "RANDOM_DELAY") || !one_line(v) {
+                bad(format!("cron variable '{k}' is not allowed (MAILTO, MAILFROM, CRON_TZ, TZ, LANG, LC_ALL, RANDOM_DELAY; one line)"));
+            }
+        }
+    }
+    if let Some(s) = &r.sysctl {
+        let part = |p: &str| !p.is_empty() && p.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-');
+        // Dotted name only: it becomes a path under /proc/sys, so no '/' and no empty or '..' parts.
+        if s.key.len() > 128 || s.key.split('.').count() < 2 || !s.key.split('.').all(part) {
+            bad(format!("invalid sysctl key '{}' (dotted name such as net.ipv4.ip_forward)", s.key));
+        }
+        if s.value.trim().is_empty() || !one_line(&s.value.replace('\t', " ")) {
+            bad("'value' must be one non-empty line".into());
         }
     }
 }
@@ -473,6 +600,81 @@ spec:
         assert_eq!(e.iter().filter(|e| matches!(e, ValidationError::Field { .. })).count(), 2);
     }
 
+    /// A policy with only the given resources (YAML list items).
+    fn with(resources: &str) -> String {
+        format!("apiVersion: delbert/v1\nkind: Policy\nmetadata: {{ name: p, tenant: t1 }}\nspec:\n  resources:\n{resources}")
+    }
+
+    #[test]
+    fn accounts_cron_sysctl_and_blocks_are_accepted() {
+        from_yaml(&with(concat!(
+            "    - id: g\n      group: { name: deploy, gid: 1800 }\n",
+            "    - id: u\n      user: { name: deploy, group: deploy, groups: [www-data], shell: /bin/bash, home: /home/deploy, comment: \"Deploy user\", create_home: true }\n      depends_on: [g]\n",
+            "    - id: old\n      user: { name: olduser, state: absent }\n",
+            "    - id: job\n      cron: { name: backup, schedule: \"30 2 * * 1-5\", user: deploy, command: [/usr/local/bin/backup.sh, --all], env: { MAILTO: ops@example.com } }\n",
+            "    - id: nojob\n      cron: { name: legacy, state: absent }\n",
+            "    - id: fwd\n      sysctl: { key: net.ipv4.ip_forward, value: \"1\" }\n",
+            "    - id: hosts\n      block_in_file: { path: /etc/hosts, block: \"10.0.0.1 db\\n\" }\n",
+            "    - id: hosts2\n      block_in_file: { path: /etc/hosts, block: \"10.0.0.2 cache\", marker: \"# {mark} cache\" }\n",
+            "    - id: line\n      line_in_file: { path: /etc/hosts, regexp: \"^10\\\\.9\\\\.\", line: \"\", state: absent }\n",
+        )))
+        .unwrap();
+    }
+
+    #[test]
+    fn dangerous_or_malformed_accounts_jobs_and_parameters_are_rejected() {
+        for bad in [
+            "user: { name: root, shell: /bin/sh }",
+            "user: { name: backdoor, uid: 0 }",
+            "user: { name: \"-x\" }",
+            "user: { name: alice, shell: bash }",
+            "user: { name: alice, comment: \"a:b\" }",
+            "user: { name: alice, groups: [\"a,b\"] }",
+            "group: { name: wheel2, gid: 0 }",
+            "group: { name: Root }",
+            "cron: { name: backup, schedule: \"* * * * *\" }",
+            "cron: { name: backup, schedule: \"* * * *\", command: [/bin/true] }",
+            "cron: { name: backup, schedule: \"* * * * * root\", command: [/bin/true] }",
+            "cron: { name: backup, schedule: \"@daily\", command: [backup.sh] }",
+            "cron: { name: backup.sh, schedule: \"@daily\", command: [/bin/true] }",
+            "cron: { name: backup, schedule: \"@daily\", command: [/bin/true, \"a\\nb\"] }",
+            "cron: { name: backup, schedule: \"@daily\", command: [/bin/true], env: { SHELL: /tmp/x } }",
+            "cron: { name: backup, schedule: \"@daily\", command: [/bin/true], env: { PATH: /tmp } }",
+            "sysctl: { key: \"net/ipv4/ip_forward\", value: \"1\" }",
+            "sysctl: { key: \"net..ip_forward\", value: \"1\" }",
+            "sysctl: { key: kernel, value: \"1\" }",
+            "sysctl: { key: net.ipv4.ip_forward, value: \"1\\n2\" }",
+            "block_in_file: { path: /etc/hosts, block: x, marker: \"# managed\" }",
+            "block_in_file: { path: /etc/hosts }",
+            "block_in_file: { path: etc/hosts, block: x }",
+            "block_in_file: { path: /etc/hosts, block: \"a\\n# END DELBERT MANAGED BLOCK\\nb\" }",
+        ] {
+            let e = errors(&with(&format!("    - id: r\n      {bad}\n")));
+            assert!(e.iter().any(|e| matches!(e, ValidationError::Field { .. })), "accepted: {bad}");
+        }
+    }
+
+    #[test]
+    fn same_account_job_parameter_or_block_twice_is_a_conflict() {
+        for (a, b) in [
+            ("user: { name: app }", "user: { name: app, shell: /bin/sh }"),
+            ("group: { name: app }", "group: { name: app, gid: 1500 }"),
+            ("cron: { name: j, state: absent }", "cron: { name: j, schedule: \"@daily\", command: [/bin/true] }"),
+            ("sysctl: { key: vm.swappiness, value: \"10\" }", "sysctl: { key: vm.swappiness, value: \"20\" }"),
+            ("block_in_file: { path: /etc/hosts, block: a }", "block_in_file: { path: /etc/hosts, block: b }"),
+            ("block_in_file: { path: /etc/hosts, block: a }", "copy: { content: x, dest: /etc/hosts }"),
+        ] {
+            let e = errors(&with(&format!("    - id: a\n      {a}\n    - id: b\n      {b}\n")));
+            assert!(e.iter().any(|e| matches!(e, ValidationError::Conflict { .. })), "no conflict: {a} / {b}");
+        }
+        // A user and a group of the same name, a block and a line or the file itself: fine.
+        from_yaml(&with(concat!(
+            "    - id: g\n      group: { name: app }\n    - id: u\n      user: { name: app, group: app }\n",
+            "    - id: f\n      file: { path: /etc/app.conf }\n    - id: b\n      block_in_file: { path: /etc/app.conf, block: x }\n    - id: l\n      line_in_file: { path: /etc/app.conf, line: y }\n",
+        )))
+        .unwrap();
+    }
+
     fn container_policy(container: &str, secrets: &str) -> String {
         format!("apiVersion: delbert/v1\nkind: Policy\nmetadata: {{ name: c, tenant: example }}\nspec:\n  secrets: [{secrets}]\n  resources:\n    - id: app\n      container:\n{container}")
     }
@@ -518,9 +720,15 @@ pub fn split_drive(path: &str) -> Option<(char, &str)> {
     rest.starts_with(['/', '\\']).then_some((drive.to_ascii_uppercase(), rest))
 }
 
-/// The filesystem paths a resource manages (`file`, `copy`, `template`, `line_in_file`).
+/// The filesystem paths a resource manages (`file`, `copy`, `template`, `line_in_file`, `block_in_file`).
 pub fn managed_paths(r: &Resource) -> Vec<&str> {
-    [r.file.as_ref().map(|f| f.path.as_str()), r.copy.as_ref().map(|c| c.dest.as_str()), r.template.as_ref().map(|t| t.dest.as_str()), r.line_in_file.as_ref().map(|l| l.path.as_str())]
+    [
+        r.file.as_ref().map(|f| f.path.as_str()),
+        r.copy.as_ref().map(|c| c.dest.as_str()),
+        r.template.as_ref().map(|t| t.dest.as_str()),
+        r.line_in_file.as_ref().map(|l| l.path.as_str()),
+        r.block_in_file.as_ref().map(|b| b.path.as_str()),
+    ]
         .into_iter()
         .flatten()
         .collect()

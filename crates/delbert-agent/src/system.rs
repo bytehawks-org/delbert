@@ -1,7 +1,7 @@
-//! Verbs that drive system tools: `package` and `service` (systemd).
+//! Verbs for the system itself: `package` and `service` (through system tools), `sysctl`.
 
-use anyhow::{Result, bail};
-use delbert_policy::{PackageSpec, PackageState, ServiceSpec, ServiceState};
+use anyhow::{Context, Result, bail};
+use delbert_policy::{PackageSpec, PackageState, ServiceSpec, ServiceState, SysctlSpec};
 
 use crate::engine::Ctx;
 use crate::runner::Refused;
@@ -185,6 +185,61 @@ impl Verb for ServiceSpec {
     }
 }
 
+// --- sysctl ---------------------------------------------------------------------
+
+/// Values compare with any run of blanks as one (multi-valued parameters use tabs).
+fn squeeze(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The parameter under `/proc/sys`.
+fn sysctl_live_path(spec: &SysctlSpec) -> String {
+    format!("/proc/sys/{}", spec.key.replace('.', "/"))
+}
+
+/// The file that sets it at boot.
+fn sysctl_persist_path(spec: &SysctlSpec) -> String {
+    format!("/etc/sysctl.d/90-delbert-{}.conf", spec.key)
+}
+
+fn sysctl_persist_content(spec: &SysctlSpec) -> String {
+    format!("# Managed by Delbert: do not edit, changes are overwritten.\n{} = {}\n", spec.key, squeeze(&spec.value))
+}
+
+/// (value differs now, boot file differs)
+fn sysctl_drift(spec: &SysctlSpec, ctx: &Ctx) -> Result<(bool, bool)> {
+    if cfg!(windows) {
+        bail!("sysctl is not supported on Windows");
+    }
+    let live = std::fs::read_to_string(ctx.path(&sysctl_live_path(spec))).with_context(|| format!("unknown kernel parameter '{}'", spec.key))?;
+    let persisted = std::fs::read_to_string(ctx.path(&sysctl_persist_path(spec))).is_ok_and(|c| c == sysctl_persist_content(spec));
+    Ok((squeeze(&live) != squeeze(&spec.value), spec.persist && !persisted))
+}
+
+/// The kernel parameter is read and written directly in `/proc/sys`: no command is run.
+impl Verb for SysctlSpec {
+    fn check(&self, ctx: &Ctx) -> Result<Check> {
+        let (now, boot) = sysctl_drift(self, ctx)?;
+        let drift: Vec<String> = [(now, "value differs"), (boot, "not set at boot")].into_iter().filter_map(|(d, what)| d.then(|| what.to_string())).collect();
+        Ok(if drift.is_empty() { Check::Compliant } else { Check::Drift(drift) })
+    }
+
+    fn apply(&self, ctx: &Ctx) -> Result<()> {
+        let (now, boot) = sysctl_drift(self, ctx)?;
+        // The boot file first: if the kernel refuses the value the resource fails, and the next
+        // cycle finds the same drift again.
+        if boot {
+            let attrs = crate::fsutil::Attrs { owner: None, group: None, mode: Some("0644") };
+            crate::fsutil::write_atomic(ctx, &ctx.path(&sysctl_persist_path(self)), sysctl_persist_content(self).as_bytes(), attrs)?;
+        }
+        if now {
+            // Not a file to replace: the kernel takes the value from a plain write.
+            std::fs::write(ctx.path(&sysctl_live_path(self)), format!("{}\n", squeeze(&self.value))).with_context(|| format!("setting {}", self.key))?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,5 +343,31 @@ mod tests {
         assert!(matches!(systemd_check(&spec, &ctx).unwrap(), Check::Drift(_)));
         systemd_apply(&spec, &ctx).unwrap();
         assert_eq!(r.calls(), vec!["systemctl reload nginx"]);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn sysctl_sets_the_value_now_and_at_boot() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("proc/sys/net/ipv4")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("etc/sysctl.d")).unwrap();
+        std::fs::write(tmp.path().join("proc/sys/net/ipv4/ip_forward"), "0\n").unwrap();
+        std::fs::write(tmp.path().join("proc/sys/net/ipv4/ip_local_port_range"), "32768\t60999\n").unwrap();
+        let ctx = Ctx::new(tmp.path().to_path_buf(), "artifacts".into());
+
+        let spec = SysctlSpec { key: "net.ipv4.ip_forward".into(), value: "1".into(), persist: true };
+        assert_eq!(spec.check(&ctx).unwrap(), Check::Drift(vec!["value differs".into(), "not set at boot".into()]));
+        spec.apply(&ctx).unwrap();
+        assert_eq!(spec.check(&ctx).unwrap(), Check::Compliant);
+        assert_eq!(std::fs::read_to_string(tmp.path().join("proc/sys/net/ipv4/ip_forward")).unwrap(), "1\n");
+        assert!(std::fs::read_to_string(tmp.path().join("etc/sysctl.d/90-delbert-net.ipv4.ip_forward.conf")).unwrap().ends_with("net.ipv4.ip_forward = 1\n"));
+
+        // Blanks do not matter; without `persist` no file is written.
+        let range = SysctlSpec { key: "net.ipv4.ip_local_port_range".into(), value: "32768 60999".into(), persist: false };
+        assert_eq!(range.check(&ctx).unwrap(), Check::Compliant);
+        assert!(!tmp.path().join("etc/sysctl.d/90-delbert-net.ipv4.ip_local_port_range.conf").exists());
+        // An unknown parameter is an error, not something to create.
+        let unknown = SysctlSpec { key: "net.nope".into(), value: "1".into(), persist: true };
+        assert!(unknown.check(&ctx).unwrap_err().to_string().contains("unknown kernel parameter"));
+        assert!(unknown.apply(&ctx).is_err() && !tmp.path().join("proc/sys/net/nope").exists());
     }
 }

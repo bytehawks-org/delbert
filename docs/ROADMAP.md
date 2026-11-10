@@ -52,7 +52,7 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | PKI: an OpenSSL backend (only if a deployment needs it; implement the trait, pass `ca::conformance::check`) | to-do | 2026-10-24 |
 | Policy format: declarative YAML | complete | 2026-10-23 |
 | YAML resource schema: verb vocabulary and structure draft ([POLICY.md](POLICY.md)) | partial | 2026-10-23 |
-| YAML resource schema: JSON Schema generation and typed validation (6 verbs: `file`, `copy`, `template`, `line_in_file`, `package`, `service`) | partial | 2026-10-24 |
+| YAML resource schema: JSON Schema generation and typed validation (12 verbs: `file`, `copy`, `template`, `line_in_file`, `block_in_file`, `package`, `service`, `container`, `user`, `group`, `cron`, `sysctl`) | partial | 2026-10-24 |
 | Phase 1 delivery: Linux + container agent (installers ready; first release tag to do) | partial | 2026-11-10 |
 | Phase 2: Windows study (ACL, SCM, registry, packages, reboots): paths, SCM and facts decided and implemented ([WINDOWS.md](WINDOWS.md)); ACL model, registry verb, packages, reboots open | partial | 2026-11-10 |
 | Policy signing design (Ed25519, `core`/`external` modes, anti-rollback) | complete | 2026-10-23 |
@@ -97,7 +97,10 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Deferred: sidecar agent with environment PSK; per-pod identity; workload auth via projected ServiceAccount token | to-do | 2026-11-01 |
 | Agent: check/apply for `file`, `copy`, `line_in_file` (local YAML mode) | complete | 2026-10-23 |
 | Agent: `template`, `package` (apt/dnf/zypper/apk), `service` (systemd) | complete | 2026-10-23 |
-| Agent: `get_url`, `user`/`group`, `sysctl`, `cron`, `block_in_file`, `command`, containers | to-do | 2026-10-23 |
+| Agent: `block_in_file`, `user`, `group`, `sysctl`, `cron` (`/etc/cron.d`, argv, local allow-list `DELBERT_CRON_ALLOW`); verified on a real Debian root (shadow tools) | complete | 2026-11-10 |
+| Agent: `get_url` (pinned artifacts cover the need today), `command`, `mount`, `authorized_key`, user passwords from secrets, authoritative group membership, per-user crontab spool, Windows counterparts (local users, Scheduled Tasks) | to-do | 2026-11-10 |
+| New verbs in the console: form/snippets and schema completion in the policy editor (the YAML editor and the validation already accept them) | to-do | 2026-11-10 |
+| Orphans for the new verbs: a cron job, sysctl file or block that leaves the policy stays (needs `state: absent`) | to-do | 2026-11-10 |
 | Agent: accept only signed effective policies (replace local YAML mode in production) | to-do | 2026-10-23 |
 | RBAC v2 design: tenant-scoped roles, `resource:action` permissions, optional per-tenant four-eyes approval ([RBAC.md](RBAC.md)) | complete | 2026-10-23 |
 | RBAC v2: tenant-scoped assignments, `resource:action` permissions, built-in roles, delegated tenant administration (migration `0010`) | complete | 2026-10-23 |

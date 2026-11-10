@@ -4,7 +4,9 @@
 //! implements [`verbs::Verb`]: `check` has no side effects, `apply` runs only
 //! when `check` found drift, and the result is verified by checking again.
 
+pub mod accounts;
 pub mod containers;
+pub mod cron;
 pub mod daemon;
 pub mod engine;
 pub mod events;

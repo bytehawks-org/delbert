@@ -1,9 +1,9 @@
-//! Verb implementations: `file`, `copy`, `line_in_file`.
+//! Verb implementations: `file`, `copy`, `template`, `line_in_file`, `block_in_file`.
 
 use std::{collections::BTreeMap, fs, path::Path};
 
 use anyhow::{Context, Result, bail};
-use delbert_policy::{CopySpec, FileSpec, FileState, LineInFileSpec, Presence, TemplateSpec};
+use delbert_policy::{BlockInFileSpec, CopySpec, FileSpec, FileState, LineInFileSpec, Presence, TemplateSpec};
 use regex::Regex;
 use sha2::{Digest, Sha256};
 
@@ -132,7 +132,7 @@ fn artifact_bytes(ctx: &Ctx, src: &str) -> Result<Vec<u8>> {
 }
 
 /// Check a whole-file target against the bytes it must contain.
-fn content_check(ctx: &Ctx, path: &Path, desired: &[u8], attrs: Attrs) -> Result<Check> {
+pub(crate) fn content_check(ctx: &Ctx, path: &Path, desired: &[u8], attrs: Attrs) -> Result<Check> {
     let Ok(meta) = fs::symlink_metadata(path) else {
         return Ok(Check::Drift(vec!["missing".into()]));
     };
@@ -147,7 +147,7 @@ fn content_check(ctx: &Ctx, path: &Path, desired: &[u8], attrs: Attrs) -> Result
     Ok(Check::from_drift(drift))
 }
 
-fn content_apply(ctx: &Ctx, path: &Path, desired: &[u8], attrs: Attrs) -> Result<()> {
+pub(crate) fn content_apply(ctx: &Ctx, path: &Path, desired: &[u8], attrs: Attrs) -> Result<()> {
     if fs::read(path).is_ok_and(|current| current == desired) {
         apply_attrs(ctx, path, attrs)
     } else {
@@ -304,6 +304,73 @@ impl Verb for LineInFileSpec {
     }
 }
 
+// --- block_in_file ------------------------------------------------------------
+
+/// Pure block editing. The block lives between a BEGIN and an END marker line; it is replaced in
+/// place when the markers exist and appended otherwise. Returns the content unchanged (byte for
+/// byte) when nothing needs to change.
+pub fn edit_block(content: &str, spec: &BlockInFileSpec) -> Result<String> {
+    let (begin, end) = (spec.marker().replace("{mark}", "BEGIN"), spec.marker().replace("{mark}", "END"));
+    let mut lines: Vec<&str> = content.split('\n').collect();
+    if content.ends_with('\n') || content.is_empty() {
+        lines.pop(); // empty element after the final newline
+    }
+    let is = |line: &str, marker: &str| line.trim_end_matches('\r') == marker;
+    let start = lines.iter().position(|l| is(l, &begin));
+    let range = match start {
+        Some(s) => {
+            // A half-open block is somebody's edit gone wrong: refuse rather than guess its end.
+            let len = lines[s..].iter().position(|l| is(l, &end)).with_context(|| format!("'{begin}' has no matching '{end}'"))?;
+            Some(s..s + len + 1)
+        }
+        None => None,
+    };
+    let mut wanted: Vec<&str> = Vec::new();
+    if spec.state == Presence::Present {
+        wanted.push(&begin);
+        wanted.extend(spec.block.trim_end_matches('\n').split('\n'));
+        wanted.push(&end);
+    }
+    match range {
+        Some(r) if lines[r.clone()] == wanted[..] => return Ok(content.to_owned()),
+        Some(r) => drop(lines.splice(r, wanted)),
+        None if wanted.is_empty() => return Ok(content.to_owned()),
+        None => lines.extend(wanted),
+    }
+    let mut out = lines.join("\n");
+    if !lines.is_empty() {
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+/// Current and desired content; `None` when the file is absent and the block must be absent too.
+fn block_contents(spec: &BlockInFileSpec, ctx: &Ctx) -> Result<Option<(String, String)>> {
+    let current = match fs::read_to_string(ctx.path(&spec.path)) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && spec.state == Presence::Absent => return Ok(None),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", spec.path)),
+    };
+    let desired = edit_block(&current, spec)?;
+    Ok(Some((current, desired)))
+}
+
+impl Verb for BlockInFileSpec {
+    fn check(&self, ctx: &Ctx) -> Result<Check> {
+        Ok(match block_contents(self, ctx)? {
+            Some((current, desired)) if current != desired => Check::Drift(vec!["block differs".into()]),
+            _ => Check::Compliant,
+        })
+    }
+
+    fn apply(&self, ctx: &Ctx) -> Result<()> {
+        match block_contents(self, ctx)? {
+            Some((current, desired)) if current != desired => write_atomic(ctx, &ctx.path(&self.path), desired.as_bytes(), Attrs::default()),
+            _ => Ok(()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,5 +482,35 @@ mod tests {
     #[test]
     fn empty_file_gets_the_line() {
         assert_eq!(edit_lines("", &spec("a")).unwrap(), "a\n");
+    }
+    fn block(text: &str, state: Presence, marker: Option<&str>) -> BlockInFileSpec {
+        BlockInFileSpec { path: "/etc/hosts".into(), block: text.into(), marker: marker.map(str::to_owned), state }
+    }
+
+    #[test]
+    fn block_is_appended_replaced_in_place_and_removed() {
+        let spec = block("10.0.0.1 db\n10.0.0.2 cache\n", Presence::Present, None);
+        let first = edit_block("127.0.0.1 localhost\n", &spec).unwrap();
+        assert_eq!(first, "127.0.0.1 localhost\n# BEGIN DELBERT MANAGED BLOCK\n10.0.0.1 db\n10.0.0.2 cache\n# END DELBERT MANAGED BLOCK\n");
+        // Idempotent: byte for byte.
+        assert_eq!(edit_block(&first, &spec).unwrap(), first);
+        // Replaced where it is, the rest untouched.
+        let around = format!("{first}# tail\n");
+        let changed = edit_block(&around, &block("10.0.0.9 db", Presence::Present, None)).unwrap();
+        assert_eq!(changed, "127.0.0.1 localhost\n# BEGIN DELBERT MANAGED BLOCK\n10.0.0.9 db\n# END DELBERT MANAGED BLOCK\n# tail\n");
+        // Removed with its markers; removing what is not there changes nothing.
+        let gone = block("", Presence::Absent, None);
+        assert_eq!(edit_block(&changed, &gone).unwrap(), "127.0.0.1 localhost\n# tail\n");
+        assert_eq!(edit_block("x\n", &gone).unwrap(), "x\n");
+    }
+
+    #[test]
+    fn blocks_with_their_own_markers_coexist_and_a_half_open_block_is_refused() {
+        let a = block("a", Presence::Present, Some("# {mark} app-a"));
+        let b = block("b", Presence::Present, Some("# {mark} app-b"));
+        let both = edit_block(&edit_block("", &a).unwrap(), &b).unwrap();
+        assert_eq!(both, "# BEGIN app-a\na\n# END app-a\n# BEGIN app-b\nb\n# END app-b\n");
+        assert_eq!(edit_block(&both, &block("", Presence::Absent, Some("# {mark} app-a"))).unwrap(), "# BEGIN app-b\nb\n# END app-b\n");
+        assert!(edit_block("# BEGIN app-a\na\n", &a).unwrap_err().to_string().contains("no matching"));
     }
 }
