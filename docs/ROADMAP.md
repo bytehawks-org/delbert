@@ -53,12 +53,14 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Policy format: declarative YAML | complete | 2026-10-23 |
 | YAML resource schema: verb vocabulary and structure draft ([POLICY.md](POLICY.md)) | partial | 2026-10-23 |
 | YAML resource schema: JSON Schema generation and typed validation (6 verbs: `file`, `copy`, `template`, `line_in_file`, `package`, `service`) | partial | 2026-10-24 |
-| Phase 1 delivery: Linux + container agent | to-do | 2026-10-23 |
-| Phase 2: Windows study (ACL, SCM, registry, packages, reboots) | to-do | 2026-10-23 |
+| Phase 1 delivery: Linux + container agent (installers ready; first release tag to do) | partial | 2026-11-10 |
+| Phase 2: Windows study (ACL, SCM, registry, packages, reboots): paths, SCM and facts decided and implemented ([WINDOWS.md](WINDOWS.md)); ACL model, registry verb, packages, reboots open | partial | 2026-11-10 |
 | Policy signing design (Ed25519, `core`/`external` modes, anti-rollback) | complete | 2026-10-23 |
 | `command` resource design (local allowlist, no shell, idempotency guard) | complete | 2026-10-23 |
 | `command` resource implementation | to-do | 2026-10-23 |
-| Windows agent approach (service, registry, DSC) | to-do | 2026-10-23 |
+| Windows agent (preview, [WINDOWS.md](WINDOWS.md)): `file`/`copy`/`template`/`line_in_file` with drive paths, `service` on the SCM, registry facts, Windows Service (`service install/uninstall`), private data directory; cross-compiled, not yet run on Windows | partial | 2026-11-10 |
+| Windows agent: green `windows` CI job (smoke test, MSI) and a hand-run enrollment on Windows Server and Windows 11 | to-do | 2026-11-10 |
+| Windows agent: ACL parameters (`owner`/`group`/`mode` are refused today), `package` backend (MSI with pinned hash), remediation for Windows services, Event Log, `registry` verb, reboots, arm64, code signing | to-do | 2026-11-10 |
 | Workspace skeleton: policy, Core, Agent crates | complete | 2026-10-23 |
 | Workspace skeleton: Proxy crate | complete | 2026-10-23 |
 | Workspace skeleton: Operator crate (Kubernetes, kube-rs) | complete | 2026-11-01 |
@@ -112,7 +114,7 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Frontend: manual accessibility review with a screen reader (axe covers only part of WCAG) | to-do | 2026-10-24 |
 | Frontend M4: live status (SSE), dashboard with overview endpoint, axe accessibility audit, performance budget, visual regression | complete | 2026-10-24 |
 | `git init` | complete | 2026-10-24 |
-| CI pipeline (tests, clippy, fmt, image build) | partial | 2026-10-24 |
+| CI pipeline (tests, clippy, fmt, image build); `windows` job (portable crates, agent smoke test, MSI) and `packaging` job (static build, deb/rpm in Debian and Fedora containers, chart, container installer) added 2026-11-10, results not seen yet | partial | 2026-11-10 |
 | Audit browse and export API (`GET /v1/audit`, `/v1/audit/export`) | complete | 2026-10-23 |
 | Artifact storage outside PostgreSQL: local directory and S3-compatible (Garage verified) | complete | 2026-10-23 |
 | Artifacts: streaming upload (multipart/range) beyond 64 MiB, garbage collection of unreferenced objects, retention | to-do | 2026-10-23 |
@@ -133,9 +135,16 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Key rotation: policy signing key with overlap (in-band trust update, readiness API) | complete | 2026-10-23 |
 | Key rotation: internal CA, NATS issuer, secrets age key, proxy certificate ([ROTATION.md](ROTATION.md)) | complete | 2026-10-23 |
 | Quickstart and installation guides ([quickstart.md](quickstart.md), [install.md](install.md)) | complete | 2026-10-23 |
-| Kubernetes manifests verified on a real K3s cluster; NetworkPolicy, PodDisruptionBudget, Helm chart | to-do | 2026-10-23 |
-| Published images and release pipeline (registry, signed images, SBOM); agent packages (deb/rpm) and a static (musl) agent build | to-do | 2026-10-23 |
-| Quadlet units for single-host Podman; HA of NATS and the Core | to-do | 2026-10-23 |
+| Helm chart (`deploy/helm/delbert`: Core, NATS, web UI, optional PostgreSQL, generated passwords, NetworkPolicy for the database); `helm lint`/`template` in CI | complete | 2026-11-10 |
+| Helm chart installed on a real K3s cluster; PodDisruptionBudget; drop the plain manifests of the control plane once the chart is proven | to-do | 2026-11-10 |
+| Static (musl) builds of every binary; deb/rpm packages (nfpm) for agent, Core, proxy and tools with systemd units and service accounts; `install-agent.sh` | complete | 2026-11-10 |
+| Windows installer: MSI (WiX 5) and `install-agent.ps1`, built and installed by CI | partial | 2026-11-10 |
+| Release workflow on a tag: images on ghcr.io (cosign, SBOM, provenance), chart as OCI artifact, packages, MSI, install scripts, container bundle, `SHA256SUMS` (written, never run) | partial | 2026-11-10 |
+| Releases: first tag; arm64 images; signed packages and an apt/dnf repository; signed MSI | to-do | 2026-11-10 |
+| Single-host container install (`deploy/container`: compose for Podman/Docker, `install.sh`, keys created by a one-shot container); verified with Docker | complete | 2026-11-10 |
+| `delbert-pki bootstrap`: every key and certificate of a new installation in one idempotent step | complete | 2026-11-10 |
+| Agents: fingerprint-pinned download of the CA certificate from the Core (today `ca.pem` travels out of band) | to-do | 2026-11-10 |
+| Quadlet units for single-host Podman (the compose install covers the case today); HA of NATS and the Core | to-do | 2026-11-10 |
 | Rotation: proxy renewal verified in a live branch scenario; automatic reload (no restart) of the proxy and its site NATS; CA rotation reaching proxies without waiting for their renewal | to-do | 2026-10-23 |
 | Frontend M3, slice 1: users, roles and the permission matrix (`GET /v1/permissions`) | complete | 2026-10-24 |
 | Frontend M3, slice 2: profile (TOTP set-up, sessions, API tokens) | complete | 2026-10-24 |

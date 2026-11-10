@@ -1,0 +1,38 @@
+# nfpm definition of the delbert-agent package (deb and rpm). Built by the release workflow:
+#   VERSION=0.1.0 ARCH=amd64 BIN_DIR=target/x86_64-unknown-linux-musl/release \
+#     nfpm package --config packaging/nfpm/agent.yaml --packager deb --target dist/
+# The binaries are static (musl), so one package serves every distribution of that architecture.
+name: delbert-agent
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: admin
+priority: optional
+maintainer: ${MAINTAINER}
+vendor: ByteHawks
+homepage: https://github.com/bytehawks-org/delbert
+license: Apache-2.0
+description: |
+  Delbert agent
+  Applies the signed policies of a Delbert Core to this host. Outbound
+  connections only, idempotent, no local state that cannot be rebuilt.
+contents:
+  - src: ${BIN_DIR}/delbert-agent
+    dst: /usr/bin/delbert-agent
+    file_info: { mode: 0755 }
+  - src: deploy/systemd/delbert-agent.service
+    dst: /usr/lib/systemd/system/delbert-agent.service
+  - dst: /etc/delbert
+    type: dir
+    file_info: { mode: 0755 }
+  - dst: /etc/delbert/facts.d
+    type: dir
+    file_info: { mode: 0755 }
+  # Holds the one-time enrollment key until the first start: root only.
+  - src: deploy/systemd/agent.env.example
+    dst: /etc/delbert/agent.env
+    type: config|noreplace
+    file_info: { mode: 0600 }
+scripts:
+  postinstall: packaging/scripts/agent-postinstall.sh
+  preremove: packaging/scripts/agent-preremove.sh

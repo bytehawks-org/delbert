@@ -1,0 +1,110 @@
+{{- if .Values.web.enabled }}
+{{- $fullname := include "delbert.fullname" . -}}
+{{- $selector := dict "ctx" . "component" "web" -}}
+# The administration UI (docs/FRONTEND.md): a backend-for-frontend that talks to the Core
+# inside the cluster. The browser's TLS ends at the ingress, unlike the Core API.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-web
+  labels:
+    {{- include "delbert.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels:
+      {{- include "delbert.selector" $selector | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "delbert.selector" $selector | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: web
+          image: {{ include "delbert.image" (dict "ctx" . "component" "web") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - { name: DELBERT_CORE_URL, value: "https://{{ $fullname }}-core:{{ .Values.core.service.port }}" }
+            - { name: WEB_CORE_PUBLIC_URL, value: {{ .Values.core.publicUrl | quote }} }
+            {{- with .Values.web.publicUrl }}
+            - { name: WEB_PUBLIC_URL, value: {{ . | quote }} }
+            {{- end }}
+            - { name: NODE_EXTRA_CA_CERTS, value: /pki/ca.pem }
+            - name: WEB_SESSION_SECRET
+              valueFrom: { secretKeyRef: { name: {{ include "delbert.envSecret" . }}, key: WEB_SESSION_SECRET } }
+          ports:
+            - { name: http, containerPort: 3000 }
+          readinessProbe:
+            httpGet: { path: /login, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /login, port: http }
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+          securityContext:
+            {{- include "delbert.podSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - { name: ca, mountPath: /pki, readOnly: true }
+            - { name: cache, mountPath: /app/.next/cache }
+      volumes:
+        # Only the CA certificate out of the PKI secret.
+        - name: ca
+          secret:
+            secretName: {{ .Values.pki.existingSecret }}
+            items: [{ key: ca.pem, path: ca.pem }]
+        - name: cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-web
+  labels:
+    {{- include "delbert.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "delbert.selector" $selector | nindent 4 }}
+  ports:
+    - { name: http, port: 80, targetPort: http }
+{{- if .Values.web.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-web
+  labels:
+    {{- include "delbert.labels" . | nindent 4 }}
+  {{- with .Values.web.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.web.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  tls:
+    - hosts: [{{ .Values.web.ingress.host | quote }}]
+      secretName: {{ .Values.web.ingress.tlsSecret }}
+  rules:
+    - host: {{ .Values.web.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}-web
+                port: { name: http }
+{{- end }}
+{{- end }}

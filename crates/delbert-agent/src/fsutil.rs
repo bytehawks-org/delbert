@@ -1,10 +1,12 @@
-//! Filesystem helpers shared by the file-related verbs (Unix only for now).
+//! Filesystem helpers shared by the file-related verbs.
+//!
+//! Windows: `owner`, `group` and `mode` are POSIX notions and are refused there (a resource that
+//! sets one fails with a clear message) rather than silently ignored; files inherit the ACL of
+//! their directory. ACL management is not implemented yet (docs/WINDOWS.md).
 
-use std::{
-    fs,
-    os::unix::fs::{MetadataExt, PermissionsExt},
-    path::Path,
-};
+use std::{fs, path::Path};
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
 use anyhow::{Context, Result, bail};
 
@@ -19,10 +21,12 @@ pub struct Attrs<'a> {
     pub mode: Option<&'a str>,
 }
 
+#[cfg(unix)]
 fn parse_mode(mode: &str) -> Result<u32> {
     u32::from_str_radix(mode, 8).with_context(|| format!("invalid mode '{mode}'"))
 }
 
+#[cfg(unix)]
 /// Resolve a user/group name to an id using the local `passwd`/`group` file
 /// (numeric ids are accepted as-is). NSS sources such as LDAP are not consulted.
 fn lookup_id(ctx: &Ctx, db: &str, name: &str) -> Result<u32> {
@@ -42,6 +46,7 @@ fn lookup_id(ctx: &Ctx, db: &str, name: &str) -> Result<u32> {
 }
 
 /// Differences between the current metadata and the requested attributes.
+#[cfg(unix)]
 pub fn attrs_drift(ctx: &Ctx, meta: &fs::Metadata, attrs: Attrs) -> Result<Vec<String>> {
     let mut drift = Vec::new();
     if let Some(mode) = attrs.mode {
@@ -64,6 +69,7 @@ pub fn attrs_drift(ctx: &Ctx, meta: &fs::Metadata, attrs: Attrs) -> Result<Vec<S
 }
 
 /// Make `path` match the requested attributes (only touching what differs).
+#[cfg(unix)]
 pub fn apply_attrs(ctx: &Ctx, path: &Path, attrs: Attrs) -> Result<()> {
     let meta = fs::metadata(path).with_context(|| format!("stat {}", path.display()))?;
     if let Some(mode) = attrs.mode {
@@ -81,6 +87,25 @@ pub fn apply_attrs(ctx: &Ctx, path: &Path, attrs: Attrs) -> Result<()> {
     Ok(())
 }
 
+/// Windows: POSIX attributes cannot be honoured, so asking for one is an error (not a silent no-op).
+#[cfg(not(unix))]
+fn refuse_posix_attrs(attrs: Attrs) -> Result<()> {
+    if attrs.owner.is_some() || attrs.group.is_some() || attrs.mode.is_some() {
+        bail!("owner, group and mode are not supported on this platform (use 'when' to scope them to Unix hosts)");
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn attrs_drift(_ctx: &Ctx, _meta: &fs::Metadata, attrs: Attrs) -> Result<Vec<String>> {
+    refuse_posix_attrs(attrs).map(|()| Vec::new())
+}
+
+#[cfg(not(unix))]
+pub fn apply_attrs(_ctx: &Ctx, _path: &Path, attrs: Attrs) -> Result<()> {
+    refuse_posix_attrs(attrs)
+}
+
 /// Replace the content of a regular file atomically (see `replace_file`).
 /// Mode and ownership of an existing file are preserved unless `attrs` says otherwise.
 pub fn write_atomic(ctx: &Ctx, path: &Path, bytes: &[u8], attrs: Attrs) -> Result<()> {
@@ -95,17 +120,27 @@ pub fn write_atomic(ctx: &Ctx, path: &Path, bytes: &[u8], attrs: Attrs) -> Resul
         Ok(m) => Some(m),
         Err(_) => None,
     };
-    let mode = match attrs.mode {
-        Some(m) => parse_mode(m)?,
-        None => existing.as_ref().map_or(0o644, |m| m.mode() & 0o7777),
+    #[cfg(unix)]
+    let (mode, uid, gid) = {
+        let mode = match attrs.mode {
+            Some(m) => parse_mode(m)?,
+            None => existing.as_ref().map_or(0o644, |m| m.mode() & 0o7777),
+        };
+        let uid = match attrs.owner {
+            Some(o) => Some(lookup_id(ctx, "/etc/passwd", o)?),
+            None => existing.as_ref().map(MetadataExt::uid),
+        };
+        let gid = match attrs.group {
+            Some(g) => Some(lookup_id(ctx, "/etc/group", g)?),
+            None => existing.as_ref().map(MetadataExt::gid),
+        };
+        (mode, uid, gid)
     };
-    let uid = match attrs.owner {
-        Some(o) => Some(lookup_id(ctx, "/etc/passwd", o)?),
-        None => existing.as_ref().map(MetadataExt::uid),
-    };
-    let gid = match attrs.group {
-        Some(g) => Some(lookup_id(ctx, "/etc/group", g)?),
-        None => existing.as_ref().map(MetadataExt::gid),
+    #[cfg(not(unix))]
+    let (mode, uid, gid) = {
+        let _ = (ctx, existing);
+        refuse_posix_attrs(attrs)?;
+        (0o644, None, None)
     };
     delbert_fs::replace_file(path, bytes, mode, uid, gid).with_context(|| format!("writing {}", path.display()))
 }

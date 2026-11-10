@@ -1,0 +1,35 @@
+# Delbert branch-office proxy on a Linux host (docs/PROXY.md). Shipped by the delbert-proxy
+# package. Enroll it once (`delbert-proxy enroll ...`, as the delbert-proxy user or with
+# DELBERT_IDENTITY_DIR owned by it) and run the site's NATS server next to it.
+[Unit]
+Description=Delbert Proxy
+Documentation=https://github.com/bytehawks-org/delbert
+After=network-online.target nats-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=delbert-proxy
+Group=delbert-proxy
+EnvironmentFile=/etc/delbert/proxy.env
+ExecStart=/usr/bin/delbert-proxy run
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+StateDirectory=delbert-proxy
+StateDirectoryMode=0700
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

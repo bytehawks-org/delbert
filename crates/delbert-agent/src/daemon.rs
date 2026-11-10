@@ -530,12 +530,21 @@ impl Agent<'_> {
     }
 }
 
-/// SIGTERM (container or service stop) or Ctrl-C.
+/// SIGTERM (container or service stop) or Ctrl-C; on Windows also a stop request from the
+/// Service Control Manager (see `winsvc`).
 async fn shutdown_signal() {
-    use tokio::signal::unix::{SignalKind, signal};
-    let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
+        tokio::select! {
+            _ = term.recv() => {}
+            _ = tokio::signal::ctrl_c() => {}
+        }
+    }
+    #[cfg(windows)]
     tokio::select! {
-        _ = term.recv() => {}
+        _ = crate::winsvc::stop_requested() => {}
         _ = tokio::signal::ctrl_c() => {}
     }
 }

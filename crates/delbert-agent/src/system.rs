@@ -106,7 +106,7 @@ impl Verb for PackageSpec {
     }
 }
 
-// --- service (systemd) ---------------------------------------------------------
+// --- service (systemd; Windows services are in `winsvc`) ---------------------------------------------------------
 
 fn systemctl(ctx: &Ctx, args: &[&str]) -> Result<crate::runner::CmdOutput> {
     let mut argv = vec!["systemctl"];
@@ -114,51 +114,69 @@ fn systemctl(ctx: &Ctx, args: &[&str]) -> Result<crate::runner::CmdOutput> {
     ctx.runner.run(&argv)
 }
 
+/// Compiled everywhere (its tests run on every platform), used on Unix only.
+#[cfg_attr(windows, allow(dead_code))]
+fn systemd_check(spec: &ServiceSpec, ctx: &Ctx) -> Result<Check> {
+    let mut drift = Vec::new();
+    match spec.state {
+        Some(ServiceState::Restarted | ServiceState::Reloaded) => return Ok(Check::Drift(vec!["action".into()])),
+        Some(want @ (ServiceState::Started | ServiceState::Stopped)) => {
+            let active = systemctl(ctx, &["is-active", "--quiet", &spec.name])?.ok();
+            match (want, active) {
+                (ServiceState::Started, false) => drift.push("not running".to_string()),
+                (ServiceState::Stopped, true) => drift.push("running".to_string()),
+                _ => {}
+            }
+        }
+        None => {}
+    }
+    if let Some(want) = spec.enabled {
+        let enabled = systemctl(ctx, &["is-enabled", "--quiet", &spec.name])?.ok();
+        if enabled != want {
+            drift.push(if want { "not enabled" } else { "enabled" }.to_string());
+        }
+    }
+    Ok(if drift.is_empty() { Check::Compliant } else { Check::Drift(drift) })
+}
+
+#[cfg_attr(windows, allow(dead_code))]
+fn systemd_apply(spec: &ServiceSpec, ctx: &Ctx) -> Result<()> {
+    let run = |args: &[&str]| -> Result<()> {
+        let mut argv = vec!["systemctl"];
+        argv.extend_from_slice(args);
+        ctx.runner.run(&argv)?.check(&argv).map(drop)
+    };
+    let is_active = || systemctl(ctx, &["is-active", "--quiet", &spec.name]).map(|o| o.ok());
+    match spec.state {
+        Some(ServiceState::Started) if !is_active()? => run(&["start", &spec.name])?,
+        Some(ServiceState::Stopped) if is_active()? => run(&["stop", &spec.name])?,
+        Some(ServiceState::Restarted) => run(&["restart", &spec.name])?,
+        Some(ServiceState::Reloaded) => run(&["reload", &spec.name])?,
+        _ => {}
+    }
+    if let Some(want) = spec.enabled {
+        let enabled = systemctl(ctx, &["is-enabled", "--quiet", &spec.name])?.ok();
+        if enabled != want {
+            run(&[if want { "enable" } else { "disable" }, &spec.name])?;
+        }
+    }
+    Ok(())
+}
+
 impl Verb for ServiceSpec {
+    /// systemd on Unix, the Service Control Manager on Windows.
     fn check(&self, ctx: &Ctx) -> Result<Check> {
-        let mut drift = Vec::new();
-        match self.state {
-            Some(ServiceState::Restarted | ServiceState::Reloaded) => return Ok(Check::Drift(vec!["action".into()])),
-            Some(want @ (ServiceState::Started | ServiceState::Stopped)) => {
-                let active = systemctl(ctx, &["is-active", "--quiet", &self.name])?.ok();
-                match (want, active) {
-                    (ServiceState::Started, false) => drift.push("not running".to_string()),
-                    (ServiceState::Stopped, true) => drift.push("running".to_string()),
-                    _ => {}
-                }
-            }
-            None => {}
-        }
-        if let Some(want) = self.enabled {
-            let enabled = systemctl(ctx, &["is-enabled", "--quiet", &self.name])?.ok();
-            if enabled != want {
-                drift.push(if want { "not enabled" } else { "enabled" }.to_string());
-            }
-        }
-        Ok(if drift.is_empty() { Check::Compliant } else { Check::Drift(drift) })
+        #[cfg(windows)]
+        return crate::winsvc::service_check(self, ctx);
+        #[cfg(not(windows))]
+        systemd_check(self, ctx)
     }
 
     fn apply(&self, ctx: &Ctx) -> Result<()> {
-        let run = |args: &[&str]| -> Result<()> {
-            let mut argv = vec!["systemctl"];
-            argv.extend_from_slice(args);
-            ctx.runner.run(&argv)?.check(&argv).map(drop)
-        };
-        let is_active = || systemctl(ctx, &["is-active", "--quiet", &self.name]).map(|o| o.ok());
-        match self.state {
-            Some(ServiceState::Started) if !is_active()? => run(&["start", &self.name])?,
-            Some(ServiceState::Stopped) if is_active()? => run(&["stop", &self.name])?,
-            Some(ServiceState::Restarted) => run(&["restart", &self.name])?,
-            Some(ServiceState::Reloaded) => run(&["reload", &self.name])?,
-            _ => {}
-        }
-        if let Some(want) = self.enabled {
-            let enabled = systemctl(ctx, &["is-enabled", "--quiet", &self.name])?.ok();
-            if enabled != want {
-                run(&[if want { "enable" } else { "disable" }, &self.name])?;
-            }
-        }
-        Ok(())
+        #[cfg(windows)]
+        return crate::winsvc::service_apply(self, ctx);
+        #[cfg(not(windows))]
+        systemd_apply(self, ctx)
     }
 
     /// `restarted` / `reloaded` have no observable state to verify afterwards.
@@ -247,8 +265,8 @@ mod tests {
             (&["systemctl", "enable"], 0, ""),
         ]));
         let spec = ServiceSpec { name: "nginx".into(), state: Some(ServiceState::Started), enabled: Some(true) };
-        assert_eq!(spec.check(&ctx).unwrap(), Check::Drift(vec!["not running".into(), "not enabled".into()]));
-        spec.apply(&ctx).unwrap();
+        assert_eq!(systemd_check(&spec, &ctx).unwrap(), Check::Drift(vec!["not running".into(), "not enabled".into()]));
+        systemd_apply(&spec, &ctx).unwrap();
         let calls = r.calls();
         assert!(calls.contains(&"systemctl start nginx".to_string()) && calls.contains(&"systemctl enable nginx".to_string()));
     }
@@ -257,8 +275,8 @@ mod tests {
     fn service_already_in_state_does_nothing() {
         let (ctx, r) = ctx_with(FakeRunner::new(vec![(&["systemctl", "is-active"], 0, ""), (&["systemctl", "is-enabled"], 0, "")]));
         let spec = ServiceSpec { name: "nginx".into(), state: Some(ServiceState::Started), enabled: Some(true) };
-        assert_eq!(spec.check(&ctx).unwrap(), Check::Compliant);
-        spec.apply(&ctx).unwrap();
+        assert_eq!(systemd_check(&spec, &ctx).unwrap(), Check::Compliant);
+        systemd_apply(&spec, &ctx).unwrap();
         assert!(!r.calls().iter().any(|c| c.starts_with("systemctl start ") || c.starts_with("systemctl enable ")));
     }
 
@@ -267,8 +285,8 @@ mod tests {
         let (ctx, r) = ctx_with(FakeRunner::new(vec![(&["systemctl", "reload"], 0, "")]));
         let spec = ServiceSpec { name: "nginx".into(), state: Some(ServiceState::Reloaded), enabled: None };
         assert!(spec.is_action());
-        assert!(matches!(spec.check(&ctx).unwrap(), Check::Drift(_)));
-        spec.apply(&ctx).unwrap();
+        assert!(matches!(systemd_check(&spec, &ctx).unwrap(), Check::Drift(_)));
+        systemd_apply(&spec, &ctx).unwrap();
         assert_eq!(r.calls(), vec!["systemctl reload nginx"]);
     }
 }

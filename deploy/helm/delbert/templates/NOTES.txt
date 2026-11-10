@@ -1,0 +1,17 @@
+Delbert {{ .Chart.AppVersion }} is starting in namespace {{ .Release.Namespace }}.
+
+  Core API : {{ .Values.core.publicUrl }}   (certificate of the Delbert CA: keys/ca.pem)
+  NATS     : {{ .Values.nats.publicUrl }}   (agents connect here)
+{{- if .Values.web.enabled }}
+  Web UI   : {{ if .Values.web.ingress.enabled }}https://{{ .Values.web.ingress.host }}{{ else }}kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "delbert.fullname" . }}-web 3000:80{{ end }}
+{{- end }}
+
+First login: user "admin", password:
+
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "delbert.envSecret" . }} -o jsonpath='{.data.DELBERT_BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d
+
+Change it and enable MFA at once. The addresses of the two LoadBalancer Services:
+
+  kubectl -n {{ .Release.Namespace }} get svc {{ include "delbert.fullname" . }}-core {{ include "delbert.fullname" . }}-nats
+
+Point the DNS names of the certificates at them, then enroll agents (docs/install.md).

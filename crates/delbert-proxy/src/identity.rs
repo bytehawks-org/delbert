@@ -10,7 +10,6 @@
 
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 
@@ -162,8 +161,7 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
     }
 
     let dir = &args.identity_dir;
-    fs::create_dir_all(dir)?;
-    fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+    delbert_fs::create_private_dir(dir)?;
     write_private(&dir.join("key.pem"), &key_pem)?;
     delbert_fs::write_public(&dir.join("cert.pem"), resp.cert_pem.as_bytes())?;
     delbert_fs::write_public(&dir.join("ca.pem"), resp.ca_pem.as_bytes())?;

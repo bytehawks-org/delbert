@@ -1,0 +1,38 @@
+# /etc/delbert/core.toml for the delbert-core package. Check it with
+#   delbert-core --config /etc/delbert/core.toml --check-config
+# Keys and certificates: `delbert-pki --dir /etc/delbert/keys bootstrap ...` (docs/install.md).
+# All settings: deploy/delbert-core.example.toml and docs/API.md.
+
+[server]
+bind = "0.0.0.0:8443"
+tls_cert_file = "/etc/delbert/keys/core.pem"
+tls_key_file = "/etc/delbert/keys/core.key"
+api_docs = false
+public_url = "https://delbert.example.com:8443"      # CHANGE: how users and agents reach the Core
+
+[nats]
+url = "tls://127.0.0.1:4222"
+ca_file = "/etc/delbert/keys/ca.pem"
+client_cert_file = "/etc/delbert/keys/core-nats.pem"
+client_key_file = "/etc/delbert/keys/core-nats.key"
+issuer_seed_file = "/etc/delbert/keys/nats-issuer.seed"
+public_url = "tls://delbert.example.com:4222"         # CHANGE: how agents reach NATS
+
+[pki]
+ca_cert_file = "/etc/delbert/keys/ca.pem"
+ca_key_file = "/etc/delbert/keys/ca.key"
+secrets_key_file = "/etc/delbert/keys/secrets.key"
+
+[policy]
+signing_key_file = "/etc/delbert/keys/k1.key"
+signing_kid = "k1"
+
+[auth]
+mfa_required = "admins"
+
+[artifacts]
+store = "local"
+dir = "/var/lib/delbert-core/artifacts"
+
+[content]
+dir = "/var/lib/delbert-core/content"

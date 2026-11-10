@@ -35,5 +35,11 @@ serde_yaml_ng.workspace = true
 hmac = "0.12"
 if-addrs.workspace = true
 
+# Windows only: the Service Control Manager (the agent as a service, the `service` verb) and the
+# registry (host facts). Both are safe APIs; this crate stays free of `unsafe`.
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8"
+winreg = "0.56"
+
 [dev-dependencies]
 tempfile.workspace = true

@@ -1,0 +1,110 @@
+# Delbert control plane on Kubernetes / K3s (docs/install.md "Kubernetes").
+#
+# Before installing, create the keys once on an administration machine and load them as a
+# Secret (they are never generated in the cluster, so you hold the offline copy):
+#
+#   delbert-pki --dir keys bootstrap --core-dns delbert.example.com --core-dns delbert-core \
+#                                    --nats-dns nats.example.com --nats-dns delbert-nats
+#   kubectl create namespace delbert
+#   kubectl -n delbert create secret generic delbert-pki --from-file=keys/
+#   helm install delbert oci://ghcr.io/bytehawks-org/charts/delbert -n delbert \
+#     --set core.publicUrl=https://delbert.example.com:8443 \
+#     --set nats.publicUrl=tls://nats.example.com:4222
+#
+# The in-cluster names in the certificates must be "<release>-core" and "<release>-nats"
+# (here: release "delbert").
+
+image:
+  registry: ghcr.io/bytehawks-org
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+pki:
+  # Secret with the files written by `delbert-pki bootstrap` (ca.pem, ca.key, core.pem, core.key,
+  # core-nats.pem, core-nats.key, nats.pem, nats.key, secrets.key, nats-issuer.seed,
+  # nats-issuer.pub, k1.key).
+  existingSecret: delbert-pki
+
+core:
+  # REQUIRED: how users and agents reach the Core from outside the cluster. The host must be one
+  # of the --core-dns names. Agents verify the Core's certificate against the Delbert CA, so the
+  # Core is exposed directly: do not put a TLS-terminating ingress in front of it.
+  publicUrl: ""
+  service:
+    type: LoadBalancer
+    port: 8443
+    annotations: {}
+  # One replica owns the data volume. More replicas need S3 artifacts and no local content sources.
+  persistence:
+    size: 10Gi
+    storageClass: ""
+  apiDocs: false
+  mfaRequired: admins          # none | admins | all
+  # Password of the user "admin", used by the first start only. Empty: a random one is generated
+  # (see the notes printed after the installation).
+  bootstrapAdminPassword: ""
+  # More settings as environment variables (docs/API.md), e.g. S3 artifacts.
+  extraEnv: []
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+nats:
+  image: docker.io/library/nats:2-alpine
+  # REQUIRED: how agents reach NATS from outside the cluster (one of the --nats-dns names).
+  publicUrl: ""
+  service:
+    type: LoadBalancer
+    port: 4222
+    annotations: {}
+  persistence:
+    size: 2Gi
+    storageClass: ""
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 512Mi }
+
+web:
+  enabled: true
+  replicas: 2
+  # The UI's public address (https://ui.example.com). Needed for single sign-on and when the
+  # ingress does not forward Host / X-Forwarded-*.
+  publicUrl: ""
+  ingress:
+    enabled: false
+    className: ""
+    host: ui.example.com
+    # TLS secret of the UI (the browser's TLS ends at the ingress, unlike the Core API).
+    tlsSecret: delbert-web-tls
+    annotations: {}
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 384Mi }
+
+# A single PostgreSQL 17 instance inside the release: simple, with no high availability.
+# For production prefer a managed service or an operator (e.g. CloudNativePG): set
+# enabled=false and fill externalDatabase.
+postgresql:
+  enabled: true
+  image: docker.io/library/postgres:17-alpine
+  persistence:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+externalDatabase:
+  # The roles must exist before the Core starts (docs/install.md "PostgreSQL"):
+  # url is the runtime role (delbert_rt), migrateUrl the schema owner.
+  url: ""
+  migrateUrl: ""
+  # Or a Secret with the keys DATABASE_URL and DATABASE_MIGRATE_URL.
+  existingSecret: ""
+
+# Only the Core may reach the bundled PostgreSQL. Needs a CNI that enforces NetworkPolicy
+# (K3s does by default).
+networkPolicy:
+  enabled: true

@@ -1,4 +1,5 @@
-# Delbert agent on a Linux host (docs/install.md). Install as /etc/systemd/system/delbert-agent.service.
+# Delbert agent on a Linux host (docs/install.md). Shipped by the delbert-agent package in
+# /usr/lib/systemd/system; for a manual install copy it to /etc/systemd/system.
 # The agent changes the host it runs on, so it runs as root; everything it does is the signed policy
 # it pulled from the Core. Outbound connections only: nothing listens.
 [Unit]
@@ -10,7 +11,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/delbert/agent.env
-ExecStart=/usr/local/bin/delbert-agent run
+ExecStart=/usr/bin/delbert-agent run
 Restart=always
 RestartSec=5
 # SIGTERM ends the current cycle cleanly.

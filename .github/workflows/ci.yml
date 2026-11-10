@@ -71,7 +71,79 @@ jobs:
     needs: [rust, web]
     strategy:
       matrix:
-        target: [core, agent, proxy, tools, web]
+        target: [core, agent, proxy, operator, tools, web]
     steps:
       - uses: actions/checkout@v4
       - run: docker build --target ${{ matrix.target }} -t delbert-${{ matrix.target }}:ci -f Containerfile .
+
+  # The Windows agent on a real Windows host: unit tests of the portable crates, a smoke test
+  # (files, a real service, the agent's own Windows Service) and the MSI installed and removed.
+  # docs/WINDOWS.md.
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p delbert-fs -p delbert-policy -p delbert-wire -p delbert-pki
+      - run: cargo build --release --locked -p delbert-agent
+      - name: Smoke test
+        shell: pwsh
+        run: packaging/windows/smoke-test.ps1 -Agent target/release/delbert-agent.exe
+      - name: Build the MSI
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix build packaging/windows/delbert-agent.wxs -arch x64 -d Version=0.0.1 -d BinDir=target/release -o dist/delbert-agent-ci-x64.msi
+      - name: Install and remove the MSI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = (Resolve-Path dist/delbert-agent-ci-x64.msi).Path
+          $p = Start-Process msiexec.exe -ArgumentList '/i', "`"$msi`"", '/qn', '/norestart', '/l*v', 'install.log' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content install.log -Tail 80; throw "msiexec /i failed: $($p.ExitCode)" }
+          & 'C:\Program Files\Delbert\delbert-agent.exe' --version
+          if ((Get-Service DelbertAgent).StartType -ne 'Automatic') { throw 'the service is not registered' }
+          $p = Start-Process msiexec.exe -ArgumentList '/x', "`"$msi`"", '/qn', '/norestart' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec /x failed: $($p.ExitCode)" }
+          if (Get-Service DelbertAgent -ErrorAction SilentlyContinue) { throw 'the service survived the removal' }
+          if (Test-Path 'C:\Program Files\Delbert\delbert-agent.exe') { throw 'the executable survived the removal' }
+
+  # Static Linux binaries, deb/rpm packages installed in clean Debian and Fedora containers,
+  # the single-host container installer and the Helm chart. docs/install.md.
+  packaging:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Tools (zig as the cross linker, nfpm)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet cargo-zigbuild ziglang
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          rustup target add x86_64-unknown-linux-musl
+      - run: packaging/build-packages.sh 0.0.1 x86_64-unknown-linux-musl dist
+      - run: packaging/test-packages.sh dist docker
+      - name: Shell scripts parse
+        run: for f in packaging/*.sh packaging/scripts/*.sh deploy/container/*.sh; do sh -n "$f"; done
+      - name: Helm chart
+        run: |
+          set -eu
+          urls="--set core.publicUrl=https://delbert.example.com:8443 --set nats.publicUrl=tls://nats.example.com:4222"
+          helm lint deploy/helm/delbert $urls
+          helm template delbert deploy/helm/delbert --namespace delbert $urls > /dev/null
+          helm template delbert deploy/helm/delbert --namespace delbert $urls --set postgresql.enabled=false \
+            --set externalDatabase.url=postgres://delbert_rt:x@db.example.com/delbert \
+            --set externalDatabase.migrateUrl=postgres://delbert:x@db.example.com/delbert \
+            --set web.ingress.enabled=true --set web.publicUrl=https://ui.example.com > /dev/null
+      - name: Container installer (Core, NATS and PostgreSQL from the built binaries)
+        run: |
+          set -eu
+          # Thin images from the static binaries; the published ones come from the Containerfile.
+          mkdir img && cp target/x86_64-unknown-linux-musl/release/delbert-core target/x86_64-unknown-linux-musl/release/delbert-pki img/
+          printf '%s\n' 'FROM debian:13-slim AS core' 'RUN useradd --system --uid 10001 --no-create-home delbert && mkdir -p /var/lib/delbert-core/artifacts /var/lib/delbert-core/content && chown -R 10001 /var/lib/delbert-core' 'COPY delbert-core /usr/local/bin/' 'ENV DELBERT_ARTIFACT_DIR=/var/lib/delbert-core/artifacts DELBERT_CONTENT_DIR=/var/lib/delbert-core/content' 'USER 10001' 'ENTRYPOINT ["delbert-core"]' 'FROM debian:13-slim AS tools' 'COPY delbert-pki /usr/local/bin/' 'RUN mkdir /keys && chown 10001:10001 /keys' > img/Dockerfile
+          docker build -q --target core -t localhost/delbert-core:ci img
+          docker build -q --target tools -t localhost/delbert-tools:ci img
+          deploy/container/install.sh --host delbert.example.com --registry localhost --version ci --no-web --no-pull
+          curl -fsS --cacert deploy/container/ca.pem --resolve delbert.example.com:8443:127.0.0.1 https://delbert.example.com:8443/healthz

@@ -97,7 +97,16 @@ impl Verb for FileSpec {
                     Some(_) => bail!("{} exists and is not a symlink", self.path),
                     None => {}
                 }
+                #[cfg(unix)]
                 std::os::unix::fs::symlink(target, &path)?;
+                // Windows tells file and directory links apart; creating one needs the
+                // SeCreateSymbolicLink privilege, which the service account (LocalSystem) has.
+                #[cfg(windows)]
+                if ctx.path(target).is_dir() {
+                    std::os::windows::fs::symlink_dir(target, &path)?;
+                } else {
+                    std::os::windows::fs::symlink_file(target, &path)?;
+                }
             }
         }
         Ok(())

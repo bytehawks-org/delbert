@@ -1,5 +1,17 @@
 # Delbert - Changelog
 
+## 2026-11-10
+
+### Installers for containers, Kubernetes and packages; Windows agent (preview)
+- **Keys in one step:** `delbert-pki bootstrap --core-dns ... --nats-dns ...` creates the CA, the certificates of the Core and NATS, the Core's NATS client certificate, the secrets key, the NATS issuer and the signing key `k1`; existing files are kept.
+- **Containers** (`deploy/container`): `compose.yaml` for Podman or Docker with a one-shot service that creates the keys in a volume, PostgreSQL with the runtime role, NATS with the callout, Core and web UI; `install.sh --host <name>` writes `.env` with random passwords and starts it. The `tools` image owns `/keys` as uid 10001. Run for real (Core healthy, a static agent enrolled and applied a policy).
+- **Kubernetes** (`deploy/helm/delbert`): chart with Core, NATS, web UI (optional ingress), optional single PostgreSQL, passwords generated once and kept, NetworkPolicy for the database; keys from a Secret made from the `bootstrap` directory. Not rendered or installed during development (CI lints it).
+- **Linux packages** (`packaging/`): static musl binaries (cargo-zigbuild), `.deb`/`.rpm` with nfpm for `delbert-agent`, `delbert-core`, `delbert-proxy`, `delbert-tools`; systemd units for the Core and the proxy (hardened, own service accounts), packaged `core.toml` / `core.env` / `proxy.env`; `install-agent.sh` (download, checksum, install, enroll, start, remove the key from the file). The agent unit now starts `/usr/bin/delbert-agent`.
+- **Windows agent, preview** ([WINDOWS.md](WINDOWS.md)): the agent, the proxy and the tools build for Windows. Policy paths may have a drive (`C:/...`): accepted by validation, refused on a non-Windows agent, mapped to `<root>/C/...` in a sandbox root. `owner`/`group`/`mode` are refused on Windows. `service` uses the Service Control Manager; facts come from the registry; `delbert-agent service install | uninstall | run` (Windows Service, LocalSystem, restart on failure, log file); private directories get a SYSTEM/Administrators ACL. MSI (WiX 5) and `install-agent.ps1`. Compiled only: not yet run on Windows.
+- **`delbert-fs`:** portable `replace_file`; new `create_private_dir`. `delbert-sign keygen` now writes the private key crash-safely with its final mode (it was created with the default mode and restricted afterwards).
+- **CI and releases:** `windows` and `packaging` jobs; `release.yml` publishes images (cosign, SBOM, provenance), the chart, packages, MSI, scripts and `SHA256SUMS` on a tag `vX.Y.Z`.
+- **Docs:** [install.md](install.md) rewritten around the three install paths, with a table of what was verified and how.
+
 ## 2026-11-01
 
 ### Repository layout and the online editor

@@ -1,0 +1,118 @@
+{{- $fullname := include "delbert.fullname" . -}}
+{{- $selector := dict "ctx" . "component" "core" -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $fullname }}-core
+  labels:
+    {{- include "delbert.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.core.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.core.persistence.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-core
+  labels:
+    {{- include "delbert.labels" . | nindent 4 }}
+    app.kubernetes.io/component: core
+spec:
+  replicas: 1
+  # One replica owns the volume (ReadWriteOnce): stop the old pod before starting the new one.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "delbert.selector" $selector | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "delbert.selector" $selector | nindent 8 }}
+      annotations:
+        # A changed configuration restarts the Core.
+        checksum/config: {{ include (print $.Template.BasePath "/core-config.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: core
+          image: {{ include "delbert.image" (dict "ctx" . "component" "core") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config", "/etc/delbert/delbert-core.toml"]
+          env:
+            - { name: RUST_LOG, value: info }
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: {{ include "delbert.databaseSecret" . }}, key: DATABASE_URL } }
+            - name: DATABASE_MIGRATE_URL
+              valueFrom: { secretKeyRef: { name: {{ include "delbert.databaseSecret" . }}, key: DATABASE_MIGRATE_URL } }
+            - name: NATS_AUTH_USER
+              valueFrom: { secretKeyRef: { name: {{ include "delbert.envSecret" . }}, key: NATS_AUTH_USER } }
+            - name: NATS_AUTH_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "delbert.envSecret" . }}, key: NATS_AUTH_PASSWORD } }
+            - name: DELBERT_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "delbert.envSecret" . }}, key: DELBERT_BOOTSTRAP_ADMIN_PASSWORD } }
+            {{- with .Values.core.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - { name: api, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: api, scheme: HTTPS }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: api, scheme: HTTPS }
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.core.resources | nindent 12 }}
+          securityContext:
+            {{- include "delbert.podSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - { name: config, mountPath: /etc/delbert/delbert-core.toml, subPath: delbert-core.toml, readOnly: true }
+            - { name: pki, mountPath: /etc/delbert/pki, readOnly: true }
+            - { name: data, mountPath: /var/lib/delbert-core }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: config
+          configMap: { name: {{ $fullname }}-core }
+        - name: pki
+          secret: { secretName: {{ .Values.pki.existingSecret }}, defaultMode: 0440 }
+        - name: data
+          persistentVolumeClaim: { claimName: {{ $fullname }}-core }
+        - name: tmp
+          emptyDir: {}
+---
+# Users and agents reach the Core over HTTPS with the Delbert CA's certificate, so it is exposed
+# directly (no TLS-terminating ingress in front of it).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-core
+  labels:
+    {{- include "delbert.labels" . | nindent 4 }}
+  {{- with .Values.core.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.core.service.type }}
+  selector:
+    {{- include "delbert.selector" $selector | nindent 4 }}
+  ports:
+    - { name: api, port: {{ .Values.core.service.port }}, targetPort: api }

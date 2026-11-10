@@ -39,9 +39,15 @@ impl Ctx {
         Ctx { root, artifacts, vars: BTreeMap::new(), secrets: BTreeMap::new(), artifact_hashes: BTreeMap::new(), facts_dir: PathBuf::new(), hash_key: Vec::new(), secrets_dir: "/run/delbert/secrets".into(), runner }
     }
 
-    /// Map an absolute policy path into the root.
+    /// Map an absolute policy path into the root. A Windows drive path (`C:/app` or `C:\app`)
+    /// is used as it is when the root is the real one, and lands in `<root>/C/app` in a sandbox
+    /// root, so it can never escape it.
     pub fn path(&self, absolute: &str) -> PathBuf {
-        self.root.join(absolute.trim_start_matches('/'))
+        match delbert_policy::split_drive(absolute) {
+            Some(_) if self.root == Path::new("/") => PathBuf::from(absolute),
+            Some((drive, rest)) => self.root.join(drive.to_string()).join(rest.trim_start_matches(['/', '\\'])),
+            None => self.root.join(absolute.trim_start_matches('/')),
+        }
     }
 
     /// Facts exposed to templates and `when` as `facts.*` (see `facts.rs`; best effort).
@@ -247,6 +253,12 @@ pub fn run(resources: &[Resource], ctx: &Ctx, mode: Mode) -> Report {
             Some(Ok(false)) => Some(Status::NotApplicable("'when' is false on this host".into())),
             _ => clashing.get(r.id.as_str()).map(|m| Status::Failed(m.clone())),
         }
+        // A Windows drive path means nothing on another system: refuse it instead of guessing a place
+        // for it (a sandbox root maps it to `<root>/C/...`, see `Ctx::path`).
+        .or_else(|| {
+            let foreign = !cfg!(windows) && ctx.root == Path::new("/");
+            delbert_policy::managed_paths(r).into_iter().find(|p| foreign && delbert_policy::split_drive(p).is_some()).map(|p| Status::Failed(format!("'{p}' is a Windows path; scope the resource with 'when: facts.os_family == \"windows\"'")))
+        })
         .or_else(|| {
             r.depends_on
                 .iter()
@@ -475,5 +487,25 @@ spec:
         assert!(matches!(status(&report, "a"), Status::Failed(m) if m.contains("'b'")));
         assert!(matches!(status(&report, "b"), Status::Failed(_)));
         assert!(!tmp.path().join("etc/motd").exists(), "nothing applied by guess");
+    }
+    #[test]
+    fn windows_drive_paths_stay_inside_a_sandbox_root_and_are_refused_on_a_unix_host() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(tmp.path().to_path_buf(), "artifacts".into());
+        assert_eq!(ctx.path("C:/app/x.conf"), tmp.path().join("C").join("app/x.conf"));
+        assert_eq!(ctx.path(r"d:\app\x.conf"), tmp.path().join("D").join(r"app\x.conf"));
+        assert_eq!(ctx.path("/etc/x"), tmp.path().join("etc/x"));
+
+        let policy = delbert_policy::from_yaml("apiVersion: delbert/v1\nkind: Policy\nmetadata: { name: p, tenant: t1 }\nspec:\n  resources:\n    - id: w\n      file: { path: \"C:/delbert-test/marker\", state: directory }\n").unwrap();
+        // Sandbox root: applied under <root>/C.
+        let report = run(&policy.spec.resources, &ctx, Mode::Apply);
+        assert!(!report.has_failures(), "{:?}", report.resources[0].status);
+        assert!(tmp.path().join("C/delbert-test/marker").is_dir());
+        // Real root on a non-Windows host: refused, nothing is created.
+        if !cfg!(windows) {
+            let real = Ctx::new("/".into(), "artifacts".into());
+            let report = run(&policy.spec.resources, &real, Mode::Check);
+            assert!(matches!(&report.resources[0].status, Status::Failed(m) if m.contains("Windows path")), "{:?}", report.resources[0].status);
+        }
     }
 }

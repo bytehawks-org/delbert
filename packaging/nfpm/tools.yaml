@@ -1,0 +1,24 @@
+# nfpm definition of the delbert-tools package (deb and rpm). Built by the release workflow:
+#   VERSION=0.1.0 ARCH=amd64 BIN_DIR=target/x86_64-unknown-linux-musl/release \
+#     nfpm package --config packaging/nfpm/tools.yaml --packager deb --target dist/
+# The binaries are static (musl), so one package serves every distribution of that architecture.
+name: delbert-tools
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: admin
+priority: optional
+maintainer: ${MAINTAINER}
+vendor: ByteHawks
+homepage: https://github.com/bytehawks-org/delbert
+license: Apache-2.0
+description: |
+  Delbert administration tools
+  delbert-pki (internal CA, key bootstrap) and delbert-sign (policy signing keys).
+contents:
+  - src: ${BIN_DIR}/delbert-pki
+    dst: /usr/bin/delbert-pki
+    file_info: { mode: 0755 }
+  - src: ${BIN_DIR}/delbert-sign
+    dst: /usr/bin/delbert-sign
+    file_info: { mode: 0755 }

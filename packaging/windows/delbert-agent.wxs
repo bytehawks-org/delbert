@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MSI of the Delbert agent (WiX Toolset v5; docs/WINDOWS.md). Built by the CI and release workflows:
+
+    wix build packaging\windows\delbert-agent.wxs -arch x64 -d Version=0.1.0 ^
+        -d BinDir=target\release -o dist\delbert-agent-0.1.0-x64.msi
+
+  The MSI only copies the executable; registering, starting and removing the Windows Service is
+  done by the agent itself (`delbert-agent service install | uninstall`), so the MSI, the zip
+  archive and a manual install behave the same. Unattended install with enrollment:
+
+    msiexec /i delbert-agent-0.1.0-x64.msi /qn CORE_URL=https://delbert.example.com:8443 ^
+        CA_FILE=C:\Temp\ca.pem AGENT_ID=web-01 ENROLL_PSK=<enrollment key>
+
+  The enrollment key is used once by the install action and is not written to the registry, to
+  the disk or to the installer log (hidden property, hidden command line). Data in
+  C:\ProgramData\Delbert (identity included) survives upgrades and removal.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Delbert Agent" Manufacturer="ByteHawks" Version="$(var.Version)"
+           UpgradeCode="6d0f3c1e-52a7-4c0f-9d53-0b7c7b2b7f41" Scope="perMachine" Compressed="yes">
+    <SummaryInformation Description="Delbert agent: applies the signed policies of a Delbert Core to this host" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Delbert Agent is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Public properties of an unattended install; all four are needed to enroll. -->
+    <Property Id="CORE_URL" Secure="yes" />
+    <Property Id="CA_FILE" Secure="yes" />
+    <Property Id="AGENT_ID" Secure="yes" />
+    <Property Id="ENROLL_PSK" Secure="yes" Hidden="yes" />
+    <Property Id="ENROLL_ARGS" Hidden="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Delbert">
+        <Component Id="AgentExe">
+          <File Id="AgentExe" Source="$(var.BinDir)\delbert-agent.exe" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Delbert Agent">
+      <ComponentRef Id="AgentExe" />
+    </Feature>
+
+    <SetProperty Id="ENROLL_ARGS" Sequence="execute" Before="RollbackService"
+                 Value="--core-url &quot;[CORE_URL]&quot; --ca-file &quot;[CA_FILE]&quot; --agent-id &quot;[AGENT_ID]&quot; --psk &quot;[ENROLL_PSK]&quot;"
+                 Condition="CORE_URL AND CA_FILE AND AGENT_ID AND ENROLL_PSK" />
+
+    <!-- Deferred, as LocalSystem. `service install` is idempotent and starts the service when
+         an identity exists (after an upgrade, or after enrolling with the properties above). -->
+    <CustomAction Id="InstallService" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="check" HideTarget="yes"
+                  ExeCommand="&quot;[INSTALLFOLDER]delbert-agent.exe&quot; service install [ENROLL_ARGS]" />
+    <CustomAction Id="RollbackService" Directory="INSTALLFOLDER" Execute="rollback" Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[INSTALLFOLDER]delbert-agent.exe&quot; service uninstall" />
+    <CustomAction Id="UninstallService" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[INSTALLFOLDER]delbert-agent.exe&quot; service uninstall" />
+
+    <InstallExecuteSequence>
+      <!-- Removal, and the "remove the old version" step of an upgrade: stop and delete the
+           service while the executable is still there. -->
+      <Custom Action="UninstallService" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot;" />
+      <Custom Action="RollbackService" After="InstallFiles" Condition="NOT REMOVE" />
+      <Custom Action="InstallService" After="RollbackService" Condition="NOT REMOVE" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

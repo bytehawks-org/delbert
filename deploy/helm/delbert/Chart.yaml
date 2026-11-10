@@ -1,0 +1,12 @@
+apiVersion: v2
+name: delbert
+description: Delbert control plane (Core, NATS, web UI and an optional single-instance PostgreSQL)
+type: application
+# Both are set to the release version by the release workflow.
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.31.0-0"
+home: https://github.com/bytehawks-org/delbert
+sources:
+  - https://github.com/bytehawks-org/delbert
+keywords: [configuration-management, policy, nis2]

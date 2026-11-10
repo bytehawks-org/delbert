@@ -1,0 +1,28 @@
+# NATS server for Delbert (nats-server 2.10+ with JetStream): mutual TLS with the Delbert CA and
+# the authorization callout answered by the Core. Replace the two CHANGE values:
+#   password : the same as NATS_AUTH_PASSWORD in /etc/delbert/core.env
+#   issuer   : the content of /etc/delbert/keys/nats-issuer.pub
+# The nats-server user must be able to read nats.pem, nats.key and ca.pem.
+port: 4222
+
+tls {
+  cert_file: "/etc/delbert/keys/nats.pem"
+  key_file: "/etc/delbert/keys/nats.key"
+  ca_file: "/etc/delbert/keys/ca.pem"
+  verify: true
+}
+
+accounts {
+  AUTH { users: [ { user: "auth", password: "CHANGE" } ] }
+  APP { jetstream: enabled }
+}
+
+jetstream { store_dir: "/var/lib/nats" }
+
+authorization {
+  auth_callout {
+    issuer: "CHANGE"
+    auth_users: [ auth ]
+    account: AUTH
+  }
+}

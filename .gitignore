@@ -4,3 +4,5 @@
 
 # Reusable design kit (not versioned)
 /_GRAPHICS_/
+deploy/container/.env
+deploy/container/ca.pem

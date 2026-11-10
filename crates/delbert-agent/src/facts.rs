@@ -10,6 +10,10 @@
 //! Collection only reads files (no command is run). `root` is the sandbox root of the agent, so
 //! tests and `--root` runs read a fake tree; the IP addresses are those of the real host and are
 //! left out when `root` is not `/`.
+//!
+//! Windows: with the real root the same keys come from the registry (`windows` module below):
+//! `distribution` is `windows`, `os_version` is `major.minor.build`, `kernel` adds the update
+//! revision, `machine_id` is the `MachineGuid`.
 
 use std::{fs, path::Path};
 
@@ -78,6 +82,10 @@ fn addresses() -> Vec<String> {
 
 /// The subset the Core stores. Keys are stable: they are an API (`GET .../agents`) and policy input.
 pub fn shared(root: &Path) -> Value {
+    #[cfg(windows)]
+    if root == Path::new("/") {
+        return windows::shared(addresses());
+    }
     let os_release = read(root, "/etc/os-release");
     let id = os_release_field(&os_release, "ID");
     let hostname = read(root, "/etc/hostname").trim().to_string();
@@ -120,6 +128,10 @@ pub fn local(root: &Path, facts_dir: &Path) -> Value {
             Err(e) => tracing::warn!("custom facts file {} ignored: {e}", path.display()),
         }
     }
+    #[cfg(windows)]
+    if root == Path::new("/") {
+        return json!({ "machine_id": windows::machine_id(), "custom": custom });
+    }
     json!({ "machine_id": read(root, "/etc/machine-id").trim(), "custom": custom })
 }
 
@@ -134,6 +146,47 @@ pub fn all(root: &Path, facts_dir: &Path) -> Value {
         object.extend(local);
     }
     facts
+}
+
+/// Host facts from the registry (read-only).
+#[cfg(windows)]
+mod windows {
+    use serde_json::{Value, json};
+    use winreg::{RegKey, enums::HKEY_LOCAL_MACHINE};
+
+    const CURRENT_VERSION: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion";
+
+    fn string(key: &str, name: &str) -> String {
+        RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(key).and_then(|k| k.get_value::<String, _>(name)).unwrap_or_default()
+    }
+
+    fn number(key: &str, name: &str) -> Option<u32> {
+        RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(key).and_then(|k| k.get_value::<u32, _>(name)).ok()
+    }
+
+    pub fn shared(ips: Vec<String>) -> Value {
+        const TCPIP: &str = r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters";
+        let version = format!(
+            "{}.{}.{}",
+            number(CURRENT_VERSION, "CurrentMajorVersionNumber").unwrap_or_default(),
+            number(CURRENT_VERSION, "CurrentMinorVersionNumber").unwrap_or_default(),
+            string(CURRENT_VERSION, "CurrentBuildNumber")
+        );
+        let kernel = number(CURRENT_VERSION, "UBR").map_or(version.clone(), |ubr| format!("{version}.{ubr}"));
+        json!({
+            "os_family": "windows",
+            "distribution": "windows",
+            "os_version": version,
+            "kernel": kernel,
+            "hostname": string(TCPIP, "Hostname").to_lowercase(),
+            "domain": string(TCPIP, "Domain").to_lowercase(),
+            "ips": ips,
+        })
+    }
+
+    pub fn machine_id() -> String {
+        string(r"SOFTWARE\Microsoft\Cryptography", "MachineGuid")
+    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,39 @@
+# nfpm definition of the delbert-proxy package (deb and rpm). Built by the release workflow:
+#   VERSION=0.1.0 ARCH=amd64 BIN_DIR=target/x86_64-unknown-linux-musl/release \
+#     nfpm package --config packaging/nfpm/proxy.yaml --packager deb --target dist/
+# The binaries are static (musl), so one package serves every distribution of that architecture.
+name: delbert-proxy
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: admin
+priority: optional
+maintainer: ${MAINTAINER}
+vendor: ByteHawks
+homepage: https://github.com/bytehawks-org/delbert
+license: Apache-2.0
+description: |
+  Delbert branch-office proxy
+  Relays the agents of a site to the Delbert Core: local authorization,
+  cached policies, store-and-forward of reports. Needs a NATS server at the site.
+contents:
+  - src: ${BIN_DIR}/delbert-proxy
+    dst: /usr/bin/delbert-proxy
+    file_info: { mode: 0755 }
+  - src: deploy/systemd/delbert-proxy.service
+    dst: /usr/lib/systemd/system/delbert-proxy.service
+  - dst: /etc/delbert
+    type: dir
+    file_info: { mode: 0755 }
+  - src: deploy/systemd/proxy.env.example
+    dst: /etc/delbert/proxy.env
+    type: config|noreplace
+    file_info: { mode: 0600 }
+  # State directory, owned by the service account that the preinstall script creates.
+  - dst: /var/lib/delbert-proxy
+    type: dir
+    file_info: { mode: 0700, owner: delbert-proxy, group: delbert-proxy }
+scripts:
+  preinstall: packaging/scripts/proxy-preinstall.sh
+  postinstall: packaging/scripts/proxy-postinstall.sh
+  preremove: packaging/scripts/proxy-preremove.sh

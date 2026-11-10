@@ -4,7 +4,7 @@
 //! on an admin workstation (or behind an HSM wrapper) so that the signing key
 //! never lives on the Core.
 
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 use anyhow::{Context, bail};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
@@ -58,8 +58,7 @@ fn main() -> anyhow::Result<()> {
                 bail!("refusing to overwrite an existing key");
             }
             let public_b64 = B64.encode(key.verifying_key().to_bytes());
-            fs::write(&private, B64.encode(key.to_bytes()))?;
-            fs::set_permissions(&private, fs::Permissions::from_mode(0o600))?;
+            delbert_fs::write_private(&private, B64.encode(key.to_bytes()).as_bytes())?;
             fs::write(&public, &public_b64)?;
             // Line to put in the agent's trusted keys file.
             println!("{kid} {public_b64}");

@@ -1,0 +1,128 @@
+{{- if .Values.postgresql.enabled }}
+{{- $fullname := include "delbert.fullname" . -}}
+{{- $selector := dict "ctx" . "component" "postgresql" -}}
+# A single PostgreSQL instance for small installations (values: postgresql.enabled).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-postgresql-init
+  labels:
+    {{- include "delbert.labels" . | nindent 4 }}
+data:
+  # Runs once, when the data directory is created: the runtime login of the Core (a member of
+  # delbert_app, which gets no UPDATE/DELETE on the audit trail and policy versions).
+  10-delbert-roles.sh: |
+    #!/bin/sh
+    set -eu
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -v rt_password="$DELBERT_RT_PASSWORD" <<'SQL'
+    CREATE ROLE delbert_app NOLOGIN;
+    CREATE ROLE delbert_rt LOGIN PASSWORD :'rt_password' IN ROLE delbert_app;
+    SQL
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}-postgresql
+  labels:
+    {{- include "delbert.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+spec:
+  serviceName: {{ $fullname }}-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "delbert.selector" $selector | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "delbert.selector" $selector | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70          # "postgres" in the alpine image
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: postgresql
+          image: {{ .Values.postgresql.image | quote }}
+          env:
+            - { name: POSTGRES_USER, value: delbert }
+            - { name: POSTGRES_DB, value: delbert }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "delbert.envSecret" . }}, key: POSTGRES_PASSWORD } }
+            - name: DELBERT_RT_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "delbert.envSecret" . }}, key: POSTGRES_RT_PASSWORD } }
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "delbert", "-d", "delbert"] }
+            periodSeconds: 5
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "delbert", "-d", "delbert"] }
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.postgresql.resources | nindent 12 }}
+          securityContext:
+            {{- include "delbert.podSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true }
+            - { name: run, mountPath: /var/run/postgresql }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: init
+          configMap: { name: {{ $fullname }}-postgresql-init }
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.postgresql.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.persistence.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-postgresql
+  labels:
+    {{- include "delbert.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "delbert.selector" $selector | nindent 4 }}
+  ports:
+    - { name: postgres, port: 5432, targetPort: postgres }
+{{- if .Values.networkPolicy.enabled }}
+---
+# Only the Core talks to the database.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-postgresql
+  labels:
+    {{- include "delbert.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "delbert.selector" $selector | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "delbert.selector" (dict "ctx" . "component" "core") | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: 5432 }
+{{- end }}
+{{- end }}

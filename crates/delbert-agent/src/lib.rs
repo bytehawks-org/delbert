@@ -17,5 +17,7 @@ pub mod runner;
 pub mod system;
 pub mod state;
 pub mod verbs;
+#[cfg(windows)]
+pub mod winsvc;
 
 pub use engine::{Ctx, Mode, Report, ResourceReport, Status, run};

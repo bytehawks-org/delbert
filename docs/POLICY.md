@@ -2,7 +2,7 @@
 
 **This is the authoring format for administrators.** The Core compiles it into per-endpoint *effective policies* (canonical JSON, JCS RFC 8785, Ed25519/JWS-signed, sensitive fields encrypted per agent) and sends only that to agents; agents never see YAML. Declarative, Ansible-inspired resource vocabulary. Unlike Ansible, a policy describes a **desired state** that the agent converges continuously (check → apply only if drifted), never a one-shot task list. See [ABSTRACT.md](ABSTRACT.md) §3 for signing and the execution principle (agents only).
 
-Status: **draft v0.1**, phase 1 = Linux + containers. Windows: see [Windows (phase 2)](#windows-phase-2).
+Status: **draft v0.1**, phase 1 = Linux + containers. Windows (preview): see [Windows (phase 2)](#windows-phase-2) and [WINDOWS.md](WINDOWS.md).
 
 ## Structure
 
@@ -214,7 +214,14 @@ Every verb implements:
 
 ## Windows (phase 2)
 
-Deferred. Intended baseline paradigm: **copy, insert into file, restart service**, reusing the same verb names where semantics are portable (`copy`, `template`, `line_in_file`, `service`, `get_url`). Items to study before design:
+The baseline paradigm is implemented as a preview ([WINDOWS.md](WINDOWS.md)): **copy, insert into file, restart service**, with the same verb names (`file`, `copy`, `template`, `line_in_file`, `service`).
+
+- **Paths:** a path is absolute when it starts with `/` or with a drive (`C:/app/app.conf`, `C:\app\app.conf`); `..` is refused with either separator. A drive path fails on a non-Windows agent, so scope such resources with `when: "facts.os_family == 'windows'"`.
+- **Attributes:** `owner`, `group` and `mode` fail on Windows (they are not ignored); files inherit the ACL of their directory.
+- **Services:** `started`, `stopped`, `restarted`, `enabled` map to the Service Control Manager; `reloaded` fails.
+- **Not on Windows yet:** `package`, `container`, remediation (`verify` / `on_failure`).
+
+Still to study before design:
 
 - permissions: POSIX `mode`/`owner` vs ACLs (new `acl` parameters rather than overloading `mode`);
 - Service Control Manager semantics (start type, recovery, dependencies);

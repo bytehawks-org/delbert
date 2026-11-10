@@ -50,7 +50,7 @@ This file extends and integrates the user-scoped CLAUDE.md file.
 ## Client/Agent
 
 - Local: Podman (test environments)
-- Production: native packages (systemd service on Linux, Windows Service on Windows)
+- Production: native packages (systemd service on Linux: deb/rpm in `packaging/`; Windows Service on Windows: MSI)
 - Kubernetes: Operator deployed in-cluster; standard agent on the nodes' hosts
 
 # Project Details and Documentation
@@ -60,6 +60,7 @@ This file extends and integrates the user-scoped CLAUDE.md file.
 - docs/POLICY.md (policy YAML format)
 - docs/API.md (Core API), docs/PROXY.md (branch-office proxy), docs/TESTING.md
 - docs/OPERATOR.md (Kubernetes Operator and configuration delivery)
+- docs/WINDOWS.md (Windows agent: state, install, limits)
 - docs/RBAC.md (access control v2), docs/FRONTEND.md (web UI design), web/README.md (the UI project)
 - docs/STATUS.md (current state and handoff: read it first in a new session)
 - docs/ROTATION.md (key and certificate rotation)

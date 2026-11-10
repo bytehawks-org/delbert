@@ -15,7 +15,6 @@
 
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -194,8 +193,7 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
         bail!("the Core returned a different CA than the one provided: refusing");
     }
 
-    fs::create_dir_all(&args.identity_dir)?;
-    fs::set_permissions(&args.identity_dir, fs::Permissions::from_mode(0o700))?;
+    delbert_fs::create_private_dir(&args.identity_dir)?;
     let dir = &args.identity_dir;
     write_private(&dir.join("key.pem"), &key_pem)?;
     write_private(&dir.join("enc.key"), enc.to_string().expose_secret())?;

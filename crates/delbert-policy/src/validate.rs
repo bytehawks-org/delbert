@@ -244,8 +244,10 @@ fn check_fields(r: &Resource, errors: &mut Vec<ValidationError>) {
             errors.push(field_err(r, format!("'when' is not a valid expression: {e}")));
         }
     }
+    // POSIX (`/etc/app.conf`) or Windows with a drive (`C:/ProgramData/app.conf`, `C:\\...`).
     let mut absolute = |path: &str| {
-        if !path.starts_with('/') || path.split('/').any(|c| c == "..") {
+        let rooted = path.starts_with('/') || split_drive(path).is_some();
+        if !rooted || path.contains('\0') || path.split(['/', '\\']).any(|c| c == "..") {
             errors.push(field_err(r, format!("path '{path}' must be absolute and without '..'")));
         }
     };
@@ -504,5 +506,36 @@ spec:
         let no_image = GOOD.replace("        image: registry.example.com/app@sha256:abc\n", "");
         assert!(errors(&container_policy(&no_image, "db")).iter().any(|e| matches!(e, ValidationError::Field { .. })));
         assert!(from_yaml(&container_policy("        name: app\n        state: absent\n", "")).is_ok());
+    }
+}
+
+/// Split a Windows drive path (`C:/app`, `C:\\app`) into the drive letter and the rest (which
+/// starts with the separator); `None` for anything else, POSIX paths included.
+pub fn split_drive(path: &str) -> Option<(char, &str)> {
+    let mut chars = path.chars();
+    let drive = chars.next().filter(char::is_ascii_alphabetic)?;
+    let rest = path.get(1..)?.strip_prefix(':')?;
+    rest.starts_with(['/', '\\']).then_some((drive.to_ascii_uppercase(), rest))
+}
+
+/// The filesystem paths a resource manages (`file`, `copy`, `template`, `line_in_file`).
+pub fn managed_paths(r: &Resource) -> Vec<&str> {
+    [r.file.as_ref().map(|f| f.path.as_str()), r.copy.as_ref().map(|c| c.dest.as_str()), r.template.as_ref().map(|t| t.dest.as_str()), r.line_in_file.as_ref().map(|l| l.path.as_str())]
+        .into_iter()
+        .flatten()
+        .collect()
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::split_drive;
+
+    #[test]
+    fn drive_paths_are_recognised() {
+        assert_eq!(split_drive("C:/app/x.conf"), Some(('C', "/app/x.conf")));
+        assert_eq!(split_drive("d:\\app"), Some(('D', "\\app")));
+        for p in ["/etc/app", "C:app", "C:", "1:/x", "", "é:/x", "CC:/x"] {
+            assert_eq!(split_drive(p), None, "{p}");
+        }
     }
 }

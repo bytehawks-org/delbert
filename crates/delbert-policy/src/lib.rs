@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-pub use validate::{ValidationError, clash, validate, validate_resources};
+pub use validate::{ValidationError, clash, managed_paths, split_drive, validate, validate_resources};
 
 /// Only supported value of `apiVersion`.
 pub const API_VERSION: &str = "delbert/v1";

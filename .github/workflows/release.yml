@@ -1,0 +1,171 @@
+# Publishes a release when a tag `vX.Y.Z` is pushed (docs/install.md "Releases"):
+#   - container images on ghcr.io (signed with cosign, with SBOM and provenance attestations)
+#   - the Helm chart as an OCI artifact (oci://ghcr.io/<owner>/charts/delbert)
+#   - deb/rpm packages and static binaries for amd64 and arm64, the Windows MSI and zip,
+#     the install scripts, the single-host container bundle and SHA256SUMS on the GitHub release
+# The tag must match the workspace version in Cargo.toml.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cargo_version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)"
+          [ "$version" = "$cargo_version" ] || { echo "tag $GITHUB_REF_NAME does not match Cargo.toml ($cargo_version)"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  linux:
+    needs: version
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools (zig as the cross linker, nfpm)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet cargo-zigbuild ziglang
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          rustup target add ${{ matrix.target }}
+      - run: packaging/build-packages.sh "${{ needs.version.outputs.version }}" ${{ matrix.target }} dist
+        env:
+          # Shown in the package metadata: set the repository variable PACKAGE_MAINTAINER ("Name <address>").
+          MAINTAINER: ${{ vars.PACKAGE_MAINTAINER }}
+      - if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: packaging/test-packages.sh dist docker
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    needs: version
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo build --release --locked -p delbert-agent
+      - name: Smoke test
+        shell: pwsh
+        run: packaging/windows/smoke-test.ps1 -Agent target/release/delbert-agent.exe
+      - name: MSI and zip
+        shell: pwsh
+        run: |
+          $version = '${{ needs.version.outputs.version }}'
+          dotnet tool install --global wix --version 5.0.2
+          wix build packaging/windows/delbert-agent.wxs -arch x64 -d Version=$version -d BinDir=target/release -o "dist/delbert-agent-$version-x64.msi"
+          Compress-Archive -Path target/release/delbert-agent.exe, LICENSE -DestinationPath "dist/delbert-agent-$version-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: |
+            dist/*.msi
+            dist/*.zip
+          if-no-files-found: error
+
+  images:
+    needs: version
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write        # keyless signing (cosign) and attestations
+    strategy:
+      matrix:
+        target: [core, agent, proxy, operator, tools, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/delbert-${{ matrix.target }}" >> "$GITHUB_OUTPUT"
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          target: ${{ matrix.target }}
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: |
+            ${{ steps.name.outputs.image }}:${{ needs.version.outputs.version }}
+            ${{ steps.name.outputs.image }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.licenses=Apache-2.0
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,scope=${{ matrix.target }},mode=max
+      - uses: sigstore/cosign-installer@v3
+      - run: cosign sign --yes "${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}"
+
+  chart:
+    needs: [version, images]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          version="${{ needs.version.outputs.version }}"
+          helm package deploy/helm/delbert --version "$version" --app-version "$version" --destination dist
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+          helm push "dist/delbert-$version.tgz" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chart
+          path: dist/*.tgz
+          if-no-files-found: error
+
+  release:
+    needs: [version, linux, windows, images, chart]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Install scripts, container bundle, checksums
+        run: |
+          version="${{ needs.version.outputs.version }}"
+          cp packaging/install-agent.sh packaging/windows/install-agent.ps1 dist/
+          # The single-host bundle installs the images of this release by default.
+          mkdir -p bundle/delbert
+          cp deploy/container/compose.yaml deploy/container/nats.conf deploy/container/postgres-init.sh deploy/container/install.sh bundle/delbert/
+          sed -i "s/^DEFAULT_VERSION=.*/DEFAULT_VERSION=$version/" bundle/delbert/install.sh
+          sed -i "s|ghcr.io/bytehawks-org|ghcr.io/${GITHUB_REPOSITORY_OWNER,,}|" bundle/delbert/install.sh
+          tar -C bundle -czf "dist/delbert-container-$version.tar.gz" delbert
+          (cd dist && sha256sum -- * > SHA256SUMS)
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Delbert ${{ needs.version.outputs.version }}" --generate-notes --verify-tag

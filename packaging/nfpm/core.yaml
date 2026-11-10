@@ -1,0 +1,54 @@
+# nfpm definition of the delbert-core package (deb and rpm). Built by the release workflow:
+#   VERSION=0.1.0 ARCH=amd64 BIN_DIR=target/x86_64-unknown-linux-musl/release \
+#     nfpm package --config packaging/nfpm/core.yaml --packager deb --target dist/
+# The binaries are static (musl), so one package serves every distribution of that architecture.
+name: delbert-core
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: admin
+priority: optional
+maintainer: ${MAINTAINER}
+vendor: ByteHawks
+homepage: https://github.com/bytehawks-org/delbert
+license: Apache-2.0
+description: |
+  Delbert Core (control plane)
+  REST API, policy compilation and signing, internal CA and audit trail of
+  Delbert. Needs PostgreSQL 17 and a NATS server with JetStream.
+depends:
+  - delbert-tools
+# git: only for content sources of kind "git" (docs/CONTENT.md).
+recommends:
+  - git
+contents:
+  - src: ${BIN_DIR}/delbert-core
+    dst: /usr/bin/delbert-core
+    file_info: { mode: 0755 }
+  - src: deploy/systemd/delbert-core.service
+    dst: /usr/lib/systemd/system/delbert-core.service
+  - dst: /etc/delbert
+    type: dir
+    file_info: { mode: 0755 }
+  # /etc/delbert/keys is created root:delbert 0750 by the postinstall script, which also gives
+  # core.env to the delbert group (the group exists only after the preinstall script).
+  - src: deploy/systemd/core.toml.example
+    dst: /etc/delbert/core.toml
+    type: config|noreplace
+    file_info: { mode: 0644 }
+  - src: deploy/systemd/core.env.example
+    dst: /etc/delbert/core.env
+    type: config|noreplace
+    file_info: { mode: 0600 }
+  - src: deploy/systemd/nats.conf.example
+    dst: /usr/share/doc/delbert-core/nats.conf.example
+  - src: deploy/delbert-core.example.toml
+    dst: /usr/share/doc/delbert-core/delbert-core.example.toml
+  # State directory, owned by the service account that the preinstall script creates.
+  - dst: /var/lib/delbert-core
+    type: dir
+    file_info: { mode: 0750, owner: delbert, group: delbert }
+scripts:
+  preinstall: packaging/scripts/core-preinstall.sh
+  postinstall: packaging/scripts/core-postinstall.sh
+  preremove: packaging/scripts/core-preremove.sh

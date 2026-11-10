@@ -1,0 +1,37 @@
+# Delbert Core on a Linux host without containers (docs/install.md "Linux packages").
+# Shipped by the delbert-core package. PostgreSQL 17 and nats-server are separate services
+# (same host or elsewhere); the Core never connects to managed systems.
+[Unit]
+Description=Delbert Core
+Documentation=https://github.com/bytehawks-org/delbert
+After=network-online.target postgresql.service nats-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=delbert
+Group=delbert
+# Secrets (database URLs, NATS callout password, first admin password): mode 0640 root:delbert.
+EnvironmentFile=-/etc/delbert/core.env
+ExecStart=/usr/bin/delbert-core --config /etc/delbert/core.toml
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+StateDirectory=delbert-core
+StateDirectoryMode=0750
+# The Core only needs its state directory, its configuration and the network.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,46 @@
+{{- $fullname := include "delbert.fullname" . -}}
+# The Core's configuration file; secrets come from the environment (templates/secret.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-core
+  labels:
+    {{- include "delbert.labels" . | nindent 4 }}
+data:
+  delbert-core.toml: |
+    [server]
+    bind = "0.0.0.0:8080"
+    tls_cert_file = "/etc/delbert/pki/core.pem"
+    tls_key_file = "/etc/delbert/pki/core.key"
+    api_docs = {{ .Values.core.apiDocs }}
+    public_url = {{ .Values.core.publicUrl | quote }}
+    {{- if .Values.web.publicUrl }}
+    ui_url = {{ printf "%s/auth/callback" (.Values.web.publicUrl | trimSuffix "/") | quote }}
+    {{- end }}
+
+    [nats]
+    url = "tls://{{ $fullname }}-nats:4222"
+    ca_file = "/etc/delbert/pki/ca.pem"
+    client_cert_file = "/etc/delbert/pki/core-nats.pem"
+    client_key_file = "/etc/delbert/pki/core-nats.key"
+    issuer_seed_file = "/etc/delbert/pki/nats-issuer.seed"
+    public_url = {{ .Values.nats.publicUrl | quote }}
+
+    [pki]
+    ca_cert_file = "/etc/delbert/pki/ca.pem"
+    ca_key_file = "/etc/delbert/pki/ca.key"
+    secrets_key_file = "/etc/delbert/pki/secrets.key"
+
+    [policy]
+    signing_key_file = "/etc/delbert/pki/k1.key"
+    signing_kid = "k1"
+
+    [auth]
+    mfa_required = {{ .Values.core.mfaRequired | quote }}
+
+    [artifacts]
+    store = "local"
+    dir = "/var/lib/delbert-core/artifacts"
+
+    [content]
+    dir = "/var/lib/delbert-core/content"

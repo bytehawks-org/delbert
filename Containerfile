@@ -60,6 +60,10 @@ ENTRYPOINT ["delbert-operator", "run"]
 FROM docker.io/library/debian:13-slim AS tools
 COPY --from=build /out/delbert-pki /usr/local/bin/delbert-pki
 COPY --from=build /out/delbert-sign /usr/local/bin/delbert-sign
+# A named volume mounted here starts owned by the Core's user, so `--user 10001` can write the
+# keys the Core will read (deploy/container/compose.yaml). A bind mount keeps its own owner.
+RUN mkdir /keys && chown 10001:10001 /keys
+VOLUME /keys
 
 # Administration UI: a Next.js backend-for-frontend. The browser only talks to this server, which holds the
 # Core session in an encrypted HttpOnly cookie. docs/FRONTEND.md.

@@ -1,0 +1,126 @@
+# Delbert control plane on one host with Podman or Docker (docs/install.md "Containers").
+# Everything it needs is in the `.env` file next to it, written by ./install.sh:
+#   ./install.sh --host delbert.example.com
+# The keys (CA, signing key, certificates) are created on the first start by the `init`
+# service and live in the `keys` volume: back it up offline (docs/install.md "Backup").
+name: delbert
+
+services:
+  # One-shot: creates the keys and certificates that are missing, keeps the ones that exist.
+  init:
+    image: ${DELBERT_REGISTRY}/delbert-tools:${DELBERT_VERSION}
+    user: "10001"
+    command:
+      - delbert-pki
+      - --dir=/keys
+      - bootstrap
+      - --core-dns=${DELBERT_HOST}
+      - --core-dns=core
+      - --nats-dns=${DELBERT_HOST}
+      - --nats-dns=nats
+    volumes:
+      - keys:/keys
+    restart: "no"
+
+  postgres:
+    image: docker.io/library/postgres:17-alpine
+    environment:
+      POSTGRES_USER: delbert                       # schema owner: runs the migrations
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: delbert
+      DELBERT_RT_PASSWORD: ${POSTGRES_RT_PASSWORD}  # runtime role: cannot rewrite the audit trail
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-delbert-roles.sh:ro,Z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U delbert"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # Stock NATS: mutual TLS with the Delbert CA; the Core authorizes every connection.
+  nats:
+    image: docker.io/library/nats:2-alpine
+    # The callout issuer's public key is read from the keys volume.
+    entrypoint: ["/bin/sh", "-c"]
+    command: ['NATS_ISSUER_PUBLIC="$$(cat /keys/nats-issuer.pub)" exec nats-server -c /etc/nats/nats.conf']
+    environment:
+      NATS_AUTH_PASSWORD: ${NATS_AUTH_PASSWORD}
+    volumes:
+      - ./nats.conf:/etc/nats/nats.conf:ro,Z
+      - keys:/keys:ro
+      - nats:/data
+    ports:
+      - "${DELBERT_NATS_PORT:-4222}:4222"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      init: { condition: service_completed_successfully }
+    restart: unless-stopped
+
+  core:
+    image: ${DELBERT_REGISTRY}/delbert-core:${DELBERT_VERSION}
+    environment:
+      RUST_LOG: info
+      DATABASE_URL: postgres://delbert_rt:${POSTGRES_RT_PASSWORD}@postgres:5432/delbert
+      DATABASE_MIGRATE_URL: postgres://delbert:${POSTGRES_PASSWORD}@postgres:5432/delbert
+      # Only used by the first start (creates the user "admin"); empty it in .env afterwards.
+      DELBERT_BOOTSTRAP_ADMIN_PASSWORD: ${DELBERT_BOOTSTRAP_ADMIN_PASSWORD:-}
+      DELBERT_TLS_CERT_FILE: /keys/core.pem
+      DELBERT_TLS_KEY_FILE: /keys/core.key
+      DELBERT_PUBLIC_URL: https://${DELBERT_HOST}:${DELBERT_CORE_PORT:-8443}
+      DELBERT_UI_URL: ${DELBERT_WEB_URL:-http://localhost:3000}/auth/callback
+      DELBERT_API_DOCS: ${DELBERT_API_DOCS:-false}
+      DELBERT_MFA_REQUIRED: ${DELBERT_MFA_REQUIRED:-admins}
+      DELBERT_CA_CERT_FILE: /keys/ca.pem
+      DELBERT_CA_KEY_FILE: /keys/ca.key
+      DELBERT_SECRETS_KEY_FILE: /keys/secrets.key
+      DELBERT_SIGNING_KEY_FILE: /keys/k1.key
+      DELBERT_SIGNING_KID: k1
+      NATS_URL: tls://nats:4222
+      NATS_CA_FILE: /keys/ca.pem
+      NATS_CLIENT_CERT_FILE: /keys/core-nats.pem
+      NATS_CLIENT_KEY_FILE: /keys/core-nats.key
+      NATS_AUTH_USER: auth
+      NATS_AUTH_PASSWORD: ${NATS_AUTH_PASSWORD}
+      DELBERT_NATS_ISSUER_SEED_FILE: /keys/nats-issuer.seed
+      DELBERT_PUBLIC_NATS_URL: tls://${DELBERT_HOST}:${DELBERT_NATS_PORT:-4222}
+    volumes:
+      - keys:/keys:ro
+      - core:/var/lib/delbert-core
+    ports:
+      - "${DELBERT_CORE_PORT:-8443}:8080"
+    depends_on:
+      init: { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      nats: { condition: service_healthy }
+    restart: unless-stopped
+
+  # The administration UI. It speaks plain HTTP: publish it through a TLS reverse proxy
+  # (DELBERT_WEB_URL is its public address); by default it listens on this host only.
+  web:
+    image: ${DELBERT_REGISTRY}/delbert-web:${DELBERT_VERSION}
+    environment:
+      DELBERT_CORE_URL: https://core:8080
+      WEB_CORE_PUBLIC_URL: https://${DELBERT_HOST}:${DELBERT_CORE_PORT:-8443}
+      WEB_PUBLIC_URL: ${DELBERT_WEB_URL:-http://localhost:3000}
+      WEB_SESSION_SECRET: ${WEB_SESSION_SECRET}
+      WEB_INSECURE_COOKIES: ${WEB_INSECURE_COOKIES:-false}
+      NODE_EXTRA_CA_CERTS: /keys/ca.pem
+    volumes:
+      # Only ca.pem is readable by this container's user; the private keys are not.
+      - keys:/keys:ro
+    ports:
+      - "${DELBERT_WEB_BIND:-127.0.0.1}:${DELBERT_WEB_PORT:-3000}:3000"
+    depends_on: [core]
+    restart: unless-stopped
+
+volumes:
+  keys:
+  postgres:
+  nats:
+  core:
