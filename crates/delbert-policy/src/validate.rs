@@ -123,6 +123,8 @@ fn path_role(r: &Resource) -> Option<(&str, Role<'_>)> {
         Some((&c.dest, Role::Copy))
     } else if let Some(t) = &r.template {
         Some((&t.dest, Role::Copy))
+    } else if let Some(g) = &r.get_url {
+        Some((&g.dest, Role::Copy))
     } else if let Some(b) = &r.block_in_file {
         Some((&b.path, Role::Block(b.marker())))
     } else {
@@ -153,6 +155,9 @@ pub fn clash(a: &Resource, b: &Resource) -> Option<String> {
     }
     if let (Some(x), Some(y)) = (&a.sysctl, &b.sysctl) {
         return (x.key == y.key).then(|| format!("sysctl '{}'", x.key));
+    }
+    if let (Some(x), Some(y)) = (&a.mount, &b.mount) {
+        return (x.path == y.path).then(|| format!("mount point '{}'", x.path));
     }
     let ((pa, ra), (pb, rb)) = (path_role(a)?, path_role(b)?);
     // Lines and blocks are parts of a file: they clash with each other only on the same line or
@@ -285,11 +290,15 @@ fn check_fields(r: &Resource, errors: &mut Vec<ValidationError>) {
     if let Some(b) = &r.block_in_file {
         absolute(&b.path);
     }
+    if let Some(g) = &r.get_url {
+        absolute(&g.dest);
+    }
 
     let modes = [
         r.file.as_ref().and_then(|f| f.mode.as_deref()),
         r.copy.as_ref().and_then(|c| c.mode.as_deref()),
         r.template.as_ref().and_then(|t| t.mode.as_deref()),
+        r.get_url.as_ref().and_then(|g| g.mode.as_deref()),
     ];
     for mode in modes.into_iter().flatten() {
         let ok = (3..=4).contains(&mode.len()) && mode.chars().all(|c| ('0'..='7').contains(&c));
@@ -344,7 +353,7 @@ fn check_fields(r: &Resource, errors: &mut Vec<ValidationError>) {
     check_more_verbs(r, errors);
 }
 
-/// `block_in_file`, `group`, `user`, `cron`, `sysctl`.
+/// `block_in_file`, `group`, `user`, `cron`, `sysctl`, `get_url`, `mount`, `command`.
 fn check_more_verbs(r: &Resource, errors: &mut Vec<ValidationError>) {
     use crate::Presence;
     let mut bad = |reason: String| errors.push(field_err(r, reason));
@@ -433,6 +442,70 @@ fn check_more_verbs(r: &Resource, errors: &mut Vec<ValidationError>) {
         for (k, v) in &c.env {
             if !matches!(k.as_str(), "MAILTO" | "MAILFROM" | "CRON_TZ" | "TZ" | "LANG" | "LC_ALL" | "RANDOM_DELAY") || !one_line(v) {
                 bad(format!("cron variable '{k}' is not allowed (MAILTO, MAILFROM, CRON_TZ, TZ, LANG, LC_ALL, RANDOM_DELAY; one line)"));
+            }
+        }
+    }
+    if let Some(g) = &r.get_url {
+        let rest = g.url.strip_prefix("https://").or_else(|| g.url.strip_prefix("http://"));
+        // A host must follow; credentials in a URL would end up in reports and logs.
+        let host_ok = rest.is_some_and(|r| r.chars().next().is_some_and(|c| c.is_ascii_alphanumeric() || c == '['));
+        let authority = rest.unwrap_or_default().split(['/', '?', '#']).next().unwrap_or_default();
+        if !host_ok || authority.contains('@') || g.url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+            bad(format!("'{}' must be an http(s) URL without credentials", g.url));
+        }
+        if g.sha256.len() != 64 || !g.sha256.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)) {
+            bad("get_url requires 'sha256' (64 lowercase hexadecimal digits)".into());
+        }
+    }
+    if let Some(m) = &r.mount {
+        use crate::MountState;
+        // fstab fields are separated by blanks: none of them may contain one (or a '#').
+        let field = |s: &str| !s.is_empty() && !s.chars().any(|c| c.is_whitespace() || c.is_control() || c == '#' || c == '\\');
+        // The root filesystem is never managed: a wrong line there stops the boot.
+        if !unix_path(&m.path) || !field(&m.path) || m.path.trim_end_matches('/').is_empty() {
+            bad(format!("mount point '{}' must be an absolute path without blanks, and not /", m.path));
+        }
+        for (name, value) in [("src", &m.src), ("fstype", &m.fstype), ("opts", &m.opts)] {
+            if value.as_deref().is_some_and(|v| !field(v)) {
+                bad(format!("'{name}' must not be empty or contain blanks"));
+            }
+        }
+        if m.state != MountState::Absent && (m.src.is_none() || m.fstype.is_none()) {
+            bad("mount requires 'src' and 'fstype'".into());
+        }
+    }
+    if let Some(c) = &r.command {
+        let arg = |a: &String| !a.contains('\0');
+        for (name, argv, required) in [("argv", &c.argv, true), ("onlyif", &c.onlyif, false), ("unless", &c.unless, false)] {
+            match argv.first() {
+                None if required => bad("command requires 'argv'".into()),
+                Some(exe) if !unix_path(exe) => bad(format!("'{name}': the executable '{exe}' must be an absolute path")),
+                _ => {}
+            }
+            if !argv.iter().all(arg) {
+                bad(format!("'{name}' must not contain NUL characters"));
+            }
+        }
+        // Without a guard the command would run at every cycle: it could never converge.
+        if c.creates.is_none() && c.onlyif.is_empty() && c.unless.is_empty() {
+            bad("command requires a guard: 'creates', 'onlyif' or 'unless'".into());
+        }
+        for p in c.creates.iter().chain(&c.cwd) {
+            if !unix_path(p) {
+                bad(format!("'{p}' must be an absolute path without '..'"));
+            }
+        }
+        if !account(&c.user) {
+            bad(format!("invalid user name '{}'", c.user));
+        }
+        if !(1..=3600).contains(&c.timeout_seconds) {
+            bad("'timeout_seconds' must be between 1 and 3600".into());
+        }
+        for (k, v) in &c.env {
+            let key_ok = k.chars().next().is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_') && k.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+            // The loader's variables would change what the allowed executable really runs.
+            if !key_ok || k.starts_with("LD_") || v.contains('\0') {
+                bad(format!("invalid command variable '{k}'"));
             }
         }
     }
@@ -675,6 +748,59 @@ spec:
         .unwrap();
     }
 
+    #[test]
+    fn downloads_mounts_and_commands_are_validated() {
+        const HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        from_yaml(&with(&format!(
+            concat!(
+                "    - id: tool\n      get_url: {{ url: \"https://downloads.example.com/tool-1.2.tar.gz\", dest: /opt/tool.tar.gz, sha256: {h}, mode: \"0644\" }}\n",
+                "    - id: share\n      mount: {{ path: /srv/share, src: \"nas.example.com:/export\", fstype: nfs, opts: \"ro,noexec\" }}\n",
+                "    - id: gone\n      mount: {{ path: /mnt/old, state: absent }}\n",
+                "    - id: migrate\n      command: {{ argv: [/usr/local/bin/migrate, --apply], creates: /var/lib/app/.migrated, user: app, timeout_seconds: 120 }}\n",
+                "    - id: reload\n      handler: true\n      command: {{ argv: [/usr/sbin/nginx, -s, reload], onlyif: [/usr/sbin/nginx, -t], user: root, timeout_seconds: 30 }}\n",
+            ),
+            h = HASH
+        )))
+        .unwrap();
+        for bad in [
+            format!("get_url: {{ url: \"https://example.com/x\", dest: /opt/x }}"),
+            format!("get_url: {{ url: \"https://example.com/x\", dest: /opt/x, sha256: abc }}"),
+            format!("get_url: {{ url: \"ftp://example.com/x\", dest: /opt/x, sha256: {HASH} }}"),
+            format!("get_url: {{ url: \"file:///etc/shadow\", dest: /opt/x, sha256: {HASH} }}"),
+            format!("get_url: {{ url: \"https://user:pw@example.com/x\", dest: /opt/x, sha256: {HASH} }}"),
+            format!("get_url: {{ url: \"https://example.com/x\", dest: opt/x, sha256: {HASH} }}"),
+            "mount: { path: /, src: /dev/sda1, fstype: ext4 }".to_string(),
+            "mount: { path: /srv/share, fstype: nfs }".to_string(),
+            "mount: { path: /srv/share, src: \"nas:/a b\", fstype: nfs }".to_string(),
+            "mount: { path: /srv/share, src: nas:/a, fstype: nfs, opts: \"ro 0 0\\n/dev/sdb1 /etc ext4\" }".to_string(),
+            "mount: { path: \"/srv/my share\", src: nas:/a, fstype: nfs }".to_string(),
+            "command: { argv: [/bin/true], user: root, timeout_seconds: 10 }".to_string(),
+            "command: { argv: [/bin/true], creates: /x, timeout_seconds: 10 }".to_string(),
+            "command: { argv: [/bin/true], creates: /x, user: root }".to_string(),
+            "command: { argv: [/bin/true], creates: /x, user: root, timeout_seconds: 0 }".to_string(),
+            "command: { argv: [/bin/true], creates: /x, user: root, timeout_seconds: 99999 }".to_string(),
+            "command: { argv: [\"true\"], creates: /x, user: root, timeout_seconds: 10 }".to_string(),
+            "command: { argv: [], creates: /x, user: root, timeout_seconds: 10 }".to_string(),
+            "command: { argv: [/bin/true], unless: [test, -f, /x], user: root, timeout_seconds: 10 }".to_string(),
+            "command: { argv: [/bin/true], creates: /x, user: root, timeout_seconds: 10, env: { LD_PRELOAD: /tmp/x.so } }".to_string(),
+            "command: { argv: [/bin/true], creates: /x, user: \"-u\", timeout_seconds: 10 }".to_string(),
+            "command: { argv: \"/bin/sh -c x\", creates: /x, user: root, timeout_seconds: 10 }".to_string(),
+        ] {
+            match from_yaml(&with(&format!("    - id: r\n      {bad}\n"))) {
+                Err(_) => {}
+                Ok(_) => panic!("accepted: {bad}"),
+            }
+        }
+        // Same destination or mount point twice.
+        for (a, b) in [
+            (format!("get_url: {{ url: \"https://example.com/x\", dest: /opt/x, sha256: {HASH} }}"), "copy: { content: x, dest: /opt/x }".to_string()),
+            ("mount: { path: /srv/a, src: tmpfs, fstype: tmpfs }".to_string(), "mount: { path: /srv/a, state: absent }".to_string()),
+        ] {
+            let e = errors(&with(&format!("    - id: a\n      {a}\n    - id: b\n      {b}\n")));
+            assert!(e.iter().any(|e| matches!(e, ValidationError::Conflict { .. })), "no conflict: {a} / {b}");
+        }
+    }
+
     fn container_policy(container: &str, secrets: &str) -> String {
         format!("apiVersion: delbert/v1\nkind: Policy\nmetadata: {{ name: c, tenant: example }}\nspec:\n  secrets: [{secrets}]\n  resources:\n    - id: app\n      container:\n{container}")
     }
@@ -728,6 +854,7 @@ pub fn managed_paths(r: &Resource) -> Vec<&str> {
         r.template.as_ref().map(|t| t.dest.as_str()),
         r.line_in_file.as_ref().map(|l| l.path.as_str()),
         r.block_in_file.as_ref().map(|b| b.path.as_str()),
+        r.get_url.as_ref().map(|g| g.dest.as_str()),
     ]
         .into_iter()
         .flatten()

@@ -188,3 +188,8 @@ DELBERT_CRON_ALLOW=/usr/local/bin/backup.sh delbert-agent check policy.yaml  # e
 ```
 
 Seen on 2026-11-10: `deploy:x:1800:1800:Deploy user:/home/deploy:/bin/bash`, `groups=1800(deploy),33(www-data)`, the home created, `games` gone, `/etc/cron.d/backup` 0644 root with `30 2 * * 1-5 deploy /usr/local/bin/backup.sh --to '/srv/backup dir' 100\%`, both `debug` lines removed and the block appended. `sysctl` was exercised only against a sandbox tree (`/proc/sys` is read-only in an unprivileged container), and no cron daemon read the file.
+
+## `get_url`, `mount` and `command` for real
+
+- **`get_url`:** on the development host with a sandbox root (`delbert-agent apply get.yaml --root /tmp/r`): a file fetched over HTTPS from `raw.githubusercontent.com` with its real hash was written (identical to the local copy); the same URL with a wrong hash failed with "nothing was written" and left no file.
+- **`mount` and `command`:** the static agent as root in `docker run --privileged debian:13-slim`, policy: a directory, a `tmpfs` mounted on it (`opts: "size=8m,noexec"`), a command `touch` with `creates` as `user: nobody`, and a `sleep 30` with `timeout_seconds: 2`. Seen on 2026-11-10: without `DELBERT_COMMAND_ALLOW` the commands fail with the allow-list message; with it, `/proc/mounts` shows `tmpfs /srv/scratch tmpfs rw,noexec,relatime,size=8192k`, `/etc/fstab` has the line, the marker file belongs to uid 65534, the slow command is reported as `timed out after 2s and was killed`; a second check finds mount and marker compliant. Not run: NFS or block devices, `remount` on a real mount, a busy unmount.

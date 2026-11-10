@@ -45,6 +45,8 @@ pub struct DaemonConfig {
     pub facts_dir: PathBuf,
     /// Executables `cron` resources may schedule (local allow-list; empty = cron refused).
     pub cron_allow: Vec<String>,
+    /// Executables `command` resources may run (`path` or `path@sha256`; empty = commands refused).
+    pub command_allow: Vec<String>,
     /// The shared facts are sent to the Core when they change and at least this often.
     pub facts_interval: Duration,
 }
@@ -212,6 +214,7 @@ impl Agent<'_> {
         let mut ctx = Ctx::new(self.cfg.root.clone(), artifacts_dir);
         ctx.facts_dir = self.cfg.facts_dir.clone();
         ctx.cron_allow = self.cfg.cron_allow.clone();
+        ctx.command_allow = self.cfg.command_allow.clone();
         // Keyed with something only this agent has, so a container label cannot be used to test guesses.
         ctx.hash_key = Sha256::digest(format!("delbert-container-hash-v1\n{}", self.key_pem)).to_vec();
         ctx.vars = policy.vars.clone();

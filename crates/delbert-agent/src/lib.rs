@@ -5,6 +5,7 @@
 //! when `check` found drift, and the result is verified by checking again.
 
 pub mod accounts;
+pub mod command;
 pub mod containers;
 pub mod cron;
 pub mod daemon;
@@ -12,7 +13,9 @@ pub mod engine;
 pub mod events;
 pub mod facts;
 pub mod fsutil;
+pub mod geturl;
 pub mod identity;
+pub mod mount;
 pub mod orphans;
 pub mod remediation;
 pub mod runner;

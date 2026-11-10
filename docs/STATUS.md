@@ -6,7 +6,7 @@ Snapshot for whoever continues the work (updated 2026-11-10). Design lives in [A
 
 | Crate | Role | Notes |
 |-------|------|-------|
-| `delbert-policy` | YAML policy model, JSON Schema, validation | verbs: `file`, `copy`, `template`, `line_in_file`, `block_in_file`, `package`, `service`, `container`, `user`, `group`, `cron`, `sysctl` |
+| `delbert-policy` | YAML policy model, JSON Schema, validation | verbs: `file`, `copy`, `template`, `line_in_file`, `block_in_file`, `package`, `service`, `container`, `user`, `group`, `cron`, `sysctl`, `get_url`, `mount`, `command` |
 | `delbert-wire` | effective policy, JCS (RFC 8785), Ed25519 JWS sign/verify, signing-key rotation (`trust` updates) | `delbert-sign` CLI |
 | `delbert-pki` | internal CA behind a trait (rcgen backend), Ed25519 CSR signing, agent request proofs | `delbert-pki` CLI; `bootstrap` creates every key of a new installation |
 | `delbert-natsauth` | NATS authorization-callout building blocks | shared by Core and Proxy |
@@ -18,7 +18,7 @@ Snapshot for whoever continues the work (updated 2026-11-10). Design lives in [A
 | `delbert-operator` | Kubernetes Operator | `DelbertBinding` CRD, rendering, identity, bundle fetch and reconcile loop ([OPERATOR.md](OPERATOR.md)); verified by hand on K3s 1.31.14 (manifests in `deploy/kubernetes/operator`, image target `operator`); no CI test, no leader election. Target Kubernetes >= 1.31. Design: [ABSTRACT.md](ABSTRACT.md) §5 |
 | `web/` (Next.js) | administration UI, milestones M0-M4 (complete) | backend-for-frontend, see [web/README.md](../web/README.md) |
 
-About 200 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
+About 215 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
 
 ## Run it
 
@@ -51,11 +51,33 @@ Cross-builds without a container (what the packaging uses): `pip install cargo-z
 
 See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI complete through M4 ([FRONTEND.md](FRONTEND.md)); Kubernetes Operator verified by hand on K3s 1.31.14 but with no automated end-to-end test; remediation (rollback to the last known good, [REMEDIATION.md](REMEDIATION.md)) and `service` tested with a scripted `systemctl` only, not on a real systemd host; the Windows agent is compiled but was never run on Windows ([WINDOWS.md](WINDOWS.md)); `service` only tested with a fake runner; no CRL/OCSP; proxy renewal not run live in a branch scenario ([ROTATION.md](ROTATION.md)); the Helm chart and the Kubernetes manifests were never run on a cluster (the chart not even rendered locally); no release published yet (the workflow exists, no tag); the deb/rpm files and the MSI are first built by CI, whose new jobs have not been seen green; the proxy has no configuration file.
 
+## MVP assessment (2026-11-10)
+
+**Verdict: feature-complete MVP candidate for Linux; not yet a released MVP.** What is missing is proof and a release, not features.
+
+| Area | MVP needs | State |
+|------|-----------|-------|
+| Control plane | API with Swagger, tenants, RBAC with separation of duties, MFA, OIDC SSO, signed policies, internal PKI with rotation, sealed secrets, artifacts, hash-chained audit with export, web console (EN/IT) | done, covered by about 215 tests and the container end-to-end runs |
+| Linux agent | enrollment, renewal, signed policies only, drift correction, reports and audit events, facts, remediation | done; 15 verbs (files, lines and blocks, downloads, packages, services, containers, accounts, cron, sysctl, mounts, commands) |
+| Branch office, Kubernetes workloads | proxy; Operator | done; Operator verified by hand on K3s only |
+| Install | containers, Kubernetes, packages | container install run for real; packages checked by content; chart and release pipeline written, **never run** |
+| Windows | optional for an MVP | preview, compiled only |
+
+Exit criteria, in order (each is a run, not a feature):
+
+1. The `windows` and `packaging` CI jobs green (they went to `main` without anybody seeing a run).
+2. The Helm chart installed on a real K3s cluster, an agent enrolled against it.
+3. The agent as a systemd service on a real host (package install, `service` and remediation against a real systemd: today a scripted `systemctl` only).
+4. A backup and restore drill following [install.md](install.md), ending with `GET /v1/audit/verify`.
+5. Tag `v0.1.0` and check every artifact of the release (images, chart, packages, MSI, checksums).
+
+Known and acceptable for an MVP, to say in the release notes: wire compatibility between versions is not guaranteed (agents reject verbs they do not know: upgrade agents first); no HA of the Core and NATS; packages unsigned; `specificity` conflict strategy, resolution records, SAML and LDAP/AD login, SIEM connector (NDJSON export exists), pagination of lists are post-MVP ([ROADMAP.md](ROADMAP.md)).
+
 ## Next steps
 
 0. Repository layout and the online editor are done ([REPOSITORY.md](REPOSITORY.md)); next there: files and templates per group and host, shared content from a repository, schema completion and merge requests from the editor.
 
-1. The product is feature-complete for a first trial and has installers for containers, Kubernetes and packages ([install.md](install.md)). Next, in order: get the `windows` and `packaging` CI jobs green (they were added without being able to see a run); install the chart on a real K3s cluster; push the first tag `v0.1.0` and check every artifact of the release; enroll a real Windows host. Then web e2e in CI and the optional integrations (external key and secret providers). The UI is complete through M4 ([FRONTEND.md](FRONTEND.md)); a tenant "delete" is an archive.
+1. Work through the five exit criteria of the MVP assessment above, in that order; then enroll a real Windows host. Then web e2e in CI and the optional integrations (external key and secret providers). The UI is complete through M4 ([FRONTEND.md](FRONTEND.md)); a tenant "delete" is an archive.
 2. Kubernetes Operator; Windows: ACL model and `package` backend ([WINDOWS.md](WINDOWS.md) "Next steps"). (The CA is behind a trait, rcgen backend only: [API.md](API.md) `DELBERT_CA_BACKEND`.) (Per-action audit events from agents are done, also through the proxy: [API.md](API.md) "Agent audit events".)
 3. Proxy config file and live branch check of proxy renewal; SSH remotes and signed commits for content sources; Entra ID check against a real tenant.
 

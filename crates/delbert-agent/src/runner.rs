@@ -2,8 +2,11 @@
 //! `systemctl`). Always an argv vector: there is no shell and no interpolation.
 
 use std::{
+    io::Read,
+    path::PathBuf,
     process::{Command, Stdio},
     sync::Mutex,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, bail};
@@ -30,8 +33,81 @@ impl CmdOutput {
     }
 }
 
+/// A program run for the `command` verb: as a given user, with a closed environment and a
+/// deadline (see `command.rs`).
+#[derive(Debug, Clone)]
+pub struct ExecRequest {
+    pub argv: Vec<String>,
+    /// uid and gid to switch to; `None` keeps the agent's own (root).
+    pub user: Option<(u32, u32)>,
+    /// The whole environment of the program: nothing is inherited from the agent.
+    pub env: Vec<(String, String)>,
+    pub cwd: PathBuf,
+    pub timeout: Duration,
+}
+
+/// Most output kept from one stream of a program; the rest is read and dropped.
+const MAX_OUTPUT: usize = 64 * 1024;
+
 pub trait Runner: Send + Sync {
     fn run(&self, argv: &[&str]) -> Result<CmdOutput>;
+    /// Run a program for the `command` verb. Killed, and an error, when it exceeds its timeout.
+    fn exec(&self, request: &ExecRequest) -> Result<CmdOutput>;
+}
+
+/// Read a pipe to its end on a thread, keeping the first [`MAX_OUTPUT`] bytes.
+fn drain(pipe: Option<impl Read + Send + 'static>) -> std::sync::mpsc::Receiver<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut kept = Vec::new();
+        let mut buffer = [0u8; 8192];
+        if let Some(mut pipe) = pipe {
+            while let Ok(n) = pipe.read(&mut buffer) {
+                if n == 0 {
+                    break;
+                }
+                let room = MAX_OUTPUT.saturating_sub(kept.len());
+                kept.extend_from_slice(&buffer[..n.min(room)]);
+            }
+        }
+        let _ = tx.send(String::from_utf8_lossy(&kept).into_owned());
+    });
+    rx
+}
+
+/// Spawn the program of an [`ExecRequest`] and wait for it, at most until its deadline.
+pub fn exec_on_host(request: &ExecRequest) -> Result<CmdOutput> {
+    let (program, args) = request.argv.split_first().context("empty command")?;
+    let mut command = Command::new(program);
+    command.args(args).env_clear().envs(request.env.iter().cloned()).current_dir(&request.cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(unix)]
+    if let Some((uid, gid)) = request.user {
+        use std::os::unix::process::CommandExt;
+        // With a uid set, the standard library also drops the supplementary groups of the agent.
+        command.uid(uid).gid(gid);
+    }
+    #[cfg(not(unix))]
+    if request.user.is_some() {
+        bail!("running a command as another user is not supported on this platform");
+    }
+    let mut child = command.spawn().with_context(|| format!("cannot run '{program}'"))?;
+    let (stdout, stderr) = (drain(child.stdout.take()), drain(child.stderr.take()));
+    let deadline = Instant::now() + request.timeout;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            // Its output is not waited for: a grandchild may still hold the pipes open.
+            bail!("`{program}` timed out after {}s and was killed", request.timeout.as_secs());
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    // The program has exited; a grandchild that keeps a pipe open must not hang the agent.
+    let read = |rx: std::sync::mpsc::Receiver<String>| rx.recv_timeout(Duration::from_secs(5)).unwrap_or_default();
+    Ok(CmdOutput { code: status.code(), stdout: read(stdout), stderr: read(stderr) })
 }
 
 /// Runs commands on the host.
@@ -53,6 +129,10 @@ impl Runner for SystemRunner {
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         })
     }
+
+    fn exec(&self, request: &ExecRequest) -> Result<CmdOutput> {
+        exec_on_host(request)
+    }
 }
 
 /// Used when the agent works on a sandbox `--root`: commands would act on the
@@ -67,6 +147,10 @@ pub struct Refused(pub String);
 impl Runner for SandboxRunner {
     fn run(&self, argv: &[&str]) -> Result<CmdOutput> {
         Err(Refused(argv.join(" ")).into())
+    }
+
+    fn exec(&self, request: &ExecRequest) -> Result<CmdOutput> {
+        Err(Refused(request.argv.join(" ")).into())
     }
 }
 
@@ -117,5 +201,46 @@ impl Runner for FakeRunner {
             }
             None => bail!("cannot run '{}': not found", argv[0]),
         }
+    }
+
+    /// Answered from the same script as `run`; the call is recorded with the user it would run as.
+    fn exec(&self, request: &ExecRequest) -> Result<CmdOutput> {
+        let argv: Vec<&str> = request.argv.iter().map(String::as_str).collect();
+        let out = self.run(&argv)?;
+        if let (Some((uid, gid)), Some(last)) = (request.user, self.calls.lock().unwrap().last_mut()) {
+            *last = format!("[{uid}:{gid}] {last}");
+        }
+        Ok(out)
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    fn request(argv: &[&str], secs: u64) -> ExecRequest {
+        ExecRequest { argv: argv.iter().map(|s| s.to_string()).collect(), user: None, env: vec![("GREETING".into(), "hello".into())], cwd: "/".into(), timeout: Duration::from_secs(secs) }
+    }
+
+    #[test]
+    fn a_program_gets_only_the_given_environment_and_its_result_is_captured() {
+        // No shell is involved in `exec`; `sh -c` is used here only as a program to observe.
+        let out = exec_on_host(&request(&["/bin/sh", "-c", "echo \"$GREETING ${HOME:-nohome} $PWD\"; echo oops >&2; exit 3"], 10)).unwrap();
+        assert_eq!((out.code, out.stdout.as_str(), out.stderr.as_str()), (Some(3), "hello nohome /\n", "oops\n"));
+        assert!(exec_on_host(&request(&["/nonexistent/program"], 10)).unwrap_err().to_string().contains("cannot run"));
+    }
+
+    #[test]
+    fn a_program_that_exceeds_its_timeout_is_killed() {
+        let started = Instant::now();
+        let err = exec_on_host(&request(&["/bin/sleep", "30"], 1)).unwrap_err();
+        assert!(err.to_string().contains("timed out after 1s"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn long_output_is_cut_and_never_blocks_the_program() {
+        let out = exec_on_host(&request(&["/bin/sh", "-c", "head -c 300000 /dev/zero | tr '\\0' x"], 20)).unwrap();
+        assert_eq!((out.code, out.stdout.len()), (Some(0), MAX_OUTPUT));
     }
 }

@@ -53,6 +53,10 @@ struct LocalArgs {
     /// Empty (the default): every cron resource is refused.
     #[arg(long, env = "DELBERT_CRON_ALLOW", value_delimiter = ':')]
     cron_allow: Vec<String>,
+    /// Executables that `command` resources (and their guards) may run: absolute paths separated
+    /// by ':', each optionally pinned as `path@<sha256>`. Empty (the default): every command is refused.
+    #[arg(long, env = "DELBERT_COMMAND_ALLOW", value_delimiter = ':')]
+    command_allow: Vec<String>,
 }
 
 #[derive(Args)]
@@ -212,6 +216,7 @@ fn execute(resources: &[Resource], vars: BTreeMap<String, serde_json::Value>, ho
     let mut ctx = Ctx::new(host.root, host.artifacts);
     ctx.vars = vars;
     ctx.cron_allow = host.local.cron_allow.into_iter().filter(|p| !p.is_empty()).collect();
+    ctx.command_allow = host.local.command_allow.into_iter().filter(|p| !p.is_empty()).collect();
     let report = run(resources, &ctx, mode);
     print(&report);
     if report.has_failures() {
@@ -268,6 +273,7 @@ async fn daemon(a: DaemonArgs) -> anyhow::Result<()> {
         renew_before_secs: a.renew_before_secs,
         facts_dir: a.facts_dir,
         cron_allow: a.local.cron_allow.into_iter().filter(|p| !p.is_empty()).collect(),
+        command_allow: a.local.command_allow.into_iter().filter(|p| !p.is_empty()).collect(),
         facts_interval: std::time::Duration::from_secs(a.facts_interval_secs.max(60)),
     })
     .await

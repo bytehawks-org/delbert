@@ -146,6 +146,12 @@ pub struct Resource {
     pub cron: Option<CronSpec>,
     #[serde(default)]
     pub sysctl: Option<SysctlSpec>,
+    #[serde(default)]
+    pub get_url: Option<GetUrlSpec>,
+    #[serde(default)]
+    pub mount: Option<MountSpec>,
+    #[serde(default)]
+    pub command: Option<CommandSpec>,
 }
 
 impl Resource {
@@ -164,6 +170,9 @@ impl Resource {
             ("group", self.group.is_some()),
             ("cron", self.cron.is_some()),
             ("sysctl", self.sysctl.is_some()),
+            ("get_url", self.get_url.is_some()),
+            ("mount", self.mount.is_some()),
+            ("command", self.command.is_some()),
         ]
         .into_iter()
         .filter_map(|(name, set)| set.then_some(name))
@@ -358,6 +367,88 @@ impl SysctlSpec {
     fn default_persist() -> bool {
         true
     }
+}
+
+/// A file downloaded by the agent. The content is pinned: what does not hash to `sha256` is
+/// never written. Prefer an artifact (`copy`) when the Core can hold the file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GetUrlSpec {
+    /// `https://` (or `http://`: the hash protects the content, not its confidentiality).
+    pub url: String,
+    pub dest: String,
+    /// SHA-256 of the file, 64 hexadecimal digits. Mandatory.
+    pub sha256: String,
+    pub owner: Option<String>,
+    pub group: Option<String>,
+    pub mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MountState {
+    /// In `/etc/fstab` and mounted (default).
+    #[default]
+    Mounted,
+    /// In `/etc/fstab`; whether it is mounted now is left alone.
+    Present,
+    /// In `/etc/fstab`, not mounted.
+    Unmounted,
+    /// Not mounted and not in `/etc/fstab`.
+    Absent,
+}
+
+/// A filesystem mounted at `path`: its `/etc/fstab` line and whether it is mounted now.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MountSpec {
+    /// Mount point (must exist: declare it with `file` and `depends_on`).
+    pub path: String,
+    /// Device, `UUID=...`, `LABEL=...`, `server:/export`, `tmpfs`... Required unless `state: absent`.
+    #[serde(default)]
+    pub src: Option<String>,
+    /// `ext4`, `xfs`, `nfs`, `tmpfs`... Required unless `state: absent`.
+    #[serde(default)]
+    pub fstype: Option<String>,
+    /// Mount options (default `defaults`).
+    #[serde(default)]
+    pub opts: Option<String>,
+    #[serde(default)]
+    pub state: MountState,
+    /// Fifth and sixth fstab fields (default 0 and 0).
+    #[serde(default)]
+    pub dump: u8,
+    #[serde(default)]
+    pub passno: u8,
+}
+
+/// The one verb that runs a program chosen by the policy (docs/POLICY.md "Commands").
+/// The agent refuses it unless the executable is on its **local** allow-list; there is no shell;
+/// a guard decides whether it has to run at all, and must say "no" after a successful run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CommandSpec {
+    /// Executable (absolute path) and arguments, passed as they are: no shell, no expansion.
+    pub argv: Vec<String>,
+    /// Guard: run only while this path does not exist.
+    #[serde(default)]
+    pub creates: Option<String>,
+    /// Guard: run only if this command (an argv, same rules) exits 0. It must not change anything.
+    #[serde(default)]
+    pub onlyif: Vec<String>,
+    /// Guard: run only if this command exits non-zero. It must not change anything.
+    #[serde(default)]
+    pub unless: Vec<String>,
+    /// Account the command (and its guards) run as. Mandatory, `root` included.
+    pub user: String,
+    /// The command is killed and the resource fails after this long. Mandatory (1 to 3600).
+    pub timeout_seconds: u32,
+    /// Working directory (default `/`).
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// Extra environment; the command otherwise sees only `PATH`, `HOME`, `USER` and `LC_ALL=C`.
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]

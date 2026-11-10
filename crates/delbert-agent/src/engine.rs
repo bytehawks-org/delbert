@@ -32,6 +32,9 @@ pub struct Ctx {
     /// Executables (absolute paths) a `cron` resource may schedule. A local setting of this agent,
     /// never taken from a policy; empty (the default) refuses every cron resource. See `cron.rs`.
     pub cron_allow: Vec<String>,
+    /// Executables a `command` resource may run: `path` or `path@sha256`. Local setting, empty
+    /// (the default) refuses every command. See `command.rs`.
+    pub command_allow: Vec<String>,
     /// How verbs run system tools. Commands are refused when `root` is not `/`.
     pub runner: Arc<dyn Runner>,
 }
@@ -39,7 +42,7 @@ pub struct Ctx {
 impl Ctx {
     pub fn new(root: PathBuf, artifacts: PathBuf) -> Self {
         let runner: Arc<dyn Runner> = if root == Path::new("/") { Arc::new(SystemRunner) } else { Arc::new(SandboxRunner) };
-        Ctx { root, artifacts, vars: BTreeMap::new(), secrets: BTreeMap::new(), artifact_hashes: BTreeMap::new(), facts_dir: PathBuf::new(), cron_allow: Vec::new(), hash_key: Vec::new(), secrets_dir: "/run/delbert/secrets".into(), runner }
+        Ctx { root, artifacts, vars: BTreeMap::new(), secrets: BTreeMap::new(), artifact_hashes: BTreeMap::new(), facts_dir: PathBuf::new(), cron_allow: Vec::new(), command_allow: Vec::new(), hash_key: Vec::new(), secrets_dir: "/run/delbert/secrets".into(), runner }
     }
 
     /// Map an absolute policy path into the root. A Windows drive path (`C:/app` or `C:\app`)
@@ -122,6 +125,13 @@ fn subject(r: &Resource) -> String {
         &x.name
     } else if let Some(x) = &r.sysctl {
         &x.key
+    } else if let Some(x) = &r.get_url {
+        &x.dest
+    } else if let Some(x) = &r.mount {
+        &x.path
+    } else if let Some(x) = &r.command {
+        // The program only: arguments may carry values that are not for the audit trail.
+        x.argv.first().unwrap_or(&r.id)
     } else {
         return r.id.clone();
     };
@@ -172,6 +182,12 @@ fn verb_of(r: &Resource) -> Option<&dyn Verb> {
         Some(v)
     } else if let Some(v) = &r.sysctl {
         Some(v)
+    } else if let Some(v) = &r.get_url {
+        Some(v)
+    } else if let Some(v) = &r.mount {
+        Some(v)
+    } else if let Some(v) = &r.command {
+        Some(v)
     } else {
         None
     }
@@ -219,7 +235,9 @@ fn run_one(r: &Resource, ctx: &Ctx, mode: Mode) -> Status {
     if let Err(e) = verb.apply(ctx) {
         return Status::Failed(format!("{e:#}"));
     }
-    if verb.is_action() {
+    // A command on a handler is an action too ("run this when that changed"): its guard decided
+    // that it had to run, and is not asked again afterwards.
+    if verb.is_action() || (r.handler && r.command.is_some()) {
         return Status::Changed(drift); // nothing observable to verify
     }
     match verb.check(ctx) {
@@ -530,5 +548,30 @@ spec:
             let report = run(&policy.spec.resources, &real, Mode::Check);
             assert!(matches!(&report.resources[0].status, Status::Failed(m) if m.contains("Windows path")), "{:?}", report.resources[0].status);
         }
+    }
+    #[test]
+    fn a_command_must_converge_unless_it_is_a_handler() {
+        use crate::runner::FakeRunner;
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("etc")).unwrap();
+        let policy = delbert_policy::from_yaml(concat!(
+            "apiVersion: delbert/v1\nkind: Policy\nmetadata: { name: p, tenant: t1 }\nspec:\n  resources:\n",
+            "    - id: conf\n      copy: { content: \"a\\n\", dest: /etc/app.conf }\n      notify: [reload]\n",
+            "    - id: once\n      command: { argv: [/usr/local/bin/init-db], creates: /var/lib/db/ready, user: root, timeout_seconds: 10 }\n",
+            "    - id: reload\n      handler: true\n      command: { argv: [/usr/sbin/app, reload], onlyif: [/usr/sbin/app, check], user: root, timeout_seconds: 10 }\n",
+        ))
+        .unwrap();
+        let runner = Arc::new(FakeRunner::new(vec![(&["/usr/local/bin/init-db"], 0, ""), (&["/usr/sbin/app"], 0, "")]));
+        let mut ctx = Ctx::new(tmp.path().to_path_buf(), "artifacts".into());
+        ctx.runner = runner.clone();
+        ctx.command_allow = vec!["/usr/local/bin/init-db".into(), "/usr/sbin/app".into()];
+        let report = run(&policy.spec.resources, &ctx, Mode::Apply);
+        let status = |id: &str| report.resources.iter().find(|r| r.id == id).unwrap().status.clone();
+        // The fake program did not create its marker: the guard still asks for a run, so it failed.
+        assert!(matches!(status("once"), Status::Failed(m) if m.contains("not converged")), "{:?}", status("once"));
+        // The handler ran because the file changed; its guard is not asked again.
+        assert!(matches!(status("reload"), Status::Changed(_)), "{:?}", status("reload"));
+        assert!(runner.calls().contains(&"/usr/sbin/app reload".to_string()));
+        assert_eq!(report.resources.iter().find(|r| r.id == "reload").unwrap().subject, "command /usr/sbin/app");
     }
 }

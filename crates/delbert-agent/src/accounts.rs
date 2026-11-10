@@ -14,12 +14,12 @@ use delbert_policy::{GroupSpec, Presence, UserSpec};
 use crate::engine::Ctx;
 use crate::verbs::{Check, Verb};
 
-struct Passwd {
-    uid: u32,
-    gid: u32,
-    comment: String,
-    home: String,
-    shell: String,
+pub(crate) struct Passwd {
+    pub uid: u32,
+    pub gid: u32,
+    pub comment: String,
+    pub home: String,
+    pub shell: String,
 }
 
 struct Group {
@@ -44,7 +44,7 @@ fn entry(ctx: &Ctx, db: &str, name: &str) -> Result<Option<Vec<String>>> {
     Ok(text.lines().map(|l| l.split(':').map(str::to_owned).collect::<Vec<_>>()).find(|f| f.first().is_some_and(|n| n == name)))
 }
 
-fn passwd(ctx: &Ctx, name: &str) -> Result<Option<Passwd>> {
+pub(crate) fn passwd(ctx: &Ctx, name: &str) -> Result<Option<Passwd>> {
     let Some(f) = entry(ctx, "/etc/passwd", name)? else { return Ok(None) };
     let field = |i: usize| f.get(i).cloned().unwrap_or_default();
     let id = |i: usize| field(i).parse::<u32>().with_context(|| format!("malformed passwd entry of '{name}'"));

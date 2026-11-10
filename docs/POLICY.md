@@ -63,13 +63,14 @@ Rules:
 | `template` | Rendered file | `src`, `dest`, `vars`, ownership/mode | template |
 | `line_in_file` | Ensure a line is there, or (`state: absent`) that it is not | `path`, `line`, `regexp`, `state`, `insert_after`/`insert_before` | lineinfile |
 | `block_in_file` | Ensure a marked block (**implemented**) | `path`, `block`, `marker`, `state` | blockinfile |
-| `get_url` | Download | `url`, `dest`, `sha256` (**mandatory**), ownership/mode | get_url |
+| `get_url` | Download (**implemented**, see "Downloads") | `url`, `dest`, `sha256` (**mandatory**), ownership/mode | get_url |
 | `package` | OS packages | `name`, `state` (present, absent, latest); backend auto-detected (apt, dnf, zypper, apk) | package |
 | `service` | Service manager (systemd) | `name`, `state` (started, stopped, restarted, reloaded), `enabled` | service |
 | `user` / `group` | Local accounts (**implemented**, see "Users and groups") | `name`, `state`, `uid`/`gid`, `group`, `groups`, `shell`, `home`, `comment`, `system`, `create_home` | user, group |
 | `sysctl` | Kernel parameter (**implemented**) | `key`, `value`, `persist` | sysctl |
 | `cron` | Scheduled job (**implemented**, off by default: see "Scheduled jobs") | `name`, `schedule`, `user`, `command` (argv), `env`, `state` | cron |
-| `command` | Restricted exec | see ABSTRACT §3 | command |
+| `mount` | Filesystem in `/etc/fstab` and mounted (**implemented**, see "Mounts") | `path`, `src`, `fstype`, `opts`, `state` (mounted, present, unmounted, absent), `dump`, `passno` | mount |
+| `command` | Restricted exec (**implemented**, off by default: see "Commands") | `argv`, `creates`/`onlyif`/`unless`, `user`, `timeout_seconds`, `cwd`, `env` | command |
 | `container` | Docker/Podman container (**implemented**, see "Containers") | `name`, `image` (digest recommended), `state`, `ports`, `volumes`, `env`, `env_from`, `secret_from`, `restart`, `command`, `engine` | docker_container |
 | `container_volume` / `container_network` | Docker/Podman objects | `name`, `state`, driver options | docker_volume/network |
 
@@ -94,6 +95,8 @@ Several policies can reach the same endpoint. Each verb defines a **resource key
 | `user`, `group` | name (each in its own namespace) |
 | `sysctl` | key |
 | `cron` | name |
+| `mount` | mount point |
+| `command` | none (a command is identified by its resource id) |
 | `container*` | kind + name |
 
 Same key and identical normalized parameters → merged. Same key, different parameters → **conflict**. Disjoint parts of one object (different lines of one file) do not conflict. Resolution happens only in the Core (the agent receives a single, already resolved, signed policy).
@@ -201,6 +204,71 @@ A scheduled job is a way to run a program, so it follows the rules of the `comma
 - Per-user crontabs (`crontab -e` spool) are not edited: a job for a user is a job in `/etc/cron.d` with `user:`. `/etc/cron.d` must exist (a cron daemon is installed). Not on Windows (Scheduled Tasks are a separate verb to design).
 
 The allow-list is a guard against mistakes and against a job nobody on the host agreed to, not a sandbox: a policy can also deliver files, so trust in the Core's signing key remains the boundary.
+
+## Downloads
+
+```yaml
+- id: exporter
+  get_url:
+    url: "https://downloads.example.com/node_exporter-1.9.0.tar.gz"
+    dest: /opt/node_exporter.tar.gz
+    sha256: 6f0b0e7a...   # 64 hexadecimal digits, mandatory
+    mode: "0644"
+```
+
+The agent downloads the file itself (outbound HTTPS, the system's trust store, the proxy of its environment). The content is pinned: a destination that already has the hash is compliant **without any request**; a download is kept in memory, hashed, and written crash-safely only when the hash matches, so a wrong or tampered file changes nothing on the host. A local change is drift and is repaired from the source. `http://` is accepted (the hash protects the content, not its confidentiality); credentials in the URL are refused. Limit: 256 MiB. Prefer an artifact with `copy` when the Core can hold the file: it needs no route from the host to the Internet and survives the source disappearing.
+
+## Mounts
+
+```yaml
+- id: share-dir
+  file: { path: /srv/share, state: directory }
+- id: share
+  mount: { path: /srv/share, src: "nas.example.com:/export", fstype: nfs, opts: "ro,noexec" }
+  depends_on: [share-dir]
+```
+
+| `state` | `/etc/fstab` | Mounted now |
+|---------|--------------|-------------|
+| `mounted` (default) | line present | yes |
+| `present` | line present | left as it is |
+| `unmounted` | line present | no |
+| `absent` | line removed | no |
+
+- One line of `/etc/fstab` is edited (replaced where it is, the rest byte for byte, written crash-safely); an existing line that says the same in another layout is left alone. Then `mount <path>` / `umount <path>` (argv, no shell) act on that line, so the file and the running system cannot disagree. What is mounted is read from `/proc/mounts`.
+- Changed options are applied with `mount -o remount`. A different `src` or `fstype` on a mounted filesystem needs an unmount, which is never done by inference: declare `unmounted` for one version.
+- A busy filesystem fails the resource and leaves `/etc/fstab` as it was. The mount point must exist (`file` + `depends_on`). `/` is refused; fields with blanks are refused.
+- A mount that leaves the policy stays: use `state: absent`. Not on Windows.
+
+## Commands
+
+```yaml
+- id: init-db                       # runs once: the marker does not exist yet
+  command:
+    argv: [/usr/local/bin/init-db, --schema, /etc/app/schema.sql]
+    creates: /var/lib/app/.initialised
+    user: app
+    timeout_seconds: 300
+- id: reload-app                    # a handler: runs when something that notifies it changed
+  handler: true
+  command:
+    argv: [/usr/sbin/nginx, -s, reload]
+    onlyif: [/usr/sbin/nginx, -t]   # only if the configuration is valid
+    user: root
+    timeout_seconds: 30
+```
+
+The only verb that runs a program chosen by the policy ([ABSTRACT.md](ABSTRACT.md) §3). Every rule is enforced by the agent:
+
+- **Off by default, enabled only on the host.** Every executable, guards included, must be on the agent's local allow-list: `DELBERT_COMMAND_ALLOW=/usr/local/bin/init-db:/usr/sbin/nginx` in `/etc/delbert/agent.env` (or `--command-allow`). An entry can pin the content: `/usr/local/bin/init-db@<sha256>`. Without the list every `command` fails, in check mode too, with a message that says so. No policy, variable or fact can change it.
+- **No shell.** `argv` goes to the program as it is: no expansion, pipes or redirections. Deliver a script with `copy` (pinned artifact) and allow the script.
+- **A guard is mandatory** (validation refuses a command without one): `creates` (run while the path does not exist), `onlyif` (run if this argv exits 0), `unless` (run if it exits non-zero). All the declared guards must agree. Guards run at every check, as the same user: they must not change anything.
+- **It must converge.** After a successful run the guard is asked again and must say "no need": otherwise the resource fails (`not converged`). The exception is a command on a **handler**: it is an action that runs when notified and its guard is only a precondition.
+- **Declared user, mandatory timeout, closed environment.** `user` is required (`root` included; another account is looked up in `/etc/passwd`, its supplementary groups are not applied). At `timeout_seconds` (1 to 3600) the program is killed and the resource fails. It sees only `PATH`, `HOME`, `USER`, `LOGNAME`, `LC_ALL=C` and the policy's `env` (`LD_*` refused); the working directory is `cwd` or `/`.
+- **What is recorded.** A run is a `resource.changed` audit event with the program (never its arguments) and the guard's reason; a failure carries the exit code and the first 300 characters of the error output. The output of a successful run stays in the agent's log, not in the audit trail (outputs can hold secrets; masking is not designed yet).
+- Not on Windows. A sandbox `--root` never runs anything.
+
+As for `cron`, the allow-list is a guard, not a sandbox: a policy can also deliver files. An allowed interpreter (`/bin/sh`, `python3`) allows everything: list programs and scripts, not interpreters, and pin scripts with their hash.
 
 ## Facts
 

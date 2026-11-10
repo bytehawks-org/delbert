@@ -2,6 +2,13 @@
 
 ## 2026-11-10
 
+### `get_url`, `mount`, `command`
+- **`get_url`:** download with a mandatory SHA-256; nothing is requested when the destination already has the hash, nothing is written when the download does not match; http(s) only, no credentials in the URL, 256 MiB.
+- **`mount`:** one `/etc/fstab` line edited in place plus `mount`/`umount`/`remount`; states `mounted`, `present`, `unmounted`, `absent`; `/` refused; a busy filesystem leaves fstab untouched.
+- **`command`:** the design of ABSTRACT §3, enforced by the agent: local allow-list `DELBERT_COMMAND_ALLOW` (`path` or `path@sha256`, guards included; empty = every command refused), argv without a shell, mandatory guard (`creates`/`onlyif`/`unless`) and timeout, declared user, closed environment, must converge (handlers excepted). Runner: `exec` with user switch, deadline and bounded output capture.
+- Tests: 14 new agent tests (a local HTTP server for downloads, real processes for the timeout and the environment), validation tests; run for real: an HTTPS download through the system trust store, a tmpfs mount and commands as `nobody` in a privileged Debian container ([TESTING.md](TESTING.md)).
+- **MVP assessment** in [STATUS.md](STATUS.md).
+
 ### More verbs: `block_in_file`, `user`, `group`, `cron`, `sysctl`
 - **Policy:** five new verbs, validated at save and again on the agent ([POLICY.md](POLICY.md): "Lines and blocks", "Users and groups", "Kernel parameters", "Scheduled jobs"). Conflict keys: user name, group name, cron job name, sysctl key, path + marker. `root`, uid 0 and gid 0 cannot be managed. Removing a configuration line was already there: `line_in_file` with `state: absent` (now documented with examples).
 - **Agent:** `block_in_file` (marked block, replaced in place, removed with its markers); `group`/`user` through the shadow tools, state read from the local files, no password, additive memberships; `sysctl` read and written in `/proc/sys` plus `/etc/sysctl.d/90-delbert-<key>.conf`; `cron` as one file in `/etc/cron.d` with the command quoted from an argv.
