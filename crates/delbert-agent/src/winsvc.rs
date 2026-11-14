@@ -54,6 +54,14 @@ pub fn data_dir() -> PathBuf {
     PathBuf::from(std::env::var_os("ProgramData").unwrap_or_else(|| r"C:\ProgramData".into())).join("Delbert")
 }
 
+/// The service always runs `delbert-agent.exe`, even when the install was started as `dg.exe`
+/// (the aliases are copies and are not what a service should depend on).
+fn canonical_exe() -> Result<PathBuf> {
+    let exe = std::env::current_exe()?;
+    let canonical = exe.with_file_name("delbert-agent.exe");
+    Ok(if canonical.is_file() { canonical } else { exe })
+}
+
 /// Register this executable as an automatic service running as LocalSystem, restarted by the
 /// SCM when it fails, and make the data directory private. Idempotent: an existing service is
 /// left as it is.
@@ -69,7 +77,7 @@ pub fn install(data_dir: &Path) -> Result<()> {
         service_type: ServiceType::OWN_PROCESS,
         start_type: ServiceStartType::AutoStart,
         error_control: ServiceErrorControl::Normal,
-        executable_path: std::env::current_exe()?,
+        executable_path: canonical_exe()?,
         launch_arguments: vec!["service".into(), "run".into()],
         dependencies: vec![],
         account_name: None, // LocalSystem: the agent changes the host it runs on

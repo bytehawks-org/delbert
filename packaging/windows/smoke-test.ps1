@@ -52,6 +52,22 @@ Write-Host '== a POSIX attribute is refused, not ignored'
 (Get-Content $policy) -replace 'dest: "(.*)app.conf" }', 'dest: "${1}app.conf", mode: "0644" }' | Set-Content -Encoding utf8 $policy
 Invoke-Agent 1 @('check', $policy)
 
+Write-Host '== the aliases: overlook only looks, dg changes'
+foreach ($alias in 'delbert', 'dg', 'overlook') { Copy-Item $Agent (Join-Path $work "$alias.exe") }
+$policyOk = Join-Path $work 'policy-ok.yaml'
+"apiVersion: delbert/v1`nkind: Policy`nmetadata: { name: alias, tenant: t1 }`nspec:`n  resources:`n    - id: d`n      file: { path: `"$dir/alias-dir`", state: directory }`n" | Set-Content -Encoding utf8 $policyOk
+function Invoke-Alias([string]$Name, [int]$Expect, [string[]]$Arguments) {
+    & (Join-Path $work "$Name.exe") @Arguments
+    if ($LASTEXITCODE -ne $Expect) { throw "$Name $Arguments exited with $LASTEXITCODE (expected $Expect)" }
+}
+Invoke-Alias 'overlook' 2 @('check', $policyOk)
+if (Test-Path "$work\alias-dir") { throw 'overlook created something' }
+Invoke-Alias 'overlook' 64 @('apply', $policyOk)
+Invoke-Alias 'dg' 64 @('check', $policyOk)
+Invoke-Alias 'dg' 0 @('apply', $policyOk)
+if (-not (Test-Path "$work\alias-dir")) { throw 'dg apply did not create the directory' }
+Invoke-Alias 'overlook' 0 @('check', $policyOk)
+
 Write-Host '== Windows Service: install, inspect, uninstall'
 Invoke-Agent 0 @('service', 'install')
 $service = Get-Service DelbertAgent

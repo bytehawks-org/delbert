@@ -190,7 +190,7 @@ journalctl -u delbert-agent -f
 
 Hosts without dpkg or rpm (Alpine, Arch, ...): unpack `delbert-<version>-linux-<arch>.tar.gz`, copy `delbert-agent` to `/usr/bin` and install [`deploy/systemd/delbert-agent.service`](../deploy/systemd/delbert-agent.service) and [`agent.env.example`](../deploy/systemd/agent.env.example) yourself (or the init system's equivalent of `delbert-agent run` with that environment).
 
-The identity is kept in `/var/lib/delbert/identity`; to re-enroll, delete that directory and give a new key. The agent runs as root because it changes the host; it opens no port. `DELBERT_INTERVAL_SECS` is how often it re-checks without a notification (default 300). The `package` verb supports apt, dnf, zypper and apk; `service` drives systemd.
+The package also installs `delbert` and `dg` (commands that change) and `overlook` (commands that only look) as aliases of `delbert-agent` ([POLICY.md](POLICY.md) "The command line"); `overlook check policy.yaml` is the quick way to see whether a host has drifted. The identity is kept in `/var/lib/delbert/identity`; to re-enroll, delete that directory and give a new key. The agent runs as root because it changes the host; it opens no port. `DELBERT_INTERVAL_SECS` is how often it re-checks without a notification (default 300). The `package` verb supports apt, dnf, zypper and apk; `service` drives systemd.
 
 ### Windows
 

@@ -37,7 +37,12 @@ for package in agent core proxy tools; do
 done
 
 # The same binaries without a package manager.
-tar -C "$BIN_DIR" -czf "$OUT/delbert-$VERSION-linux-$ARCH.tar.gz" \
-    delbert-agent delbert-core delbert-proxy delbert-pki delbert-sign
+# The agent's aliases are symlinks, so they are staged with the binaries.
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+cp "$BIN_DIR"/delbert-agent "$BIN_DIR"/delbert-core "$BIN_DIR"/delbert-proxy "$BIN_DIR"/delbert-pki "$BIN_DIR"/delbert-sign "$STAGE/"
+for alias in delbert dg overlook; do ln -s delbert-agent "$STAGE/$alias"; done
+tar -C "$STAGE" -czf "$OUT/delbert-$VERSION-linux-$ARCH.tar.gz" \
+    delbert-agent delbert dg overlook delbert-core delbert-proxy delbert-pki delbert-sign
 
 ls -l "$OUT"

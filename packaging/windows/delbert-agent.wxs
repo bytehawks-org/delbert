@@ -34,12 +34,28 @@
       <Directory Id="INSTALLFOLDER" Name="Delbert">
         <Component Id="AgentExe">
           <File Id="AgentExe" Source="$(var.BinDir)\delbert-agent.exe" KeyPath="yes" />
+          <!-- delbert, dg and overlook can be run from any shell. -->
+          <Environment Id="DelbertPath" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="yes" />
+        </Component>
+        <!-- The same executable under the names of its two families (copies: Windows has no cheap
+             links). The name chooses the commands: delbert and dg change, overlook only looks. -->
+        <Component Id="AliasDelbert">
+          <File Id="AliasDelbert" Name="delbert.exe" Source="$(var.BinDir)\delbert-agent.exe" KeyPath="yes" />
+        </Component>
+        <Component Id="AliasDg">
+          <File Id="AliasDg" Name="dg.exe" Source="$(var.BinDir)\delbert-agent.exe" KeyPath="yes" />
+        </Component>
+        <Component Id="AliasOverlook">
+          <File Id="AliasOverlook" Name="overlook.exe" Source="$(var.BinDir)\delbert-agent.exe" KeyPath="yes" />
         </Component>
       </Directory>
     </StandardDirectory>
 
     <Feature Id="Main" Title="Delbert Agent">
       <ComponentRef Id="AgentExe" />
+      <ComponentRef Id="AliasDelbert" />
+      <ComponentRef Id="AliasDg" />
+      <ComponentRef Id="AliasOverlook" />
     </Feature>
 
     <SetProperty Id="ENROLL_ARGS" Sequence="execute" Before="RollbackService"

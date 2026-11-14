@@ -20,6 +20,17 @@ contents:
   - src: ${BIN_DIR}/delbert-agent
     dst: /usr/bin/delbert-agent
     file_info: { mode: 0755 }
+  # The same executable under the names of its two families: `delbert` and `dg` change,
+  # `overlook` only looks (docs/POLICY.md "The command line").
+  - src: /usr/bin/delbert-agent
+    dst: /usr/bin/delbert
+    type: symlink
+  - src: /usr/bin/delbert-agent
+    dst: /usr/bin/dg
+    type: symlink
+  - src: /usr/bin/delbert-agent
+    dst: /usr/bin/overlook
+    type: symlink
   - src: deploy/systemd/delbert-agent.service
     dst: /usr/lib/systemd/system/delbert-agent.service
   - dst: /etc/delbert

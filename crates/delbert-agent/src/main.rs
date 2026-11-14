@@ -1,8 +1,17 @@
-//! Delbert Agent CLI (early skeleton).
+//! Delbert Agent CLI.
 //!
 //! `check` / `apply` run a policy YAML locally (development and testing only).
 //! `check-signed` / `apply-signed` accept only signed effective policies, which
 //! is how the agent will receive policies from the Core in production.
+//!
+//! One executable, three names (docs/POLICY.md "The command line"):
+//! - `delbert-agent`: every command (what services, containers and scripts use);
+//! - `delbert` and `dg`: the **imperative** commands, the ones that change the host or its
+//!   identity (`apply`, `apply-signed`, `enroll`, `run`, `service`);
+//! - `overlook`: the **analysis** commands (`validate`, `schema`, `check`, `check-signed`).
+//!
+//! The name is read from `argv[0]`, so an alias is a symlink (a copy on Windows). A command that
+//! belongs to the other family is refused with a pointer to it (exit code 64).
 
 use std::{collections::BTreeMap, fs, path::PathBuf, process::ExitCode};
 
@@ -28,10 +37,80 @@ const STATE_DIR: &str = r"C:\ProgramData\Delbert";
 const FACTS_DIR: &str = r"C:\ProgramData\Delbert\facts.d";
 
 #[derive(Parser)]
-#[command(name = "delbert-agent", version, about = "Delbert Agent")]
+#[command(name = "delbert-agent", version, about = "Delbert Agent (aliases: delbert and dg to change, overlook to analyse)")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
+}
+
+/// `delbert` / `dg`: only commands that change something.
+#[derive(Parser)]
+#[command(name = "delbert", version, about = "Delbert: apply a policy, enroll, run the agent (to analyse without changing anything: overlook)")]
+struct ImperativeCli {
+    #[command(subcommand)]
+    command: Imperative,
+}
+
+/// `overlook`: only commands that look.
+#[derive(Parser)]
+#[command(name = "overlook", version, about = "Delbert, look but do not touch: validate and check policies (to change the host: delbert, dg)")]
+struct AnalysisCli {
+    #[command(subcommand)]
+    command: Analysis,
+}
+
+/// Which family of commands this executable was started as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Personality {
+    /// `delbert-agent` (or any other name): everything.
+    Full,
+    /// `delbert` or `dg`.
+    Imperative(&'static str),
+    /// `overlook`.
+    Analysis,
+}
+
+/// The personality of an executable name (file name without directory and `.exe`).
+fn personality_of(exe: &str) -> Personality {
+    match exe.to_ascii_lowercase().as_str() {
+        "delbert" => Personality::Imperative("delbert"),
+        "dg" => Personality::Imperative("dg"),
+        "overlook" => Personality::Analysis,
+        _ => Personality::Full,
+    }
+}
+
+const ANALYSIS_COMMANDS: &[&str] = &["validate", "schema", "check", "check-signed"];
+const IMPERATIVE_COMMANDS: &[&str] = &["apply", "apply-signed", "enroll", "run", "service"];
+
+/// A pointer to the right tool when a command of the other family is typed.
+fn wrong_tool(personality: Personality, command: &str) -> Option<String> {
+    match personality {
+        Personality::Imperative(name) if ANALYSIS_COMMANDS.contains(&command) => Some(format!("'{command}' only looks and never changes anything: use `overlook {command}` ({name} is for commands that change the host)")),
+        Personality::Analysis if IMPERATIVE_COMMANDS.contains(&command) => Some(format!("'{command}' changes the host or its identity: use `delbert {command}` or `dg {command}` (overlook only looks)")),
+        _ => None,
+    }
+}
+
+/// Parse the command line of one of the restricted CLIs under the name it was started with.
+fn parse_as<C: clap::CommandFactory + clap::FromArgMatches>(name: &'static str) -> C {
+    let mut matches = C::command().name(name).bin_name(name).get_matches();
+    C::from_arg_matches_mut(&mut matches).unwrap_or_else(|e| e.format(&mut C::command()).exit())
+}
+
+/// What was asked, whichever name the executable has.
+fn parse_command() -> Command {
+    let exe = std::env::args_os().next().map(PathBuf::from).and_then(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned())).unwrap_or_default();
+    let personality = personality_of(&exe);
+    if let Some(hint) = std::env::args().nth(1).and_then(|first| wrong_tool(personality, &first)) {
+        eprintln!("{hint}");
+        std::process::exit(64);
+    }
+    match personality {
+        Personality::Full => Cli::parse().command,
+        Personality::Imperative(name) => Command::Imperative(parse_as::<ImperativeCli>(name).command),
+        Personality::Analysis => Command::Analysis(parse_as::<AnalysisCli>("overlook").command),
+    }
 }
 
 #[derive(Args)]
@@ -85,18 +164,25 @@ struct SignedArgs {
     host: HostArgs,
 }
 
+/// Commands that only look. (`check` runs the guards of `command` resources, which are programs
+/// of the local allow-list that must not change anything: docs/POLICY.md "Commands".)
 #[derive(Subcommand)]
-enum Command {
+enum Analysis {
     /// Parse and validate a policy YAML file.
     Validate { file: PathBuf },
     /// Print the JSON Schema of the policy format.
     Schema,
     /// Report drift from a policy YAML without changing anything (exit 2 if drift).
     Check(RunArgs),
-    /// Converge the host to a policy YAML, then verify.
-    Apply(RunArgs),
     /// Verify a signed policy, then report drift.
     CheckSigned(SignedArgs),
+}
+
+/// Commands that change the host or its identity.
+#[derive(Subcommand)]
+enum Imperative {
+    /// Converge the host to a policy YAML, then verify.
+    Apply(RunArgs),
     /// Verify a signed policy, then converge.
     ApplySigned(SignedArgs),
     /// Create this host's identity (keys, certificate) with an enrollment key.
@@ -109,6 +195,15 @@ enum Command {
         #[command(subcommand)]
         action: ServiceCmd,
     },
+}
+
+/// Every command, for the `delbert-agent` name.
+#[derive(Subcommand)]
+enum Command {
+    #[command(flatten)]
+    Analysis(Analysis),
+    #[command(flatten)]
+    Imperative(Imperative),
 }
 
 #[cfg(windows)]
@@ -298,7 +393,7 @@ mod service {
         service_dispatcher,
     };
 
-    use super::{Cli, Command, ServiceCmd};
+    use super::{Cli, Command, Imperative, ServiceCmd};
 
     /// A service has no console: the log goes to `<data dir>\logs\agent.log`. One previous
     /// file is kept; the file is rotated at start when it is larger than this.
@@ -376,7 +471,7 @@ mod service {
         }
         let file = fs::OpenOptions::new().create(true).append(true).open(&path)?;
         tracing_subscriber::fmt().with_ansi(false).with_writer(Mutex::new(file)).with_env_filter(super::log_filter()).init();
-        let Command::Run(args) = Cli::try_parse_from(["delbert-agent", "run"])?.command else { unreachable!("parsed `run`") };
+        let Command::Imperative(Imperative::Run(args)) = Cli::try_parse_from(["delbert-agent", "run"])?.command else { unreachable!("parsed `run`") };
         tokio::runtime::Runtime::new()?.block_on(super::daemon(args))
     }
 }
@@ -392,8 +487,8 @@ async fn main() -> anyhow::Result<ExitCode> {
     if console {
         tracing_subscriber::fmt().with_env_filter(log_filter()).init();
     }
-    match Cli::parse().command {
-        Command::Validate { file } => {
+    match parse_command() {
+        Command::Analysis(Analysis::Validate { file }) => {
             let policy = load(&file)?;
             println!(
                 "OK: policy '{}' (tenant '{}'), {} resources",
@@ -402,18 +497,18 @@ async fn main() -> anyhow::Result<ExitCode> {
                 policy.spec.resources.len()
             );
         }
-        Command::Schema => println!("{}", serde_json::to_string_pretty(&delbert_policy::json_schema())?),
-        Command::Check(a) => {
+        Command::Analysis(Analysis::Schema) => println!("{}", serde_json::to_string_pretty(&delbert_policy::json_schema())?),
+        Command::Analysis(Analysis::Check(a)) => {
             let p = load(&a.file)?;
             return Ok(execute(&p.spec.resources, p.spec.vars, a.host, Mode::Check));
         }
-        Command::Apply(a) => {
+        Command::Imperative(Imperative::Apply(a)) => {
             let p = load(&a.file)?;
             return Ok(execute(&p.spec.resources, p.spec.vars, a.host, Mode::Apply));
         }
-        Command::CheckSigned(a) => return execute_signed(a, Mode::Check),
-        Command::ApplySigned(a) => return execute_signed(a, Mode::Apply),
-        Command::Enroll(a) => {
+        Command::Analysis(Analysis::CheckSigned(a)) => return execute_signed(a, Mode::Check),
+        Command::Imperative(Imperative::ApplySigned(a)) => return execute_signed(a, Mode::Apply),
+        Command::Imperative(Imperative::Enroll(a)) => {
             let id = delbert_agent::identity::enroll(delbert_agent::identity::EnrollArgs {
                 core_url: a.core_url,
                 ca_file: a.ca_file,
@@ -424,9 +519,53 @@ async fn main() -> anyhow::Result<ExitCode> {
             .await?;
             println!("enrolled as {}/{}; identity in {}", id.meta.tenant, id.meta.agent, id.dir.display());
         }
-        Command::Run(a) => daemon(a).await?,
+        Command::Imperative(Imperative::Run(a)) => daemon(a).await?,
         #[cfg(windows)]
-        Command::Service { action } => service::command(action).await?,
+        Command::Imperative(Imperative::Service { action }) => service::command(action).await?,
     }
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+
+    use super::*;
+
+    #[test]
+    fn the_cli_definitions_are_consistent() {
+        Cli::command().debug_assert();
+        ImperativeCli::command().debug_assert();
+        AnalysisCli::command().debug_assert();
+    }
+
+    #[test]
+    fn the_name_of_the_executable_chooses_the_commands() {
+        for (exe, want) in [
+            ("delbert-agent", Personality::Full),
+            ("delbert", Personality::Imperative("delbert")),
+            ("DG", Personality::Imperative("dg")),
+            ("overlook", Personality::Analysis),
+            ("something-else", Personality::Full),
+            ("", Personality::Full),
+        ] {
+            assert_eq!(personality_of(exe), want, "{exe}");
+        }
+    }
+
+    #[test]
+    fn every_command_belongs_to_exactly_one_family_and_is_redirected_from_the_other() {
+        let all: Vec<String> = Cli::command().get_subcommands().map(|s| s.get_name().to_string()).collect();
+        let family = |c: clap::Command| c.get_subcommands().map(|s| s.get_name().to_string()).collect::<Vec<_>>();
+        assert_eq!(family(AnalysisCli::command()), ANALYSIS_COMMANDS.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        for name in &all {
+            let (a, i) = (ANALYSIS_COMMANDS.contains(&name.as_str()), IMPERATIVE_COMMANDS.contains(&name.as_str()));
+            // `service` exists on Windows only.
+            assert!(a != i || (cfg!(not(windows)) && name == "service"), "{name} must be in exactly one family");
+        }
+        assert!(wrong_tool(Personality::Analysis, "apply").unwrap().contains("dg apply"));
+        assert!(wrong_tool(Personality::Imperative("dg"), "check").unwrap().contains("overlook check"));
+        assert!(wrong_tool(Personality::Analysis, "check").is_none() && wrong_tool(Personality::Imperative("dg"), "apply").is_none());
+        assert!(wrong_tool(Personality::Full, "apply").is_none() && wrong_tool(Personality::Full, "check").is_none());
+    }
 }

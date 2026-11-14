@@ -72,7 +72,7 @@ While it runs, the enrollment key is on the command line of the install process 
 
 | Where | What |
 |-------|------|
-| `C:\Program Files\Delbert\delbert-agent.exe` | the agent |
+| `C:\Program Files\Delbert\delbert-agent.exe` | the agent; `delbert.exe`, `dg.exe` and `overlook.exe` are copies of it (the name chooses the commands, [POLICY.md](POLICY.md) "The command line") and the folder is added to the system `PATH`; the service always runs `delbert-agent.exe` |
 | `C:\ProgramData\Delbert\identity` | key, certificate, CA, trusted signing keys (kept on upgrade and removal) |
 | `C:\ProgramData\Delbert` | state, cached policy, artifact cache, `facts.d`, `logs` |
 | `HKLM\SYSTEM\CurrentControlSet\Services\DelbertAgent\Environment` | optional settings as a multi-string value, e.g. `DELBERT_INTERVAL_SECS=120`, `RUST_LOG=debug`, `DELBERT_NATS_URL=...`; restart the service after a change |

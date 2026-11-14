@@ -74,7 +74,9 @@ jobs:
           $version = '${{ needs.version.outputs.version }}'
           dotnet tool install --global wix --version 5.0.2
           wix build packaging/windows/delbert-agent.wxs -arch x64 -d Version=$version -d BinDir=target/release -o "dist/delbert-agent-$version-x64.msi"
-          Compress-Archive -Path target/release/delbert-agent.exe, LICENSE -DestinationPath "dist/delbert-agent-$version-windows-x64.zip"
+          # The aliases are copies: the name of the executable chooses the commands.
+          foreach ($alias in 'delbert', 'dg', 'overlook') { Copy-Item target/release/delbert-agent.exe "target/release/$alias.exe" }
+          Compress-Archive -Path target/release/delbert-agent.exe, target/release/delbert.exe, target/release/dg.exe, target/release/overlook.exe, LICENSE -DestinationPath "dist/delbert-agent-$version-windows-x64.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64

@@ -18,7 +18,7 @@ Snapshot for whoever continues the work (updated 2026-11-10). Design lives in [A
 | `delbert-operator` | Kubernetes Operator | `DelbertBinding` CRD, rendering, identity, bundle fetch and reconcile loop ([OPERATOR.md](OPERATOR.md)); verified by hand on K3s 1.31.14 (manifests in `deploy/kubernetes/operator`, image target `operator`); no CI test, no leader election. Target Kubernetes >= 1.31. Design: [ABSTRACT.md](ABSTRACT.md) §5 |
 | `web/` (Next.js) | administration UI, milestones M0-M4 (complete) | backend-for-frontend, see [web/README.md](../web/README.md) |
 
-About 215 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
+About 221 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
 
 ## Run it
 
@@ -43,6 +43,7 @@ Cross-builds without a container (what the packaging uses): `pip install cargo-z
 - NATS is the only broker, mTLS with the Delbert CA, authorization callout, per-agent subjects, signed proofs.
 - Secrets never appear in policies: write-only store sealed with the Core's age key, re-encrypted to each agent.
 - Content (artifacts) lives in an object store, never in PostgreSQL. Policies/artifacts can also come from a repository source, which then owns them (API edits refused).
+- Name: the project stays **Delbert** (Delbert Grady, the Overlook's butler; considered and dropped: Butler, Majordima, Housegauge: Butler is crowded, Housegauge says "measure" for a tool that enforces). The agent's commands are split by family: `delbert`/`dg` change, `overlook` looks.
 - Tenant-scoped RBAC; optional per-tenant four-eyes approval; SSO users are keyed by the provider's `sub` and never linked to a local account by name.
 - Configuration: TOML file under the environment; strict keys; `--check-config`.
 - Migrations are plain SQL run as the schema owner; the Core runs as a least-privilege role. The project is unreleased: migrations were edited/dropped columns in place before (0005, 0012).

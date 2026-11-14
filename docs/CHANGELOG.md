@@ -1,5 +1,13 @@
 # Delbert - Changelog
 
+## 2026-11-14
+
+### Command aliases: `delbert` / `dg` and `overlook`
+- **Name stays Delbert** (a rename to Butler, Majordima or Housegauge was weighed and dropped: [STATUS.md](STATUS.md) decisions).
+- **One executable, three names** ([POLICY.md](POLICY.md) "The command line"): `delbert` and `dg` take the commands that change (`apply`, `apply-signed`, `enroll`, `run`, `service`), `overlook` the ones that only look (`validate`, `schema`, `check`, `check-signed`), `delbert-agent` all of them. A command of the other family is refused with a pointer, exit code 64. Services, container entrypoints and scripts are unchanged.
+- **Where the aliases come from:** symlinks in the deb/rpm packages, the agent image and the `.tar.gz`; copies in the MSI and zip, with the install folder on `PATH`. On Windows the service always runs `delbert-agent.exe`.
+- Tests: 3 unit and 3 integration tests (through real symlinks); the packages' content checked in Debian and Fedora containers with the aliases; the Windows smoke test and the MSI check cover the aliases but have not been run.
+
 ## 2026-11-10
 
 ### `get_url`, `mount`, `command`

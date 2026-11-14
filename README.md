@@ -22,6 +22,15 @@ MVP candidate (v0.1.0, unreleased): feature-complete for Linux, proof steps stil
 
 - Windows (preview, [docs/WINDOWS.md](docs/WINDOWS.md)): the agent builds for Windows with `file`, `copy`, `template`, `line_in_file` on drive paths, `service` on the Service Control Manager, registry facts and a Windows Service mode; compiled, not yet run on a Windows host.
 
+## Command line
+
+The agent is one executable with three names: `delbert` (or `dg`) for the commands that **change** (`apply`, `enroll`, `run`, ...) and `overlook` for the ones that only **look** (`validate`, `check`, `check-signed`, `schema`); `delbert-agent` does both. Named after Delbert Grady, the butler of the Overlook Hotel. [docs/POLICY.md](docs/POLICY.md) "The command line".
+
+```sh
+overlook check policy.yaml     # exit 2 if the host drifted from the policy, changes nothing
+dg apply policy.yaml           # converge it
+```
+
 ## Install
 
 | Environment | How | Details |

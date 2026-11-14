@@ -102,6 +102,10 @@ jobs:
           $p = Start-Process msiexec.exe -ArgumentList '/i', "`"$msi`"", '/qn', '/norestart', '/l*v', 'install.log' -Wait -PassThru
           if ($p.ExitCode -ne 0) { Get-Content install.log -Tail 80; throw "msiexec /i failed: $($p.ExitCode)" }
           & 'C:\Program Files\Delbert\delbert-agent.exe' --version
+          foreach ($alias in 'delbert', 'dg', 'overlook') {
+            if (-not (Test-Path "C:\Program Files\Delbert\$alias.exe")) { throw "$alias.exe is missing" }
+          }
+          & 'C:\Program Files\Delbert\overlook.exe' --version
           if ((Get-Service DelbertAgent).StartType -ne 'Automatic') { throw 'the service is not registered' }
           $p = Start-Process msiexec.exe -ArgumentList '/x', "`"$msi`"", '/qn', '/norestart' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "msiexec /x failed: $($p.ExitCode)" }

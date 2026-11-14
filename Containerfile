@@ -35,6 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/delbert-agent /usr/local/bin/delbert-agent
 COPY --from=build /out/delbert-sign /usr/local/bin/delbert-sign
+# `docker exec <container> overlook check ...` to look, `dg apply ...` to change.
+RUN ln -s delbert-agent /usr/local/bin/delbert && ln -s delbert-agent /usr/local/bin/dg && ln -s delbert-agent /usr/local/bin/overlook
 VOLUME /var/lib/delbert
 ENTRYPOINT ["delbert-agent", "run"]
 

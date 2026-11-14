@@ -97,6 +97,7 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Deferred: sidecar agent with environment PSK; per-pod identity; workload auth via projected ServiceAccount token | to-do | 2026-11-01 |
 | Agent: check/apply for `file`, `copy`, `line_in_file` (local YAML mode) | complete | 2026-10-23 |
 | Agent: `template`, `package` (apt/dnf/zypper/apk), `service` (systemd) | complete | 2026-10-23 |
+| Agent CLI aliases: `delbert`/`dg` (commands that change) and `overlook` (commands that look), one executable chosen by its name; symlinks in deb/rpm, image and tarball, copies in the MSI and zip; verified on Linux (tests, Debian and Fedora containers), compiled for Windows | complete | 2026-11-14 |
 | Agent: `block_in_file`, `user`, `group`, `sysctl`, `cron` (`/etc/cron.d`, argv, local allow-list `DELBERT_CRON_ALLOW`); verified on a real Debian root (shadow tools) | complete | 2026-11-10 |
 | Agent: `get_url` (mandatory SHA-256, no request when the file is already right), `mount` (fstab line + mount/umount/remount), `command` (local allow-list with optional hash pin, argv, mandatory guard and timeout, declared user); run for real: HTTPS download, tmpfs mount, a command as `nobody` and a timeout | complete | 2026-11-10 |
 | `command`: output and exit code of a successful run in the audit trail (needs masking of secrets), kill of the whole process group at timeout, supplementary groups of the user, policy-side hash of the executable | to-do | 2026-11-10 |

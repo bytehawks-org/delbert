@@ -24,6 +24,14 @@ YAML
 cat >"$WORK/checks.sh" <<'CHECKS'
 set -eu
 delbert-agent --version
+# The aliases: one executable, two families of commands.
+test "$(readlink -f /usr/bin/delbert)" = "$(readlink -f /usr/bin/delbert-agent)"
+test "$(readlink -f /usr/bin/dg)" = "$(readlink -f /usr/bin/delbert-agent)"
+test "$(readlink -f /usr/bin/overlook)" = "$(readlink -f /usr/bin/delbert-agent)"
+overlook --help | grep -q check
+# A negated command would not trip `set -e`: test it explicitly.
+if overlook --help | grep -q apply; then echo "overlook must not offer apply" >&2; exit 1; fi
+dg --help | grep -q apply
 delbert-core --print-openapi >/dev/null
 delbert-proxy --help >/dev/null
 delbert-pki --version
@@ -48,8 +56,11 @@ set +a
 delbert-core --config /etc/delbert/core.toml --check-config >/dev/null
 # The agent works on this system (sandbox root: nothing outside /tmp is touched).
 mkdir -p /tmp/root/etc
-delbert-agent apply /t/policy.yaml --root /tmp/root
-delbert-agent check /t/policy.yaml --root /tmp/root
+code=0; overlook check /t/policy.yaml --root /tmp/root || code=$?
+test "$code" -eq 2
+test ! -e /tmp/root/etc/motd
+dg apply /t/policy.yaml --root /tmp/root
+overlook check /t/policy.yaml --root /tmp/root
 echo PACKAGES-OK
 CHECKS
 

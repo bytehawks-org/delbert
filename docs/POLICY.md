@@ -132,6 +132,29 @@ Within a single policy the same rules are already enforced at validation time: t
 - `template`: MiniJinja, rendered on the agent with `vars` (see "Variables" below) and `facts` (see "Facts"). Undefined variables are errors; no loader, no file or command access. Trailing newlines are preserved.
 - System commands are executed as argv vectors (no shell) and are refused when the agent runs with a sandbox `--root`.
 
+## The command line
+
+One executable of the agent, three names. The name it is started with chooses the commands:
+
+| Name | Commands | Meaning |
+|------|----------|---------|
+| `delbert`, `dg` | `apply`, `apply-signed`, `enroll`, `run`, `service` (Windows) | **imperative**: they change the host or its identity |
+| `overlook` | `validate`, `schema`, `check`, `check-signed` | **analysis**: they look, report drift and change nothing |
+| `delbert-agent` | all of the above | the full name: services, containers and scripts keep using it |
+
+```sh
+overlook validate policy.yaml        # does it parse and validate?
+overlook check policy.yaml           # what would change? exit 0 compliant, 2 drift, 1 failure
+dg apply policy.yaml                 # converge (same as: delbert apply policy.yaml)
+overlook check-signed policy.jws --trusted-keys trusted-keys.txt --agent-id web-01 --tenant acme
+```
+
+A command of the other family is refused with a pointer and **exit code 64** (`overlook apply` → "use `delbert apply` or `dg apply`"), so a habit cannot change a host by accident, and a read-only job (monitoring, a pipeline) can be given `overlook` alone. Exit codes: 0 compliant, 1 failure, 2 drift, 3 signed policy rejected, 64 wrong family of command.
+
+"Looking" has one caveat: `check` runs the **guards** of `command` resources (`onlyif`, `unless`), which are programs of the local allow-list that must not change anything (see "Commands"); everything else in `check` only reads (`get_url` compares the hash and downloads nothing, `package` and `service` only query).
+
+The aliases are symlinks to `delbert-agent` (deb/rpm, the container image, the `.tar.gz`) or copies of it (Windows MSI and zip, which also put the install folder on `PATH`). The Core, the proxy and the key tools keep their own names (`delbert-core`, `delbert-proxy`, `delbert-pki`, `delbert-sign`). Checking `dg` and `overlook` against distribution packages was not conclusive: on a host that already has a command of that name the symlink will collide; call `delbert-agent` there.
+
 ## Lines and blocks
 
 ```yaml
