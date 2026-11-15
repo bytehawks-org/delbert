@@ -12,23 +12,32 @@ fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
 }
 
-async fn enroll(c: &Client) -> (Vec<u8>, Vec<String>) {
+/// Enroll a TOTP factor. Also returns the instant whose code confirmed it, so a test can replay
+/// exactly that code: asking for "the code of now" a second time is a different code whenever a
+/// 30-second step ends in between (seen in CI).
+async fn enroll_at(c: &Client) -> (Vec<u8>, Vec<String>, i64) {
     let (s, e) = c.call("POST", "/v1/me/mfa/enroll", None).await;
     assert_eq!(s, S::OK, "{e}");
     let secret = data_encoding::BASE32_NOPAD.decode(e["secret"].as_str().unwrap().as_bytes()).unwrap();
     assert!(e["otpauth_uri"].as_str().unwrap().starts_with("otpauth://totp/Delbert:"));
     assert_eq!(c.call("POST", "/v1/me/mfa/confirm", Some(json!({ "code": "000000" }))).await.0, S::UNAUTHORIZED);
-    let (s, r) = c.call("POST", "/v1/me/mfa/confirm", Some(json!({ "code": totp::generate(&secret, now()) }))).await;
+    let confirmed_at = now();
+    let (s, r) = c.call("POST", "/v1/me/mfa/confirm", Some(json!({ "code": totp::generate(&secret, confirmed_at) }))).await;
     assert_eq!(s, S::OK, "{r}");
     let codes = r["recovery_codes"].as_array().unwrap().iter().map(|c| c.as_str().unwrap().to_owned()).collect::<Vec<_>>();
     assert_eq!(codes.len(), 10);
+    (secret, codes, confirmed_at)
+}
+
+async fn enroll(c: &Client) -> (Vec<u8>, Vec<String>) {
+    let (secret, codes, _) = enroll_at(c).await;
     (secret, codes)
 }
 
 #[sqlx::test]
 async fn mfa_totp_recovery_and_reset(pool: PgPool) {
     let admin = admin_client(state(pool, vec![Strategy::Error], None)).await;
-    let (secret, codes) = enroll(&admin).await;
+    let (secret, codes, confirmed_at) = enroll_at(&admin).await;
     assert_eq!(admin.call("POST", "/v1/me/mfa/enroll", None).await.0, S::CONFLICT);
     assert_eq!(admin.call("GET", "/v1/me", None).await.1["mfa_enabled"], true);
 
@@ -40,8 +49,8 @@ async fn mfa_totp_recovery_and_reset(pool: PgPool) {
     assert_eq!(admin.call("POST", "/v1/auth/mfa", Some(json!({ "code": "123456" }))).await.0, S::CONFLICT); // a full session has nothing pending
     assert_eq!(pending.call("POST", "/v1/auth/mfa", Some(json!({ "code": "000000" }))).await.0, S::UNAUTHORIZED);
     // The code of the confirmation step cannot be replayed; the next step's code works.
-    assert_eq!(pending.call("POST", "/v1/auth/mfa", Some(json!({ "code": totp::generate(&secret, now()) }))).await.0, S::UNAUTHORIZED);
-    assert_eq!(pending.call("POST", "/v1/auth/mfa", Some(json!({ "code": totp::generate(&secret, now() + 30) }))).await.0, S::OK);
+    assert_eq!(pending.call("POST", "/v1/auth/mfa", Some(json!({ "code": totp::generate(&secret, confirmed_at) }))).await.0, S::UNAUTHORIZED);
+    assert_eq!(pending.call("POST", "/v1/auth/mfa", Some(json!({ "code": totp::generate(&secret, confirmed_at + 30) }))).await.0, S::OK);
     assert_eq!(pending.call("GET", "/v1/tenants", None).await.0, S::OK);
 
     // Recovery codes work once.
