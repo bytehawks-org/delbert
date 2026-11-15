@@ -106,7 +106,14 @@ pub fn exec_on_host(request: &ExecRequest) -> Result<CmdOutput> {
             // outlive it. Signalling a group has no safe API in the standard library, so the
             // system's `kill` does it; the direct kill below covers a host without one.
             #[cfg(unix)]
-            let _ = Command::new("kill").args(["-KILL", "--", &format!("-{}", child.id())]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+            {
+                let group = format!("-{}", child.id());
+                let signal = |args: &[&str]| Command::new("kill").args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success());
+                // procps needs "--" before a negative id, busybox refuses it: try both spellings.
+                if !signal(&["-KILL", "--", &group]) {
+                    signal(&["-KILL", &group]);
+                }
+            }
             let _ = child.kill();
             let _ = child.wait();
             // Its output is not waited for: a grandchild may still hold the pipes open.
