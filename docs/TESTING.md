@@ -240,3 +240,7 @@ The jobs added with the installers went to `main` without anybody seeing a run. 
 | `packaging`: Helm | green once reached | nothing: `helm lint` and both `helm template` variants |
 | `packaging`: container installer | failed | the runner has Podman installed and Docker running: the installer now picks an engine whose compose really answers, and has `--engine` |
 | `kubernetes` | green at the first run | nothing |
+
+## Enrollment with the CA fingerprint
+
+Run on 2026-11-15 against the container install (Docker): `delbert-pki --dir /keys fingerprint` in the keys volume printed the SHA-256; `GET /v1/ca` answered without credentials; in a `debian:13-slim` container that never had `ca.pem`, `delbert-agent enroll --core-url ... --psk ... --ca-sha256 <64 times a>` ended with `the server's CA certificate does not have the pinned fingerprint: refusing` and `--ca-sha256 <the fingerprint>` with `enrolled as acme/pin-01`; the agent was then listed by the Core. Not run: through a proxy, during a CA rotation (two certificates in the bundle), from the MSI.
