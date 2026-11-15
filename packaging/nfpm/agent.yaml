@@ -1,7 +1,7 @@
-# nfpm definition of the delbert-agent package (deb and rpm). Built by the release workflow:
-#   VERSION=0.1.0 ARCH=amd64 BIN_DIR=target/x86_64-unknown-linux-musl/release \
-#     nfpm package --config packaging/nfpm/agent.yaml --packager deb --target dist/
-# The binaries are static (musl), so one package serves every distribution of that architecture.
+# nfpm definition of the delbert-agent package (deb and rpm). Built by
+#   packaging/build-packages.sh <version> <rust target> [output directory]
+# which fills in the four placeholders (VERSION, ARCH, BIN_DIR, MAINTAINER) before nfpm reads
+# the file. The binaries are static (musl): one package serves every distribution of the architecture.
 name: delbert-agent
 arch: ${ARCH}
 platform: linux

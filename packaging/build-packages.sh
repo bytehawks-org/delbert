@@ -30,11 +30,21 @@ export VERSION ARCH
 export BIN_DIR="target/$TARGET/release"
 export MAINTAINER="${MAINTAINER:-Delbert maintainers <delbert@example.com>}"
 
+# nfpm expands environment variables in some fields only (not in `contents.src`), so the four
+# placeholders are filled in here and nfpm reads a plain file.
+RENDERED="$(mktemp -d)"
 for package in agent core proxy tools; do
+    sed -e "s|\${VERSION}|$VERSION|g" -e "s|\${ARCH}|$ARCH|g" -e "s|\${BIN_DIR}|$BIN_DIR|g" -e "s|\${MAINTAINER}|$MAINTAINER|g" \
+        "packaging/nfpm/$package.yaml" >"$RENDERED/$package.yaml"
+    if grep -q '\${' "$RENDERED/$package.yaml"; then
+        echo "unfilled placeholder in packaging/nfpm/$package.yaml" >&2
+        exit 1
+    fi
     for format in deb rpm; do
-        nfpm package --config "packaging/nfpm/$package.yaml" --packager "$format" --target "$OUT/"
+        nfpm package --config "$RENDERED/$package.yaml" --packager "$format" --target "$OUT/"
     done
 done
+rm -rf "$RENDERED"
 
 # The same binaries without a package manager.
 # The agent's aliases are symlinks, so they are staged with the binaries.
