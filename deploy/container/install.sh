@@ -10,6 +10,7 @@
 #   --registry REG    image registry (default: ghcr.io/bytehawks-org)
 #   --no-web          do not start the administration UI
 #   --no-pull         use the images already present on this host
+#   --engine NAME     podman or docker (default: the first of the two that works here)
 #
 # The first run writes `.env` with random passwords and starts the stack; the keys are created
 # in the `keys` volume. Later runs keep `.env` and the keys: use them to upgrade (--version).
@@ -23,6 +24,7 @@ VERSION=""
 REGISTRY=""
 WEB=1
 PULL=1
+ENGINE="${DELBERT_ENGINE:-}"
 
 die() {
     echo "install: $*" >&2
@@ -36,17 +38,23 @@ while [ $# -gt 0 ]; do
         --registry) REGISTRY="$2"; shift 2 ;;
         --no-web) WEB=0; shift ;;
         --no-pull) PULL=0; shift ;;
-        -h | --help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --engine) ENGINE="$2"; shift 2 ;;
+        -h | --help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "unknown option $1" ;;
     esac
 done
 
-if command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
+# An engine is usable when its compose can talk to it (`compose ls` needs the daemon or socket):
+# a host may have both installed and only one running.
+usable() { command -v "$1" >/dev/null 2>&1 && "$1" compose ls >/dev/null 2>&1; }
+if [ -n "$ENGINE" ]; then
+    usable "$ENGINE" || die "'$ENGINE compose' does not work on this host"
+elif usable podman; then
     ENGINE=podman
-elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+elif usable docker; then
     ENGINE=docker
 else
-    die "podman (with a compose provider) or docker (with the compose plugin) is required"
+    die "podman (with a compose provider) or docker (with the compose plugin) is required, and must be running"
 fi
 compose() { "$ENGINE" compose "$@"; }
 

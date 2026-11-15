@@ -149,5 +149,41 @@ jobs:
           printf '%s\n' 'FROM debian:13-slim AS core' 'RUN useradd --system --uid 10001 --no-create-home delbert && mkdir -p /var/lib/delbert-core/artifacts /var/lib/delbert-core/content && chown -R 10001 /var/lib/delbert-core' 'COPY delbert-core /usr/local/bin/' 'ENV DELBERT_ARTIFACT_DIR=/var/lib/delbert-core/artifacts DELBERT_CONTENT_DIR=/var/lib/delbert-core/content' 'USER 10001' 'ENTRYPOINT ["delbert-core"]' 'FROM debian:13-slim AS tools' 'COPY delbert-pki /usr/local/bin/' 'RUN mkdir /keys && chown 10001:10001 /keys' > img/Dockerfile
           docker build -q --target core -t localhost/delbert-core:ci img
           docker build -q --target tools -t localhost/delbert-tools:ci img
-          deploy/container/install.sh --host delbert.example.com --registry localhost --version ci --no-web --no-pull
+          deploy/container/install.sh --host delbert.example.com --registry localhost --version ci --no-web --no-pull --engine docker
           curl -fsS --cacert deploy/container/ca.pem --resolve delbert.example.com:8443:127.0.0.1 https://delbert.example.com:8443/healthz
+
+  # The Helm chart on a real single-node K3s: install, API through the LoadBalancer Service, an
+  # agent enrolled from outside the cluster, upgrade (deploy/helm/test-on-k3s.sh; docs/TESTING.md).
+  kubernetes:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Static binaries
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet cargo-zigbuild ziglang
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          export PATH="$RUNNER_TEMP/venv/bin:$PATH"
+          rustup target add x86_64-unknown-linux-musl
+          cargo zigbuild --release --locked --target x86_64-unknown-linux-musl -p delbert-core -p delbert-agent -p delbert-pki
+      - name: K3s
+        run: |
+          curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.31.14+k3s1 sh -s - --disable traefik --write-kubeconfig-mode 644
+          echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> "$GITHUB_ENV"
+          # The LoadBalancer Services of K3s answer on the node's address.
+          echo "$(hostname -I | awk '{print $1}') delbert.example.com nats.example.com" | sudo tee -a /etc/hosts
+          for _ in $(seq 60); do sudo k3s kubectl get nodes 2>/dev/null | grep -q ' Ready' && break; sleep 2; done
+          sudo k3s kubectl get nodes
+      - name: Images into the cluster
+        run: |
+          set -eu
+          bin=target/x86_64-unknown-linux-musl/release
+          # The Core as a thin image from the static binary; the web UI is the real image.
+          mkdir img && cp "$bin/delbert-core" img/
+          printf '%s\n' 'FROM debian:13-slim' 'RUN useradd --system --uid 10001 --no-create-home delbert && mkdir -p /var/lib/delbert-core/artifacts /var/lib/delbert-core/content && chown -R 10001 /var/lib/delbert-core' 'COPY delbert-core /usr/local/bin/' 'USER 10001' 'ENTRYPOINT ["delbert-core"]' > img/Dockerfile
+          docker build -q -t localhost/delbert-core:ci img
+          docker build -q --target web -t localhost/delbert-web:ci -f Containerfile .
+          docker save localhost/delbert-core:ci localhost/delbert-web:ci | sudo k3s ctr images import -
+      - name: Install the chart, enroll an agent, upgrade
+        run: deploy/helm/test-on-k3s.sh localhost ci target/x86_64-unknown-linux-musl/release/delbert-pki target/x86_64-unknown-linux-musl/release/delbert-agent
