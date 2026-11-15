@@ -88,7 +88,10 @@ fi
 if [ "$KIND" = deb ]; then
     dpkg -i "$PACKAGE"
 else
-    rpm -U --replacepkgs "$PACKAGE"
+    # The packages are not signed yet, and recent rpm refuses an unsigned package by default.
+    # A downloaded package was checked against SHA256SUMS above; one given with --package is
+    # trusted by whoever passed it.
+    rpm -U --replacepkgs --nosignature "$PACKAGE"
 fi
 
 if [ -z "$PSK" ]; then

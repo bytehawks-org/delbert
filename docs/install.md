@@ -124,8 +124,8 @@ Upgrade: `helm upgrade delbert oci://... --version <new> -n delbert --reuse-valu
 `delbert-core`, `delbert-tools`, `delbert-agent` and `delbert-proxy` are published as `.deb` and `.rpm` for amd64 and arm64. The binaries are static (musl), so the same package installs on any distribution of that architecture; systemd is expected. PostgreSQL 17 and `nats-server` (2.10+) come from your distribution or their vendors. The web UI is a container image only.
 
 ```sh
-# Debian / Ubuntu                                        # RHEL / Fedora / SUSE
-sudo dpkg -i delbert-tools_*.deb delbert-core_*.deb      # sudo rpm -i delbert-tools-*.rpm delbert-core-*.rpm
+# Debian / Ubuntu                                        # RHEL / Fedora / SUSE (unsigned packages: see below)
+sudo dpkg -i delbert-tools_*.deb delbert-core_*.deb      # sudo rpm -i --nosignature delbert-tools-*.rpm delbert-core-*.rpm
 
 # 1. keys (readable by the service account only)
 sudo delbert-pki --dir /etc/delbert/keys bootstrap --core-dns delbert.example.com --nats-dns delbert.example.com
@@ -138,6 +138,8 @@ sudoedit /etc/delbert/core.toml /etc/delbert/core.env
 sudo -u delbert sh -c 'set -a; . /etc/delbert/core.env; delbert-core --config /etc/delbert/core.toml --check-config'
 sudo systemctl enable --now delbert-core
 ```
+
+The packages are **not signed yet**: recent `rpm` (Fedora 43 and later) refuses them with "does not verify: no signature" unless `--nosignature` is given (`dnf install --nogpgcheck` likewise). Check the file against `SHA256SUMS` of the release first; `install-agent.sh` does both.
 
 The package creates the system user `delbert`, `/etc/delbert/keys` (0750 root:delbert), `/var/lib/delbert-core` and a hardened unit (`delbert-core.service`: no privileges, read-only system). The NATS server's user must be able to read `nats.pem`, `nats.key` and `ca.pem` (copy them to its own directory or add it to a group that can). Upgrades (`dpkg -i` / `rpm -U`) restart a running service and never replace `core.toml` / `core.env`. Removing the package stops and disables the service and keeps keys and data.
 
@@ -181,7 +183,7 @@ sudo sh install-agent.sh --core-url https://delbert.example.com:8443 --ca-file c
 [`install-agent.sh`](../packaging/install-agent.sh) is published with each release; `--package <file>` installs a package you already have (air-gapped hosts), `--version` pins a release. It removes the enrollment key from `/etc/delbert/agent.env` once the agent is enrolled. The same by hand:
 
 ```sh
-sudo dpkg -i delbert-agent_*.deb                 # or: sudo rpm -i delbert-agent-*.rpm
+sudo dpkg -i delbert-agent_*.deb                 # or: sudo rpm -i --nosignature delbert-agent-*.rpm
 sudo install -m 0644 ca.pem /etc/delbert/ca.pem
 sudoedit /etc/delbert/agent.env                  # URL, agent name, enrollment key (file is 0600)
 sudo systemctl enable --now delbert-agent

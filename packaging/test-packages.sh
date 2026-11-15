@@ -72,6 +72,7 @@ echo "== debian:13 (deb)"
 
 echo "== fedora (rpm)"
 "$ENGINE" run --rm -v "$DIST":/dist:ro -v "$WORK":/t:ro docker.io/library/fedora:latest sh -ec '
-    rpm -i /dist/delbert-tools-*.x86_64.rpm /dist/delbert-agent-*.x86_64.rpm /dist/delbert-core-*.x86_64.rpm /dist/delbert-proxy-*.x86_64.rpm
+    # The packages are not signed yet: recent rpm (Fedora 43) refuses them without this.
+    rpm -i --nosignature /dist/delbert-tools-*.x86_64.rpm /dist/delbert-agent-*.x86_64.rpm /dist/delbert-core-*.x86_64.rpm /dist/delbert-proxy-*.x86_64.rpm
     sh /t/checks.sh
     rpm -e delbert-agent delbert-proxy delbert-core delbert-tools'
