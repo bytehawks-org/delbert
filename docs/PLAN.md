@@ -21,7 +21,7 @@ Nothing else should start before this: every later phase builds on installers an
 |---|------|------|-------|-----------|
 | 0.1 | CI green on `main`: `rust`, `web`, `images`, `windows`, `packaging` | S-M | the logs of the first run (the jobs were written blind; expect fixes in the WiX file, the PowerShell smoke test and the Helm templates) | five green jobs |
 | 0.2 | **Done 2026-11-15** ([TESTING.md](TESTING.md)). Backup and restore drill on the container install, following [install.md](install.md) to the letter | S | Docker | restored stack passes `GET /v1/audit/verify`, an agent reconnects; findings fixed in the doc |
-| 0.3 | Agent on a real systemd host from the `.deb` and the `.rpm`: `install-agent.sh`, `service`, a remediation with rollback | M | a VM (Debian or Ubuntu, and one RHEL-like) | TESTING.md records the run; the two "scripted systemctl only" rows close |
+| 0.3 | **Done 2026-11-15 for Debian** ([TESTING.md](TESTING.md)): systemd 257 in a privileged container, a hand-built `.deb`; found and fixed a bug that blocked every rollback. Still open: the same on an RPM host and with the package nfpm builds | M | a RHEL-like host | TESTING.md records the run |
 | 0.4 | Helm chart on a real K3s: install, upgrade, an agent enrolled from outside the cluster | M | a K3s cluster and DNS names | TESTING.md records it; the plain manifests of the control plane are deleted |
 | 0.5 | Tag `v0.1.0`; check each artifact (images and signatures, chart, packages, MSI, `SHA256SUMS`, `install-agent.sh` download path) | S-M | 0.1 to 0.4; repository variable `PACKAGE_MAINTAINER` | a host installed from the published artifacts only |
 

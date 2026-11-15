@@ -229,10 +229,9 @@ impl Agent<'_> {
     /// the content-addressed cache.
     async fn prepare_lkg(&self) -> Option<(EffectivePolicy, Ctx)> {
         let token = fs::read_to_string(self.cfg.state_dir.join("policy.lkg.jws")).ok()?;
-        let issued_at = {
-            let payload = token.trim().split('.').nth(1)?;
-            let bytes = B64.decode(payload).ok()?;
-            serde_json::from_slice::<Value>(&bytes).ok()?["issued_at"].as_i64()?
+        let Some(issued_at) = delbert_wire::jws::token_issued_at(&token) else {
+            tracing::error!("the last known good policy cannot be read: no rollback is possible");
+            return None;
         };
         let keys = fs::read_to_string(self.cfg.identity.trusted_keys()).ok()?;
         let verifier = Verifier::from_trusted_keys(&keys).ok()?;

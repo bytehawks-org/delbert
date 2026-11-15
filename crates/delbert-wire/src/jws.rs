@@ -63,6 +63,15 @@ pub fn token_kid(token: &str) -> Option<String> {
     v["kid"].as_str().map(str::to_owned)
 }
 
+/// The `issued_at` claim of a token, read **before** verification and only to choose the instant
+/// a verification is judged at (the agent's last known good policy is checked as of its own issue
+/// time). Never trust it for anything else: verify the token.
+pub fn token_issued_at(token: &str) -> Option<i64> {
+    let payload = token.trim().split('.').nth(1)?;
+    let v: Value = serde_json::from_slice(&B64.decode(payload).ok()?).ok()?;
+    v["issued_at"].as_i64()
+}
+
 pub struct Signer {
     key: SigningKey,
     kid: String,
@@ -310,5 +319,20 @@ mod tests {
         // An update inside a policy signed by an untrusted key never gets that far: the signature fails first.
         let rogue = Signer::new(SigningKey::generate(&mut OsRng), "k2");
         assert!(matches!(check(&file, &rogue.sign(&announce).unwrap()), Err(VerifyError::Signature)));
+    }
+    #[test]
+    fn issue_time_can_be_read_from_any_token_before_verifying_it() {
+        let signer = Signer::new(SigningKey::generate(&mut OsRng), "k1");
+        // Different contents give payloads of every length modulo 4 and with '-' and '_' in
+        // them: the encoding is base64url without padding, not the standard alphabet.
+        for (i, name) in ["p", "pp", "ppp", "p\u{3ff}~\u{3fe}?"].into_iter().enumerate() {
+            let mut p = policy();
+            p.name = name.into();
+            p.issued_at = 1_794_722_890 + i as i64;
+            let token = signer.sign(&p).unwrap();
+            assert_eq!(token_issued_at(&token), Some(p.issued_at), "{name}");
+        }
+        assert_eq!(token_issued_at("not a token"), None);
+        assert_eq!(token_issued_at("a.b.c"), None);
     }
 }

@@ -58,7 +58,8 @@ On a `service` resource (typically the restart **handler**: `restarted`/`reloade
 - Only `service` resources; the verification is "active, stable, optionally a local port": no HTTP probe and no command probe (a `command` resource stays disabled by default).
 - Rolling back re-applies the LKG, it does not undo what the update did outside the policy (data, package installations): declare `rollback` only where that is acceptable.
 - The LKG ignores its own expiry for this purpose (it already ran on this host): a deliberate trade-off.
-- **Verified with a scripted `systemctl` (unit tests) and the Core API against PostgreSQL/NATS; not on a real systemd host.** The sequence of commands (`show --property=ActiveState`, `stop --no-block`, `kill --signal=SIGKILL`, `start --no-block`) needs a run on one.
+- **Verified on a real systemd 257** (2026-11-15, [TESTING.md](TESTING.md) "The agent on a real systemd"): a failed update rolled back to the last known good policy, the service came back, the Core showed the agent as inconsistent. That run found and fixed a bug that made every rollback impossible (the stored policy could not be read). Not run: `kill --signal=SIGKILL` on a service that will not stop, `on_failure: stop`, a forced release.
+- A service that systemd reports as started and that dies a moment later (`Type=simple`) is only caught by `remediation.verify`: without it a `service: started` resource is "changed" at every cycle, never failed.
 - Kubernetes: the Operator has no LKG; a rollout that misses its deadline should re-apply the previous bundle (see [OPERATOR.md](OPERATOR.md)), not done.
 
 Status of each part: [ROADMAP.md](ROADMAP.md).

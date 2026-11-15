@@ -205,3 +205,20 @@ Run on 2026-11-15 with Docker 29 on the container install (thin images from the 
 5. Seen: `{"events":12,"first_bad":null}` (the new login is the twelfth), the same CA, the policy listed, the agent reconnected by itself and reported compliant; the runtime role still has SELECT and INSERT but neither UPDATE nor DELETE on `audit_events`; after deleting the agent's artifact cache and the rendered file, the file came back (the artifact was downloaded from the restored store).
 
 What the drill changed: the restore steps did not say that the keys must be back **before** the first start (an empty keys volume makes the one-shot service create a new CA); the order and the exact commands are now documented. Not covered: Kubernetes and package installs, S3 artifacts, content directories with data, a restore on a different host name.
+
+## The agent on a real systemd
+
+Run on 2026-11-15: systemd 257 as PID 1 in a privileged `debian:13-slim` container (`--privileged --cgroupns=host`, `/lib/systemd/systemd` as the command), joined to the network of the container install. It is a real systemd, not a virtual machine: no kernel of its own, no boot. The agent package was a `.deb` built with `dpkg-deb` from the same files, modes and maintainer scripts as `packaging/nfpm/agent.yaml` (nfpm builds the published one in CI). A test unit `demo.service` runs a script that exits 1 when `/etc/demo.conf` says `mode=bad`.
+
+| Step | Seen |
+|------|------|
+| `install-agent.sh --package ... --core-url ... --psk ...` | package installed, unit enabled and started, agent enrolled; the key removed from `/etc/delbert/agent.env` (0600 root); `/var/lib/delbert` 0700 |
+| Policy v1: `copy` of the configuration, `service: { name: demo, state: started, enabled: true }`, a restart handler with `remediation` | `demo` active and enabled, agent compliant |
+| `systemctl disable --now demo` by hand | started and enabled again at the next cycle |
+| `dpkg -i` of a newer package | service restarted by the upgrade, `agent.env` kept |
+| Policy v4 with `mode=bad`, `on_failure: rollback` | `demo stopped being active 1 s after it came up` → `RolledBack: demo: already stopped; re-applied the last known good policy v3 (3 resources changed); demo: started and verified`; configuration back to `mode=good`; the Core shows `remediation.state: rolled_back`, `failed_version: 4`, `running_version: 3`, `compliant: false`; audit event `agent.policy.rolled_back`; the quarantine held in the following cycles |
+| `dpkg -r delbert-agent` | service stopped and disabled; identity and `agent.env` kept |
+
+**What the run found.** The first attempt ended with `rollback requested but there is no last known good policy`: the agent read the issue time of the stored policy with the standard base64 alphabet, while a token is base64url without padding, so the last known good policy was never usable and a rollback could not happen on any host. Fixed (`delbert_wire::jws::token_issued_at`, with a test on real signed tokens). The unit tests had only exercised the remediation with a policy handed to it.
+
+Also seen, and left as it is: a `Type=simple` service that dies right after `systemctl start` is reported as started by systemd, so a `service: started` resource without `remediation.verify` shows "changed" at every cycle instead of a failure. Not run: an RPM host, `kill: after_timeout` on a service that will not stop, `stop` without rollback, a forced release.

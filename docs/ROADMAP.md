@@ -45,7 +45,7 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Secrets: external KMS/Vault (superseded by the external key and secret providers rows below) | to-do | 2026-10-23 |
 | Artifacts: Core store, SHA-256 pinning, verified download by agents | complete | 2026-10-23 |
 | Artifacts: retention and garbage collection (S3 store itself is done, see below) | to-do | 2026-10-23 |
-| Service verb: test on a systemd host (container run covers everything else) | to-do | 2026-10-23 |
+| Service verb: test on a systemd host (systemd 257, [TESTING.md](TESTING.md)) | complete | 2026-11-15 |
 | Containers: end-to-end run in Podman (Core + 2 agents) | complete | 2026-10-23 |
 | Conflict handling: design (strategies, resource keys, resolution records) | complete | 2026-10-23 |
 | PKI backend: rcgen in use; CA behind the `CertificateAuthority` trait with a conformance suite and `DELBERT_CA_BACKEND` | complete | 2026-10-24 |
@@ -87,7 +87,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Orphaned files removed when a version drops them, `keep_if_absent_in_policy`, after a clean cycle ([REMEDIATION.md](REMEDIATION.md)) | complete | 2026-11-01 |
 | Orphans: console preview of the paths a save would remove; offline CLI; `line_in_file` lines | to-do | 2026-11-01 |
 | Remediation: `verify` / `on_failure` / `stop` / `start` per service, atomic whole-policy rollback to the last known good, quarantine, inconsistent state in the Core, forced release (`agents:remediate`), audit events ([REMEDIATION.md](REMEDIATION.md)) | complete | 2026-11-01 |
-| Remediation: run on a real systemd host; Windows services and Podman containers; HTTP probe; console page to see and force an inconsistent agent | to-do | 2026-11-01 |
+| Remediation: run on a real systemd host (done 2026-11-15; it found that no rollback could ever start, fixed) | complete | 2026-11-15 |
+| Remediation: Windows services and Podman containers; HTTP probe; console page to see and force an inconsistent agent; `kill` and forced release on a real host | to-do | 2026-11-15 |
 | Repository layout: policies/files/templates/variables per tenant, group and host; folder-implied target; `target.agents`; variables from a repository; template repository ([REPOSITORY.md](REPOSITORY.md)) | complete | 2026-11-01 |
 | Online editor: Monaco in the console, validation as you type, commit to a new branch, `writable` sources, `content:edit` | complete | 2026-11-01 |
 | Repository: files and templates per group and host (layering by name, host > group > tenant > shared, with a preview) | to-do | 2026-11-01 |

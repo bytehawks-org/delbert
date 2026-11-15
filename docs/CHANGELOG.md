@@ -1,5 +1,14 @@
 # Delbert - Changelog
 
+## 2026-11-15
+
+### Phase 0 of the plan: proving what exists
+- **Fixed: a rollback could never start.** The agent read the issue time of its last known good policy with the standard base64 alphabet (a token is base64url without padding), so the policy was "not there" and `on_failure: rollback` was always skipped. Found by the first run on a real systemd; `delbert_wire::jws::token_issued_at` with a test on signed tokens.
+- **CI:** the `windows` job passed at its first run (unit tests, smoke test, MSI installed and removed on Windows Server 2022). The `packaging` job failed because nfpm does not expand variables in `contents.src`: the build script now fills the placeholders itself.
+- **Backup and restore drill** on the container install: passed; the restore steps in [install.md](install.md) are now exact commands (keys before the first start).
+- **Agent on a real systemd 257:** `install-agent.sh`, `service`, drift repair, package upgrade and removal, remediation with rollback ([TESTING.md](TESTING.md)).
+- [PLAN.md](PLAN.md): the order in which the open items get done.
+
 ## 2026-11-14
 
 ### Command aliases: `delbert` / `dg` and `overlook`
