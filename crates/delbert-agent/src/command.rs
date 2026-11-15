@@ -10,7 +10,7 @@
 //!   one): the command runs only while the guard says it must, and after a successful run the
 //!   guard must say it need not, or the resource fails ("not converged");
 //! - **declared user, mandatory timeout, closed environment:** the program runs as `user`, is
-//!   killed at `timeout_seconds`, and sees only `PATH`, `HOME`, `USER`, `LOGNAME`, `LC_ALL=C` and
+//!   killed at `timeout_seconds` together with everything it started (its process group), and sees only `PATH`, `HOME`, `USER`, `LOGNAME`, `LC_ALL=C` and
 //!   the policy's `env`.
 //!
 //! What reaches the Core: that the command ran (a `resource.changed` event with its subject and

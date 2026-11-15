@@ -81,10 +81,14 @@ pub fn exec_on_host(request: &ExecRequest) -> Result<CmdOutput> {
     let mut command = Command::new(program);
     command.args(args).env_clear().envs(request.env.iter().cloned()).current_dir(&request.cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(unix)]
-    if let Some((uid, gid)) = request.user {
+    {
         use std::os::unix::process::CommandExt;
-        // With a uid set, the standard library also drops the supplementary groups of the agent.
-        command.uid(uid).gid(gid);
+        // Its own process group, so that a timeout can end everything it started.
+        command.process_group(0);
+        if let Some((uid, gid)) = request.user {
+            // With a uid set, the standard library also drops the supplementary groups of the agent.
+            command.uid(uid).gid(gid);
+        }
     }
     #[cfg(not(unix))]
     if request.user.is_some() {
@@ -98,6 +102,11 @@ pub fn exec_on_host(request: &ExecRequest) -> Result<CmdOutput> {
             break status;
         }
         if Instant::now() >= deadline {
+            // The whole process group (the program is its leader): children it started must not
+            // outlive it. Signalling a group has no safe API in the standard library, so the
+            // system's `kill` does it; the direct kill below covers a host without one.
+            #[cfg(unix)]
+            let _ = Command::new("kill").args(["-KILL", "--", &format!("-{}", child.id())]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
             let _ = child.kill();
             let _ = child.wait();
             // Its output is not waited for: a grandchild may still hold the pipes open.
@@ -236,6 +245,27 @@ mod tests {
         let err = exec_on_host(&request(&["/bin/sleep", "30"], 1)).unwrap_err();
         assert!(err.to_string().contains("timed out after 1s"), "{err}");
         assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn a_timeout_also_ends_what_the_program_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = dir.path().join("grandchild.pid");
+        // The program starts a background child, records its pid and waits for it.
+        let script = format!("sleep 60 & echo $! > {}; wait", pid_file.display());
+        let err = exec_on_host(&request(&["/bin/sh", "-c", &script], 1)).unwrap_err();
+        assert!(err.to_string().contains("timed out"), "{err}");
+        let pid = std::fs::read_to_string(&pid_file).unwrap().trim().to_string();
+        // Gone, or a zombie waiting to be reaped by init: in both cases it no longer runs.
+        let state = (0..50).find_map(|_| {
+            std::thread::sleep(Duration::from_millis(100));
+            match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+                Err(_) => Some("gone".to_string()),
+                Ok(stat) if stat.rsplit(')').next().is_some_and(|rest| rest.trim_start().starts_with('Z')) => Some("zombie".to_string()),
+                Ok(_) => None,
+            }
+        });
+        assert!(state.is_some(), "the grandchild {pid} is still running");
     }
 
     #[test]
