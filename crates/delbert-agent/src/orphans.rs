@@ -11,7 +11,8 @@
 //!   e.g. its `when` was false, is not recorded);
 //! - nothing is removed in a cycle with a failed resource: the old record is kept and the next clean
 //!   cycle removes;
-//! - a directory is removed only if empty, and `line_in_file` lines are never removed;
+//! - a directory is removed only if empty; lines, blocks and mounts are never removed (declare
+//!   `state: absent`);
 //! - a path still declared by any resource (even under another id, or with a `when` that is false on
 //!   this host) is not an orphan.
 
@@ -38,21 +39,37 @@ pub struct Managed {
     pub keep: bool,
 }
 
-/// Path and kind a resource manages, if it manages one that can be removed.
-fn managed_path(r: &Resource) -> Option<(&str, Kind)> {
+/// Path and kind a resource manages, if it manages one that can be removed. Besides the file
+/// verbs: a download, a cron job (its file in `/etc/cron.d`) and the boot file of a kernel
+/// parameter (the running value is left as it is).
+fn managed_path(r: &Resource) -> Option<(String, Kind)> {
+    use delbert_policy::Presence;
     if let Some(f) = &r.file {
         return match f.state {
-            FileState::File => Some((&f.path, Kind::File)),
-            FileState::Directory => Some((&f.path, Kind::Directory)),
-            FileState::Link => Some((&f.path, Kind::Link)),
+            FileState::File => Some((f.path.clone(), Kind::File)),
+            FileState::Directory => Some((f.path.clone(), Kind::Directory)),
+            FileState::Link => Some((f.path.clone(), Kind::Link)),
             FileState::Absent => None,
         };
     }
-    r.copy.as_ref().map(|c| (c.dest.as_str(), Kind::File)).or_else(|| r.template.as_ref().map(|t| (t.dest.as_str(), Kind::File)))
+    let file = if let Some(c) = &r.copy {
+        c.dest.clone()
+    } else if let Some(t) = &r.template {
+        t.dest.clone()
+    } else if let Some(g) = &r.get_url {
+        g.dest.clone()
+    } else if let Some(c) = r.cron.as_ref().filter(|c| c.state == Presence::Present) {
+        crate::cron::path_of(c)
+    } else if let Some(s) = r.sysctl.as_ref().filter(|s| s.persist) {
+        crate::system::sysctl_persist_path(s)
+    } else {
+        return None;
+    };
+    Some((file, Kind::File))
 }
 
 /// Every path the policy declares, applicable on this host or not.
-fn declared(resources: &[Resource]) -> BTreeMap<&str, (Kind, bool)> {
+fn declared(resources: &[Resource]) -> BTreeMap<String, (Kind, bool)> {
     resources.iter().filter_map(|r| managed_path(r).map(|(p, k)| (p, (k, r.keep_if_absent_in_policy)))).collect()
 }
 
@@ -64,9 +81,9 @@ fn next(old: &BTreeMap<String, Managed>, resources: &[Resource], report: &Report
     for r in resources {
         let Some((path, kind)) = managed_path(r) else { continue };
         if applied(&r.id) {
-            out.insert(path.to_string(), Managed { kind, keep: r.keep_if_absent_in_policy });
-        } else if let Some(previous) = old.get(path) {
-            out.entry(path.to_string()).or_insert_with(|| previous.clone());
+            out.insert(path, Managed { kind, keep: r.keep_if_absent_in_policy });
+        } else if let Some(previous) = old.get(&path) {
+            out.entry(path).or_insert_with(|| previous.clone());
         }
     }
     out
@@ -98,7 +115,7 @@ pub fn commit(ctx: &Ctx, resources: &[Resource], old: &BTreeMap<String, Managed>
     }
     let still = declared(resources);
     for (path, m) in old {
-        if still.contains_key(path.as_str()) || m.keep {
+        if still.contains_key(path) || m.keep {
             continue;
         }
         let started = std::time::Instant::now();
@@ -197,5 +214,34 @@ mod tests {
         assert!(report.has_failures());
         assert!(tmp.path().join("etc/old.conf").exists(), "nothing removed while the cycle is not clean");
         assert_eq!(after, record, "the record is kept for the next clean cycle");
+    }
+    #[test]
+    fn a_cron_job_a_download_and_a_boot_parameter_go_when_the_policy_drops_them() {
+        let tmp = tempfile::tempdir().unwrap();
+        for d in ["etc/cron.d", "etc/sysctl.d", "proc/sys/vm", "opt"] {
+            fs::create_dir_all(tmp.path().join(d)).unwrap();
+        }
+        fs::write(tmp.path().join("proc/sys/vm/swappiness"), "60\n").unwrap();
+        fs::write(tmp.path().join("etc/cron.d/foreign"), "0 0 * * * root /bin/true\n").unwrap();
+        let mut ctx = Ctx::new(tmp.path().to_path_buf(), "artifacts".into());
+        ctx.cron_allow = vec!["/usr/local/bin/backup.sh".into()];
+        let v1 = policy(concat!(
+            "    - id: job\n      cron: { name: backup, schedule: \"@daily\", command: [/usr/local/bin/backup.sh] }\n",
+            "    - id: kept\n      keep_if_absent_in_policy: true\n      cron: { name: keepme, schedule: \"@daily\", command: [/usr/local/bin/backup.sh] }\n",
+            "    - id: swap\n      sysctl: { key: vm.swappiness, value: \"10\" }\n",
+        ));
+        let (report, record) = cycle(&ctx, &v1, &BTreeMap::new());
+        assert!(!report.has_failures(), "{:?}", report.resources.iter().map(|r| &r.status).collect::<Vec<_>>());
+        assert_eq!(record.keys().map(String::as_str).collect::<Vec<_>>(), vec!["/etc/cron.d/backup", "/etc/cron.d/keepme", "/etc/sysctl.d/90-delbert-vm.swappiness.conf"]);
+
+        let v2 = policy("    - id: other\n      file: { path: /opt/marker }\n");
+        let (report, record) = cycle(&ctx, &v2, &record);
+        let removed: Vec<&str> = report.resources.iter().filter(|r| r.id.starts_with("removed:")).map(|r| r.id.as_str()).collect();
+        assert_eq!(removed, vec!["removed:/etc/cron.d/backup", "removed:/etc/sysctl.d/90-delbert-vm.swappiness.conf"]);
+        assert!(!tmp.path().join("etc/cron.d/backup").exists());
+        // Kept on request, never ours, and the running value is not put back.
+        assert!(tmp.path().join("etc/cron.d/keepme").exists() && tmp.path().join("etc/cron.d/foreign").exists());
+        assert_eq!(fs::read_to_string(tmp.path().join("proc/sys/vm/swappiness")).unwrap(), "10\n");
+        assert_eq!(record.keys().map(String::as_str).collect::<Vec<_>>(), vec!["/opt/marker"]);
     }
 }

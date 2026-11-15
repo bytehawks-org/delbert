@@ -107,8 +107,9 @@ pub struct Resource {
     #[serde(default)]
     pub handler: bool,
     /// When a later policy version no longer declares this file, link or directory, the agent
-    /// removes it (only what it applied itself, after a clean cycle). `true` keeps it. Only for
-    /// `file` (file, link, directory), `copy` and `template`.
+    /// removes it (only what it applied itself, after a clean cycle). `true` keeps it. For `file`
+    /// (file, link, directory), `copy`, `template`, `get_url`, `cron` (the job's file) and
+    /// `sysctl` (the boot file).
     #[serde(default)]
     pub keep_if_absent_in_policy: bool,
     /// What to do when this (service) resource fails or does not come up after a policy update

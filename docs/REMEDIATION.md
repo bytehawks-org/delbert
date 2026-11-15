@@ -6,7 +6,7 @@ Two behaviours that decide what happens to a host when a policy version changes.
 
 A new policy version may stop declaring a file: it was deleted, or renamed (the old path is simply no longer declared). The agent compares what the last clean cycle managed with what the new version declares and removes the difference.
 
-- **What is remembered:** `state.json` → `managed`: path, kind (`file`, `link`, `directory`) and the `keep_if_absent_in_policy` flag **of the declaring resource**. Only `file` (file, link, directory), `copy` and `template` take part. `line_in_file` lines are never removed.
+- **What is remembered:** `state.json` → `managed`: path, kind (`file`, `link`, `directory`) and the `keep_if_absent_in_policy` flag **of the declaring resource**. `file` (file, link, directory), `copy`, `template`, `get_url`, `cron` (the job's file in `/etc/cron.d`) and `sysctl` (its boot file; the running value stays) take part. Lines, blocks and mounts are never removed: declare `state: absent`.
 - **`keep_if_absent_in_policy: true`** on a resource keeps its path when the resource disappears. The directive is read from the old declaration, which is why it is stored with the path. Default: remove.
 - **Only what Delbert applied.** A resource that never applied on a host (its `when` was false) is not recorded; a file somebody else put there is never touched. A path still declared by any resource (another id, or a `when` false on this host) is not an orphan.
 - **Only after a clean cycle.** A cycle with a failed resource removes nothing and keeps the old record; the next clean cycle removes. With the remediation below, removal happens after verification, so a rollback never has to bring back removed files.

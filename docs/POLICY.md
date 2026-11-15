@@ -177,7 +177,7 @@ The aliases are symlinks to `delbert-agent` (deb/rpm, the container image, the `
 
 - `line_in_file` with `state: absent` removes all the lines matching `regexp` (or equal to `line`); `line` is required by the format and ignored when a `regexp` is given. A missing file is compliant.
 - `block_in_file` writes `block` between a BEGIN and an END line made from `marker` (`{mark}` is replaced; default `# {mark} DELBERT MANAGED BLOCK`). The block is replaced in place when the markers exist and appended at the end otherwise; `state: absent` removes it with its markers. Give each block of a file its own marker: two blocks with the same marker are a conflict. A BEGIN without its END fails the resource (the file is not guessed at). The file must exist (`file` creates it); a `copy`/`template` of the same path is a conflict.
-- Neither is removed when it leaves the policy (unlike files): declare `state: absent` for a version, then drop the resource.
+- Neither is removed when it leaves the policy (unlike files, downloads, cron jobs and sysctl boot files): declare `state: absent` for a version, then drop the resource.
 
 ## Users and groups
 
@@ -206,7 +206,7 @@ The aliases are symlinks to `delbert-agent` (deb/rpm, the container image, the `
   sysctl: { key: net.ipv4.ip_forward, value: "1" }
 ```
 
-The value is read and written directly in `/proc/sys` (no command is run) and, unless `persist: false`, also written to `/etc/sysctl.d/90-delbert-<key>.conf` so it survives a reboot. Values compare with runs of blanks as one. An unknown key fails the resource. Removing the resource leaves the value and the file in place. Not on Windows.
+The value is read and written directly in `/proc/sys` (no command is run) and, unless `persist: false`, also written to `/etc/sysctl.d/90-delbert-<key>.conf` so it survives a reboot. Values compare with runs of blanks as one. An unknown key fails the resource. When the resource leaves the policy the boot file is removed (unless `keep_if_absent_in_policy: true`); the running value is left as it is until the next boot. Not on Windows.
 
 ## Scheduled jobs
 
@@ -225,7 +225,7 @@ A scheduled job is a way to run a program, so it follows the rules of the `comma
 - **Off by default, enabled only on the host.** The executable (`command[0]`, an absolute path) must be on the agent's local allow-list: `DELBERT_CRON_ALLOW=/usr/local/bin/backup.sh:/usr/bin/certbot` in `/etc/delbert/agent.env` (or `--cron-allow`). Without it every `cron` resource fails with a message that says so. No policy, variable or fact can change the list.
 - **An argv, not a shell line.** Each argument is quoted when the cron line is written, and `%` is escaped, so pipes, redirections, `;`, `$(...)` are plain text for the program. Need a pipeline? Deliver a script with `copy` and schedule the script.
 - `env` accepts only `MAILTO`, `MAILFROM`, `CRON_TZ`, `TZ`, `LANG`, `LC_ALL`, `RANDOM_DELAY` (not `SHELL` or `PATH`, which would choose what really runs).
-- One job per resource, one file per job (`/etc/cron.d/<name>`, mode 0644, written crash-safely); the agent runs nothing itself. A file of that name that Delbert did not write is never replaced or removed. `state: absent` removes the job and needs no allow-list. A job that merely leaves the policy stays: remove it with `state: absent`.
+- One job per resource, one file per job (`/etc/cron.d/<name>`, mode 0644, written crash-safely); the agent runs nothing itself. A file of that name that Delbert did not write is never replaced or removed. `state: absent` removes the job and needs no allow-list. A job that leaves the policy is removed too, after the next clean cycle, like a file (`keep_if_absent_in_policy: true` keeps it).
 - Per-user crontabs (`crontab -e` spool) are not edited: a job for a user is a job in `/etc/cron.d` with `user:`. `/etc/cron.d` must exist (a cron daemon is installed). Not on Windows (Scheduled Tasks are a separate verb to design).
 
 The allow-list is a guard against mistakes and against a job nobody on the host agreed to, not a sandbox: a policy can also deliver files, so trust in the Core's signing key remains the boundary.
@@ -241,7 +241,7 @@ The allow-list is a guard against mistakes and against a job nobody on the host 
     mode: "0644"
 ```
 
-The agent downloads the file itself (outbound HTTPS, the system's trust store, the proxy of its environment). The content is pinned: a destination that already has the hash is compliant **without any request**; a download is kept in memory, hashed, and written crash-safely only when the hash matches, so a wrong or tampered file changes nothing on the host. A local change is drift and is repaired from the source. `http://` is accepted (the hash protects the content, not its confidentiality); credentials in the URL are refused. Limit: 256 MiB. Prefer an artifact with `copy` when the Core can hold the file: it needs no route from the host to the Internet and survives the source disappearing.
+The agent downloads the file itself (outbound HTTPS, the system's trust store, the proxy of its environment). The content is pinned: a destination that already has the hash is compliant **without any request**; a download is kept in memory, hashed, and written crash-safely only when the hash matches, so a wrong or tampered file changes nothing on the host. A local change is drift and is repaired from the source. `http://` is accepted (the hash protects the content, not its confidentiality); credentials in the URL are refused. Limit: 256 MiB. A download that leaves the policy is removed like any managed file. Prefer an artifact with `copy` when the Core can hold the file: it needs no route from the host to the Internet and survives the source disappearing.
 
 ## Mounts
 

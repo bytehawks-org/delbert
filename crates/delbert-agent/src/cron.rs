@@ -31,6 +31,11 @@ fn quote(arg: &str) -> String {
     quoted.replace('%', r"\%")
 }
 
+/// The file of a job.
+pub(crate) fn path_of(spec: &CronSpec) -> String {
+    format!("{DIR}/{}", spec.name)
+}
+
 /// The whole file of a job.
 pub fn render(spec: &CronSpec) -> String {
     let mut out = format!("{HEADER}\n");

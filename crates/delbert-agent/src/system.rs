@@ -198,7 +198,7 @@ fn sysctl_live_path(spec: &SysctlSpec) -> String {
 }
 
 /// The file that sets it at boot.
-fn sysctl_persist_path(spec: &SysctlSpec) -> String {
+pub(crate) fn sysctl_persist_path(spec: &SysctlSpec) -> String {
     format!("/etc/sysctl.d/90-delbert-{}.conf", spec.key)
 }
 

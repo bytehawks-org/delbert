@@ -106,7 +106,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Agent: `authorized_key`, user passwords from secrets, authoritative group membership, per-user crontab spool, streaming download above 256 MiB, Windows counterparts (local users, Scheduled Tasks, commands) | to-do | 2026-11-10 |
 | MVP exit criteria ([STATUS.md](STATUS.md) "MVP assessment"): CI green on the new jobs, chart installed on K3s, agent service on a real systemd host, backup/restore drill, first tag `v0.1.0` | to-do | 2026-11-10 |
 | New verbs in the console: form/snippets and schema completion in the policy editor (the YAML editor and the validation already accept them) | to-do | 2026-11-10 |
-| Orphans for the new verbs: a cron job, sysctl file or block that leaves the policy stays (needs `state: absent`) | to-do | 2026-11-10 |
+| Orphans for the new verbs: a cron job, a download and a sysctl boot file are removed when they leave the policy | complete | 2026-11-15 |
+| Orphans: a block or a mount that leaves the policy stays (needs `state: absent`) | to-do | 2026-11-15 |
 | Agent: only signed policies on the real system: `apply` of an unsigned file needs a sandbox root or the local opt-in `DELBERT_ALLOW_LOCAL_POLICY` | complete | 2026-11-15 |
 | RBAC v2 design: tenant-scoped roles, `resource:action` permissions, optional per-tenant four-eyes approval ([RBAC.md](RBAC.md)) | complete | 2026-10-23 |
 | RBAC v2: tenant-scoped assignments, `resource:action` permissions, built-in roles, delegated tenant administration (migration `0010`) | complete | 2026-10-23 |

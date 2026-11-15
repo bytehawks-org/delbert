@@ -258,8 +258,8 @@ fn check_fields(r: &Resource, errors: &mut Vec<ValidationError>) {
             errors.push(field_err(r, format!("remediation times are at most {MAX_SECONDS} seconds")));
         }
     }
-    if r.keep_if_absent_in_policy && r.file.is_none() && r.copy.is_none() && r.template.is_none() {
-        errors.push(field_err(r, "'keep_if_absent_in_policy' applies to file, copy and template only"));
+    if r.keep_if_absent_in_policy && r.file.is_none() && r.copy.is_none() && r.template.is_none() && r.get_url.is_none() && r.cron.is_none() && r.sysctl.is_none() {
+        errors.push(field_err(r, "'keep_if_absent_in_policy' applies to file, copy, template, get_url, cron and sysctl only"));
     }
     if let Some(when) = &r.when {
         if when.trim().is_empty() || when.len() > MAX_WHEN {
