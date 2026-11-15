@@ -14,7 +14,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Core: audit hash chain writer and verification | complete | 2026-10-23 |
 | Core: OpenAPI/Swagger (utoipa) | complete | 2026-10-23 |
 | Core: tenant archive (`DELETE /v1/tenants/{t}`, migration `0018`) | complete | 2026-10-24 |
-| Core: pagination of list endpoints (audit already keyset-paged) | to-do | 2026-10-24 |
+| Core: pagination: audit and the agents list are keyset-paged (agents: `limit`, `after`, `X-Next-After`, cap 10000) | complete | 2026-11-15 |
+| Core: paging of policy versions and content snapshots (they grow with history); the console follows `X-Next-After` instead of relying on the cap; filters on lists | to-do | 2026-11-15 |
 | Core: local users, customizable RBAC, sessions | complete | 2026-10-23 |
 | Core: least-privilege DB role (no UPDATE/DELETE on audit and policy versions) | complete | 2026-10-23 |
 | Audit: NDJSON export done; signed anchors for the chain, SIEM connector, retention to-do | partial | 2026-10-24 |

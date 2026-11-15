@@ -12,6 +12,7 @@
 - **Phase 1:** an unsigned policy file reaches the real system only with the local opt-in `DELBERT_ALLOW_LOCAL_POLICY` (exit 3 otherwise; a sandbox `--root` and `check` are unaffected); a timed-out `command` takes its whole process group with it; a cron job, a download and a sysctl boot file are removed when they leave the policy.
 - **Enrollment with a fingerprint:** `--ca-sha256` instead of a copy of `ca.pem` (agent, `install-agent.sh`, `install-agent.ps1`, MSI property `CA_SHA256`); public `GET /v1/ca` on the Core and on the proxy; `delbert-pki fingerprint`. Only the certificate with the pinned SHA-256 is kept.
 - **Test:** `mfa_totp_recovery_and_reset` failed once in CI (run 21) because it asked twice for "the code of now" and a 30-second step ended in between (12:00:29 and 12:00:30 in the log); it now replays the exact code of the confirmation.
+- **Paging:** `GET /v1/tenants/{t}/agents` takes `limit` and `after`, answers `X-Next-After` when more exist and is capped at 10000 without parameters; the body is still an array.
 - [PLAN.md](PLAN.md): the order in which the open items get done.
 
 ## 2026-11-14

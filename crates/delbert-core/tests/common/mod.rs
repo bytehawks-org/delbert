@@ -69,6 +69,19 @@ impl Client {
         (status, String::from_utf8_lossy(&bytes).into_owned())
     }
 
+    /// GET returning the JSON body and one response header (lower-case name).
+    pub async fn get_with_header(&self, uri: &str, name: &str) -> (StatusCode, Value, Option<String>) {
+        let mut req = Request::builder().method("GET").uri(uri);
+        if let Some(t) = &self.token {
+            req = req.header(header::AUTHORIZATION, format!("Bearer {t}"));
+        }
+        let resp = self.app.clone().oneshot(req.body(Body::empty()).unwrap()).await.unwrap();
+        let status = resp.status();
+        let value = resp.headers().get(name).and_then(|v| v.to_str().ok()).map(str::to_owned);
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null), value)
+    }
+
     pub async fn login(&self, username: &str, password: &str) -> (StatusCode, Value) {
         Client { token: None, ..self.clone() }.call("POST", "/v1/auth/login", Some(json!({ "username": username, "password": password }))).await
     }

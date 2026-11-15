@@ -497,24 +497,62 @@ pub async fn create_agent(State(st): State<AppState>, Authn(user): Authn, Path(t
     Ok((StatusCode::CREATED, Json(AgentOut { name: body.name, groups: body.groups, effective_version: 0, reported_version: None, compliant: None, reported_at: None, proxy: None, facts: None, facts_at: None, remediation: None, force_pending: false })))
 }
 
+/// Keyset paging of a list ordered by name: `?limit=100&after=<last name of the previous page>`.
+/// A list that grows with the fleet is never returned without a bound: without `limit` the cap
+/// is [`Page::MAX`]. When more rows exist the response carries `X-Next-After`, the value to pass
+/// as `after`; the body stays a plain array, so a client that does not page keeps working.
+#[derive(Debug, Default, Deserialize, utoipa::IntoParams)]
+pub struct Page {
+    /// Most rows to return (1 to 10000; default 10000).
+    pub limit: Option<i64>,
+    /// Return the rows whose name sorts after this one.
+    pub after: Option<String>,
+}
+
+impl Page {
+    pub const MAX: i64 = 10_000;
+    pub const NEXT_HEADER: &'static str = "x-next-after";
+
+    pub fn limit(&self) -> i64 {
+        self.limit.unwrap_or(Self::MAX).clamp(1, Self::MAX)
+    }
+
+    /// Cut `rows` (fetched with `limit() + 1`) to the page and say where the next one starts.
+    pub fn cut<T>(&self, rows: &mut Vec<T>, name: impl Fn(&T) -> &str) -> axum::http::HeaderMap {
+        let mut headers = axum::http::HeaderMap::new();
+        if rows.len() as i64 > self.limit() {
+            rows.truncate(self.limit() as usize);
+            // Names are restricted to header-safe characters; an odd one simply gets no header.
+            if let Some(value) = rows.last().and_then(|r| axum::http::HeaderValue::from_str(name(r)).ok()) {
+                headers.insert(Self::NEXT_HEADER, value);
+            }
+        }
+        headers
+    }
+}
+
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/agents", tag = "agents", security(("bearer" = [])),
-    params(("tenant" = String, Path)), responses((status = 200, body = Vec<AgentOut>), (status = 404)))]
-pub async fn list_agents(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>) -> ApiResult<Json<Vec<AgentOut>>> {
+    params(("tenant" = String, Path), Page), responses((status = 200, body = Vec<AgentOut>, headers(("x-next-after" = String, description = "Present when more agents exist: pass it as `after`"))), (status = 404)))]
+pub async fn list_agents(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>, axum::extract::Query(page): axum::extract::Query<Page>) -> ApiResult<(axum::http::HeaderMap, Json<Vec<AgentOut>>)> {
     let tid = user.tenant(&st.pool, &tenant, "agents:read").await?;
     let rows: Vec<(String, Vec<String>, i64, Option<i64>, Option<bool>, Option<i64>, Option<String>, Option<serde_json::Value>, Option<i64>, Option<serde_json::Value>, bool)> = sqlx::query_as(
         "SELECT a.name, a.groups, a.effective_version, r.version, r.compliant, (EXTRACT(EPOCH FROM r.received_at))::bigint, p.name, r.facts, (EXTRACT(EPOCH FROM r.facts_at))::bigint, \
                 CASE WHEN jsonb_typeof(r.report->'remediation') = 'object' THEN r.report->'remediation' END, \
                 COALESCE(a.force_id IS NOT NULL AND COALESCE((r.report->'remediation'->>'at')::bigint, 0) <= EXTRACT(EPOCH FROM a.forced_at), false) \
-         FROM agents a LEFT JOIN agent_reports r ON r.agent_id = a.id LEFT JOIN proxies p ON p.id = a.proxy_id WHERE a.tenant_id = $1 ORDER BY a.name",
+         FROM agents a LEFT JOIN agent_reports r ON r.agent_id = a.id LEFT JOIN proxies p ON p.id = a.proxy_id \
+         WHERE a.tenant_id = $1 AND ($2::text IS NULL OR a.name > $2) ORDER BY a.name LIMIT $3",
     )
     .bind(tid)
+    .bind(page.after.as_deref())
+    .bind(page.limit() + 1)
     .fetch_all(&st.pool)
     .await?;
-    Ok(Json(
-        rows.into_iter()
-            .map(|(name, groups, effective_version, reported_version, compliant, reported_at, proxy, facts, facts_at, remediation, force_pending)| AgentOut { name, groups, effective_version, reported_version, compliant, reported_at, proxy, facts, facts_at, remediation, force_pending })
-            .collect(),
-    ))
+    let mut agents: Vec<AgentOut> = rows
+        .into_iter()
+        .map(|(name, groups, effective_version, reported_version, compliant, reported_at, proxy, facts, facts_at, remediation, force_pending)| AgentOut { name, groups, effective_version, reported_version, compliant, reported_at, proxy, facts, facts_at, remediation, force_pending })
+        .collect();
+    let headers = page.cut(&mut agents, |a| &a.name);
+    Ok((headers, Json(agents)))
 }
 
 #[utoipa::path(put, path = "/v1/tenants/{tenant}/agents/{agent}", tag = "agents", security(("bearer" = [])), request_body = AgentUpdate,

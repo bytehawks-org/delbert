@@ -252,3 +252,40 @@ async fn archiving_a_tenant_hides_it_everywhere_and_keeps_the_audit_trail(pool: 
     assert_eq!(s, StatusCode::OK);
     assert_eq!(verify["first_bad"], Value::Null, "{verify}");
 }
+
+#[sqlx::test]
+async fn the_agents_list_is_paged_by_name_and_never_unbounded(pool: PgPool) {
+    let c = admin_client(state(pool, vec![Strategy::Error], None)).await;
+    assert_eq!(c.call("POST", "/v1/tenants", Some(json!({ "name": "acme" }))).await.0, StatusCode::CREATED);
+    for name in ["web-03", "db-01", "web-01", "web-02", "app-01"] {
+        assert_eq!(c.call("POST", "/v1/tenants/acme/agents", Some(json!({ "name": name }))).await.0, StatusCode::CREATED);
+    }
+    let names = |v: &Value| v.as_array().unwrap().iter().map(|a| a["name"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
+
+    // Without parameters: everything (under the cap), a plain array, no cursor.
+    let (s, all, next) = c.get_with_header("/v1/tenants/acme/agents", "x-next-after").await;
+    assert_eq!((s, names(&all), next), (StatusCode::OK, vec!["app-01".to_string(), "db-01".into(), "web-01".into(), "web-02".into(), "web-03".into()], None));
+
+    // Pages of two, following the header until it is absent.
+    let (mut seen, mut after, mut pages) = (Vec::new(), None::<String>, 0);
+    loop {
+        let uri = match &after {
+            Some(a) => format!("/v1/tenants/acme/agents?limit=2&after={a}"),
+            None => "/v1/tenants/acme/agents?limit=2".to_string(),
+        };
+        let (s, page, next) = c.get_with_header(&uri, "x-next-after").await;
+        assert_eq!(s, StatusCode::OK);
+        assert!(page.as_array().unwrap().len() <= 2);
+        seen.extend(names(&page));
+        pages += 1;
+        match next {
+            Some(n) => after = Some(n),
+            None => break,
+        }
+    }
+    assert_eq!((seen, pages), (names(&all), 3));
+    // A page that ends exactly at the last row has no cursor; out-of-range limits are clamped.
+    assert_eq!(c.get_with_header("/v1/tenants/acme/agents?limit=5", "x-next-after").await.2, None);
+    assert_eq!(names(&c.call("GET", "/v1/tenants/acme/agents?limit=0", None).await.1), vec!["app-01".to_string()]);
+    assert_eq!(names(&c.call("GET", "/v1/tenants/acme/agents?limit=999999&after=web-02", None).await.1), vec!["web-03".to_string()]);
+}

@@ -190,3 +190,7 @@ Migrations run as the schema owner. The Core runs as a login role that is a memb
 - `effective` ids are namespaced `<policy>/<resource id>`. The version of the signed policy increases only when the compiled content changes, so repeated pulls are idempotent and agents can apply their anti-rollback rule.
 - Conflicts follow [ABSTRACT.md](ABSTRACT.md) §3: identical declarations merge; different ones are resolved by the strategy chain; unresolved ones are left out (together with their dependents) and reported in `conflicts`. Only `priority` and `error` are implemented.
 - Every write, login (including failures) and every new issued version is appended to the hash-chained audit trail inside the same transaction.
+
+## Paging
+
+`GET /v1/tenants/{t}/agents` is the list that grows with the fleet: it is ordered by name and takes `?limit=` (1 to 10000) and `?after=<name>`. The body stays a plain array; when more agents exist the response has the header `X-Next-After`, the value to pass as `after` for the next page. Without `limit` the cap of 10000 applies (and the header says when it cut), so the list is never unbounded. `GET /v1/audit` has its own keyset paging (`before`, `next`). The other lists hold administrative objects (tenants, users, roles, policies, sources, providers...) and are returned whole.

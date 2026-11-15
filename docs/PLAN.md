@@ -38,7 +38,7 @@ Each item is a place where today's behaviour is weaker than what the design prom
 | 1.3 | **Done 2026-11-15 for `cron`, `sysctl`, `get_url`**; blocks and mounts still need `state: absent`. Orphans for `cron`, `sysctl`, `block_in_file`, `mount`: removed when they leave the policy, like files (`keep_if_absent_in_policy` to keep) | M | a job that silently survives its policy is the opposite of state enforcement |
 | 1.4 | Undefined `vars.x` refused at policy save (today only the preview catches it). Looked at on 2026-11-15: variables resolve per agent (group and agent layers), so the check must render for every targeted agent and decide what to do when a variable is added after the policy: a warning in the save response, not a refusal | M | fail at authoring time, not on the agent |
 | 1.5 | **Done 2026-11-15.** CA certificate fetched from the Core with a pinned fingerprint (`--ca-sha256`) | S | removes the manual `ca.pem` copy from every agent install without weakening trust |
-| 1.6 | Pagination and filters on every list endpoint | M | `CLAUDE.md`: limit the public API to the necessary; unbounded lists are also a load problem |
+| 1.6 | **Agents list done 2026-11-15** (the one that follows the fleet); histories and the console's use of the cursor open. Pagination and filters on every list endpoint | M | `CLAUDE.md`: limit the public API to the necessary; unbounded lists are also a load problem |
 | 1.7 | NATS callout hardening (xkey encryption, disconnect on revocation); CRL for the HTTPS endpoints | M | revocation takes effect only at session expiry today |
 
 ## Phase 2 - Requirements of `CLAUDE.md` not met yet
