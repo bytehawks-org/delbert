@@ -153,7 +153,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Static (musl) builds of every binary; deb/rpm packages (nfpm) for agent, Core, proxy and tools with systemd units and service accounts; `install-agent.sh` | complete | 2026-11-10 |
 | Windows installer: MSI (WiX 5) built, installed and removed by CI; `install-agent.ps1` not run (needs a release) | partial | 2026-11-15 |
 | Release workflow on a tag: images on ghcr.io (cosign, SBOM, provenance), chart as OCI artifact, packages, MSI, install scripts, container bundle, `SHA256SUMS` (written, never run) | partial | 2026-11-10 |
-| Releases: first tag; arm64 images; signed packages and an apt/dnf repository; signed MSI | to-do | 2026-11-10 |
+| Package signing: deb and rpm signed in CI and releases (repository secret, or a per-release staging key), `packaging/generate-signing-key.sh`, `install-agent.sh` verifies rpm with the published key | complete | 2026-11-15 |
+| Releases: first tag; arm64 images; an apt/dnf repository (what makes apt verify); signed MSI; a signing key of the owner in place of the staging one | to-do | 2026-11-15 |
 | Single-host container install (`deploy/container`: compose for Podman/Docker, `install.sh`, keys created by a one-shot container); verified with Docker | complete | 2026-11-10 |
 | `delbert-pki bootstrap`: every key and certificate of a new installation in one idempotent step | complete | 2026-11-10 |
 | Agents: fingerprint-pinned download of the CA certificate (`--ca-sha256`, public `GET /v1/ca` on the Core and the proxy, `delbert-pki fingerprint`); run against the container install | complete | 2026-11-15 |

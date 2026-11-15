@@ -34,9 +34,8 @@ jobs:
   linux:
     needs: version
     runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl]
+    # One job for both architectures: they must be signed with the same key, and a key made
+    # for the run (staging) cannot be handed from one job to another without exposing it.
     steps:
       - uses: actions/checkout@v4
       - name: Tools (zig as the cross linker, nfpm)
@@ -46,16 +45,49 @@ jobs:
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.1
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          rustup target add ${{ matrix.target }}
-      - run: packaging/build-packages.sh "${{ needs.version.outputs.version }}" ${{ matrix.target }} dist
+          rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+      # The signing key: the repository secret PACKAGE_SIGNING_KEY (packaging/generate-signing-key.sh
+      # makes one), with PACKAGE_SIGNING_PASSPHRASE if it has a passphrase. Without the secret the
+      # release is signed with a key made for this run and named STAGING: the packages verify
+      # against the public key published next to them, but nobody holds that key afterwards.
+      - name: Signing key
+        env:
+          PACKAGE_SIGNING_KEY: ${{ secrets.PACKAGE_SIGNING_KEY }}
+          NFPM_PASSPHRASE: ${{ secrets.PACKAGE_SIGNING_PASSPHRASE }}
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/signing"
+          if [ -n "$PACKAGE_SIGNING_KEY" ]; then
+            umask 077
+            printf '%s\n' "$PACKAGE_SIGNING_KEY" > "$RUNNER_TEMP/signing/delbert-signing-key.private.asc"
+            umask 022
+            # The public half comes from the private key itself, so the two cannot disagree.
+            export GNUPGHOME="$RUNNER_TEMP/gnupg"; mkdir -m 700 "$GNUPGHOME"
+            gpg --batch --quiet --pinentry-mode loopback --passphrase "$NFPM_PASSPHRASE" --import "$RUNNER_TEMP/signing/delbert-signing-key.private.asc"
+            gpg --batch --quiet --armor --export > "$RUNNER_TEMP/signing/delbert-signing-key.asc"
+            gpg --show-keys "$RUNNER_TEMP/signing/delbert-signing-key.asc"
+          else
+            echo "::warning::PACKAGE_SIGNING_KEY is not set: this release is signed with a STAGING key"
+            packaging/generate-signing-key.sh --name "Delbert packages" --email "${GITHUB_REPOSITORY_OWNER}@users.noreply.github.com" --staging --out "$RUNNER_TEMP/signing"
+          fi
+      - name: Packages (amd64, arm64)
+        run: |
+          set -eu
+          for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+            packaging/build-packages.sh "${{ needs.version.outputs.version }}" "$target" dist
+          done
         env:
           # Shown in the package metadata: set the repository variable PACKAGE_MAINTAINER ("Name <address>").
           MAINTAINER: ${{ vars.PACKAGE_MAINTAINER }}
-      - if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: packaging/test-packages.sh dist docker
+          SIGNING_KEY_FILE: ${{ runner.temp }}/signing/delbert-signing-key.private.asc
+          NFPM_PASSPHRASE: ${{ secrets.PACKAGE_SIGNING_PASSPHRASE }}
+      - name: Install the amd64 packages (signatures verified), publish the public key
+        run: |
+          packaging/test-packages.sh dist docker "$RUNNER_TEMP/signing/delbert-signing-key.asc"
+          cp "$RUNNER_TEMP/signing/delbert-signing-key.asc" dist/
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-${{ matrix.target }}
+          name: linux
           path: dist/*
           if-no-files-found: error
 

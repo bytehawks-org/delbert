@@ -14,6 +14,8 @@
 #   --psk KEY         one-time enrollment key                          [DELBERT_ENROLL_PSK]
 #   --version X.Y.Z   release to install (default: the latest)         [DELBERT_VERSION]
 #   --package FILE    install this .deb/.rpm instead of downloading one
+#   --signing-key FILE  public key the packages are signed with (delbert-signing-key.asc);
+#                     downloaded with the package when not given
 # Without --psk the package is installed and left unconfigured.
 # The agent never listens: it only makes outbound connections to the Core and to NATS.
 set -eu
@@ -26,6 +28,7 @@ AGENT_ID="${DELBERT_AGENT_ID:-$(hostname -s 2>/dev/null || hostname)}"
 PSK="${DELBERT_ENROLL_PSK:-}"
 VERSION="${DELBERT_VERSION:-}"
 PACKAGE=""
+SIGNING_KEY=""
 
 die() {
     echo "install-agent: $*" >&2
@@ -41,7 +44,8 @@ while [ $# -gt 0 ]; do
         --psk) PSK="$2"; shift 2 ;;
         --version) VERSION="$2"; shift 2 ;;
         --package) PACKAGE="$2"; shift 2 ;;
-        -h | --help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --signing-key) SIGNING_KEY="$2"; shift 2 ;;
+        -h | --help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "unknown option $1" ;;
     esac
 done
@@ -91,15 +95,26 @@ if [ -z "$PACKAGE" ]; then
     curl -fsSL -o "$TMP/SHA256SUMS" "$BASE/SHA256SUMS"
     (cd "$TMP" && grep " $FILE\$" SHA256SUMS | sha256sum -c -) || die "checksum mismatch for $FILE"
     PACKAGE="$TMP/$FILE"
+    # The key the release was signed with (absent from releases older than package signing).
+    if [ -z "$SIGNING_KEY" ] && curl -fsSL -o "$TMP/delbert-signing-key.asc" "$BASE/delbert-signing-key.asc" 2>/dev/null; then
+        (cd "$TMP" && grep " delbert-signing-key.asc\$" SHA256SUMS | sha256sum -c -) || die "checksum mismatch for the signing key"
+        SIGNING_KEY="$TMP/delbert-signing-key.asc"
+    fi
 fi
 
 if [ "$KIND" = deb ]; then
     dpkg -i "$PACKAGE"
 else
-    # The packages are not signed yet, and recent rpm refuses an unsigned package by default.
-    # A downloaded package was checked against SHA256SUMS above; one given with --package is
-    # trusted by whoever passed it.
-    rpm -U --replacepkgs --nosignature "$PACKAGE"
+    if [ -n "$SIGNING_KEY" ]; then
+        # rpm verifies the package against the key before installing it.
+        rpm --import "$SIGNING_KEY"
+        rpm -U --replacepkgs "$PACKAGE"
+    else
+        # No key to verify with (an unsigned build, or --package without --signing-key): recent
+        # rpm refuses that by default. A downloaded package was checked against SHA256SUMS above.
+        echo "install-agent: no signing key: installing without signature verification" >&2
+        rpm -U --replacepkgs --nosignature "$PACKAGE"
+    fi
 fi
 
 if [ -z "$PSK" ]; then

@@ -127,8 +127,12 @@ jobs:
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.1
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           rustup target add x86_64-unknown-linux-musl
+      # A throw-away key: the same path a release takes when no signing key is configured.
+      - run: packaging/generate-signing-key.sh --name "Delbert CI" --email delbert@example.com --staging --out "$RUNNER_TEMP/signing"
       - run: packaging/build-packages.sh 0.0.1 x86_64-unknown-linux-musl dist
-      - run: packaging/test-packages.sh dist docker
+        env:
+          SIGNING_KEY_FILE: ${{ runner.temp }}/signing/delbert-signing-key.private.asc
+      - run: packaging/test-packages.sh dist docker "$RUNNER_TEMP/signing/delbert-signing-key.asc"
       - name: Shell scripts parse
         run: for f in packaging/*.sh packaging/scripts/*.sh deploy/container/*.sh; do sh -n "$f"; done
       - name: Helm chart

@@ -2,11 +2,16 @@
 # Install the freshly built packages in clean Debian and Fedora containers and check what they
 # lay down (used by the CI workflow after packaging/build-packages.sh).
 #
-#   packaging/test-packages.sh [directory with the packages] [container engine]
+#   packaging/test-packages.sh [directory with the packages] [container engine] [public key]
+#
+# With the public key of the signing key (delbert-signing-key.asc) the signatures are verified
+# too: the deb's with gpg here, the rpm's by rpm itself, which then installs without
+# --nosignature. Without it the packages are taken as unsigned.
 set -eu
 
 DIST="$(cd "${1:-dist}" && pwd)"
 ENGINE="${2:-docker}"
+PUBLIC_KEY="${3:-}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 chmod 0755 "$WORK"
@@ -64,6 +69,27 @@ overlook check /t/policy.yaml --root /tmp/root
 echo PACKAGES-OK
 CHECKS
 
+RPM_FLAGS="--nosignature"
+if [ -n "$PUBLIC_KEY" ]; then
+    cp "$PUBLIC_KEY" "$WORK/signing-key.asc"
+    RPM_FLAGS=""
+    echo "== signatures of the .deb files (gpg)"
+    GNUPGHOME="$(mktemp -d)"
+    export GNUPGHOME
+    chmod 700 "$GNUPGHOME"
+    gpg --batch --quiet --import "$PUBLIC_KEY"
+    for deb in "$DIST"/*.deb; do
+        # The signature covers the three members of the archive, in this order.
+        members="$(ar t "$deb" | grep -v '^_gpg')"
+        ar p "$deb" _gpgorigin >"$WORK/sig"
+        # shellcheck disable=SC2086
+        ar p "$deb" $members | gpg --batch --quiet --verify "$WORK/sig" - 2>/dev/null || { echo "bad or missing signature: $deb" >&2; exit 1; }
+        echo "signed: $(basename "$deb")"
+    done
+    gpgconf --kill gpg-agent >/dev/null 2>&1 || true
+    rm -rf "$GNUPGHOME" "$WORK/sig"
+fi
+
 echo "== debian:13 (deb)"
 "$ENGINE" run --rm -v "$DIST":/dist:ro -v "$WORK":/t:ro docker.io/library/debian:13-slim sh -ec '
     dpkg -i /dist/delbert-tools_*_amd64.deb /dist/delbert-agent_*_amd64.deb /dist/delbert-core_*_amd64.deb /dist/delbert-proxy_*_amd64.deb
@@ -71,8 +97,19 @@ echo "== debian:13 (deb)"
     dpkg -r delbert-agent delbert-proxy delbert-core delbert-tools'
 
 echo "== fedora (rpm)"
-"$ENGINE" run --rm -v "$DIST":/dist:ro -v "$WORK":/t:ro docker.io/library/fedora:latest sh -ec '
-    # The packages are not signed yet: recent rpm (Fedora 43) refuses them without this.
-    rpm -i --nosignature /dist/delbert-tools-*.x86_64.rpm /dist/delbert-agent-*.x86_64.rpm /dist/delbert-core-*.x86_64.rpm /dist/delbert-proxy-*.x86_64.rpm
+"$ENGINE" run --rm -e RPM_FLAGS="$RPM_FLAGS" -v "$DIST":/dist:ro -v "$WORK":/t:ro docker.io/library/fedora:latest sh -ec '
+    # Signed packages are verified by rpm against the imported key; unsigned ones need
+    # --nosignature (recent rpm refuses them otherwise).
+    if [ -f /t/signing-key.asc ]; then
+        rpm --import /t/signing-key.asc
+        rpm -K /dist/*.rpm
+        # An unsigned or foreign package must not pass: every line has to say "signatures OK".
+        if rpm -K /dist/*.rpm | grep -v "signatures OK" | grep -q .; then
+            echo "a package is not signed by the imported key" >&2
+            exit 1
+        fi
+    fi
+    # shellcheck disable=SC2086
+    rpm -i $RPM_FLAGS /dist/delbert-tools-*.x86_64.rpm /dist/delbert-agent-*.x86_64.rpm /dist/delbert-core-*.x86_64.rpm /dist/delbert-proxy-*.x86_64.rpm
     sh /t/checks.sh
     rpm -e delbert-agent delbert-proxy delbert-core delbert-tools'

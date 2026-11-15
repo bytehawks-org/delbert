@@ -139,7 +139,7 @@ sudo -u delbert sh -c 'set -a; . /etc/delbert/core.env; delbert-core --config /e
 sudo systemctl enable --now delbert-core
 ```
 
-The packages are **not signed yet**: recent `rpm` (Fedora 43 and later) refuses them with "does not verify: no signature" unless `--nosignature` is given (`dnf install --nogpgcheck` likewise). Check the file against `SHA256SUMS` of the release first; `install-agent.sh` does both.
+The packages are signed ([Signing the packages](#signing-the-packages)). Import the key of the release once, then `rpm` verifies every package by itself: `sudo rpm --import delbert-signing-key.asc` (drop `--nosignature` from the commands here). Without the key, recent `rpm` (Fedora 43 and later) refuses a package with "does not verify" unless `--nosignature` is given; in that case check the file against `SHA256SUMS` first. `install-agent.sh` imports the key and verifies.
 
 The package creates the system user `delbert`, `/etc/delbert/keys` (0750 root:delbert), `/var/lib/delbert-core` and a hardened unit (`delbert-core.service`: no privileges, read-only system). The NATS server's user must be able to read `nats.pem`, `nats.key` and `ca.pem` (copy them to its own directory or add it to a group that can). Upgrades (`dpkg -i` / `rpm -U`) restart a running service and never replace `core.toml` / `core.env`. Removing the package stops and disables the service and keeps keys and data.
 
@@ -296,7 +296,29 @@ Pushing a tag `vX.Y.Z` (equal to the workspace version in `Cargo.toml`) runs [`.
 | `delbert-agent-<version>-x64.msi`, `delbert-agent-<version>-windows-x64.zip` | GitHub release |
 | `install-agent.sh`, `install-agent.ps1`, `delbert-container-<version>.tar.gz`, `SHA256SUMS` | GitHub release |
 
-Verify an image: `cosign verify ghcr.io/<owner>/delbert-core:<version> --certificate-identity-regexp 'https://github.com/<owner>/delbert/.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com`. Set the repository variable `PACKAGE_MAINTAINER` (`Name <address>`) for the package metadata. The packages are not signed and there is no apt/dnf repository yet; the installers verify the SHA-256 from `SHA256SUMS`.
+Verify a package: `rpm --import delbert-signing-key.asc && rpm -K delbert-agent-*.rpm` ("digests signatures OK"). Verify an image: `cosign verify ghcr.io/<owner>/delbert-core:<version> --certificate-identity-regexp 'https://github.com/<owner>/delbert/.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com`. Set the repository variable `PACKAGE_MAINTAINER` (`Name <address>`) for the package metadata. There is no apt/dnf repository yet; the installers verify the SHA-256 from `SHA256SUMS` and, for an rpm, the signature.
+
+### Signing the packages
+
+The `.deb` and `.rpm` files are signed with an OpenPGP key (RSA 4096: the rpm of older distributions cannot verify Ed25519). The release publishes the public half as `delbert-signing-key.asc`.
+
+| Situation | What signs | What it is worth |
+|-----------|-----------|------------------|
+| The repository secret `PACKAGE_SIGNING_KEY` is set | your key | the packages are yours: users pin its fingerprint |
+| No secret (the state today) | a key made for that release run, named `STAGING, not for production` | the packages verify against the key published with them, which proves they were not altered after the build; nobody holds the key afterwards, so it says nothing about who built them |
+
+To create the real key (once; `gpg` 2.1 or later; nothing is added to your own keyring):
+
+```sh
+packaging/generate-signing-key.sh --name "Example Corp packages" --email packages@example.com --out keys
+#   optional: --passphrase-file FILE, --expires 2y (default), --staging
+gh secret set PACKAGE_SIGNING_KEY < keys/delbert-signing-key.private.asc        # the secret the release reads
+gh secret set PACKAGE_SIGNING_PASSPHRASE < passphrase.txt                        # only with a passphrase
+```
+
+Keep one offline copy of the private key and delete the file; publish the fingerprint the script prints where your users will look for it. The key expires (two years by default): before then make a new one, set the secret, and publish both public keys for a while. A key that leaked is replaced the same way, at once, with a note in the release.
+
+What is signed where: the rpm carries its signature in the header (`rpm -K`); the deb carries an "origin" signature (`_gpgorigin` inside the archive), which `apt` does not check by itself: for apt the trust comes from a signed repository, not provided yet. Windows: the MSI and the executable are not signed (a code-signing certificate is a separate purchase).
 
 ## Building the artifacts yourself
 
@@ -327,7 +349,8 @@ State on 2026-11-15. "CI" means the workflow on `main` (run 19, all jobs green);
 | Agent as a systemd service | by hand on systemd 257 (Debian, in a privileged container) with a `.deb` of the same content: `install-agent.sh --package`, `service`, upgrade, removal, remediation with rollback. **Not run:** an RPM host, the download path of `install-agent.sh` (needs a release) |
 | Helm chart | CI: `helm lint`, two `helm template` variants, and a real install on single-node K3s 1.31 (`deploy/helm/test-on-k3s.sh`): every pod ready (Core, NATS, PostgreSQL, web UI), API through the LoadBalancer Service, an agent enrolled from outside the cluster, `helm upgrade` keeping passwords, audit chain and agent. **Not run:** an external PostgreSQL, the web ingress, a multi-node cluster |
 | Windows agent, service, MSI, aliases | CI on Windows Server 2022: unit tests of the portable crates, the smoke test (files, a real service, the agent's own service, the three command names), the MSI installed and removed. **Not run:** an enrollment against a Core, `install-agent.ps1`, Windows 11 |
-| Release workflow | **never run** (no tag pushed); packages and MSI are unsigned |
+| Package signing | key generator run by hand; CI signs the packages with a throw-away key and verifies them (deb with gpg, rpm with `rpm -K`, then installs without `--nosignature`): **first run pending** |
+| Release workflow | **never run** (no tag pushed); MSI unsigned |
 
 ## Troubleshooting
 
@@ -340,7 +363,7 @@ State on 2026-11-15. "CI" means the workflow on `main` (run 19, all jobs green);
 
 ## Known limits
 
-- No release published yet; packages are unsigned and there is no apt/dnf repository; images are amd64 only.
+- No release published yet; without your own signing key the packages are signed with a per-release staging key; there is no apt/dnf repository; the MSI is unsigned; images are amd64 only.
 - Helm chart installed only on a single-node K3s in CI; no PodDisruptionBudget or HA of NATS and the Core; the bundled PostgreSQL is a single instance without backups of its own.
 - No Quadlet units for Podman; the web UI has no package (container image only) and needs a TLS reverse proxy in the single-host install.
 - Windows agent is a preview ([WINDOWS.md](WINDOWS.md)): no `package`, ACLs, remediation or containers there.
