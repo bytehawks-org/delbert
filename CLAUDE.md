@@ -70,4 +70,5 @@ This file extends and integrates the user-scoped CLAUDE.md file.
 - docs/DESIDERATA.md
 - docs/SCOPE.md
 - docs/CHANGELOG.md
-- docs/ROADMAP.md
+- docs/ROADMAP.md (inventory of what is done and open)
+- docs/PLAN.md (the order in which the open items get finished)

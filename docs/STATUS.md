@@ -78,7 +78,7 @@ Known and acceptable for an MVP, to say in the release notes: wire compatibility
 
 0. Repository layout and the online editor are done ([REPOSITORY.md](REPOSITORY.md)); next there: files and templates per group and host, shared content from a repository, schema completion and merge requests from the editor.
 
-1. Work through the five exit criteria of the MVP assessment above, in that order; then enroll a real Windows host. Then web e2e in CI and the optional integrations (external key and secret providers). The UI is complete through M4 ([FRONTEND.md](FRONTEND.md)); a tenant "delete" is an archive.
+1. Follow [PLAN.md](PLAN.md): phase 0 (the five exit criteria of the MVP assessment above) before anything else, then phase 1 (safety gaps). Then web e2e in CI and the optional integrations (external key and secret providers). The UI is complete through M4 ([FRONTEND.md](FRONTEND.md)); a tenant "delete" is an archive.
 2. Kubernetes Operator; Windows: ACL model and `package` backend ([WINDOWS.md](WINDOWS.md) "Next steps"). (The CA is behind a trait, rcgen backend only: [API.md](API.md) `DELBERT_CA_BACKEND`.) (Per-action audit events from agents are done, also through the proxy: [API.md](API.md) "Agent audit events".)
 3. Proxy config file and live branch check of proxy renewal; SSH remotes and signed commits for content sources; Entra ID check against a real tenant.
 
