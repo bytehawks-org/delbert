@@ -4,12 +4,13 @@ What is still missing and the order to finish it (written 2026-11-15, from the 7
 
 ## Where it stands
 
-| | Count |
-|---|---|
-| Roadmap rows complete / partial / to-do | 88 / 14 / 58 |
-| Automated tests | about 221 |
-| Installers proven by a real run | 1 of 4 (containers; packages by content only; Helm and Windows never run) |
-| Releases published | 0 |
+| | When written (2026-11-15 morning) | After phase 0 (2026-11-15) |
+|---|---|---|
+| Roadmap rows complete / partial / to-do | 88 / 14 / 58 | 97 / 14 / 54 |
+| Automated tests | about 221 | about 227 |
+| Installers proven by a real run | 1 of 4 | 4 of 4: containers, deb/rpm, Helm on K3s, Windows MSI (each with the gaps listed in [install.md](install.md)) |
+| CI on `main` | red since the installers were added | green (run 19), then one flaky test fixed |
+| Releases published | 0 | 0 |
 
 The gaps are of three kinds: things that exist but were **never proven** (phase 0), requirements of `CLAUDE.md` that are **not met yet** (phases 1 and 2), and work that only matters at scale or on Windows (phases 3 and 4).
 
