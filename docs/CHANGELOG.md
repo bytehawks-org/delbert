@@ -7,6 +7,9 @@
 - **CI:** the `windows` job passed at its first run (unit tests, smoke test, MSI installed and removed on Windows Server 2022). The `packaging` job failed because nfpm does not expand variables in `contents.src`: the build script now fills the placeholders itself.
 - **Backup and restore drill** on the container install: passed; the restore steps in [install.md](install.md) are now exact commands (keys before the first start).
 - **Agent on a real systemd 257:** `install-agent.sh`, `service`, drift repair, package upgrade and removal, remediation with rollback ([TESTING.md](TESTING.md)).
+- **Chart on K3s:** new `kubernetes` CI job (`deploy/helm/test-on-k3s.sh`): install, API through the LoadBalancer Service, an agent enrolled from outside the cluster, upgrade. Green at its first run, with the whole workflow (11 jobs).
+- **Container installer:** picks an engine whose compose really answers; `--engine`.
+- **Phase 1:** an unsigned policy file reaches the real system only with the local opt-in `DELBERT_ALLOW_LOCAL_POLICY` (exit 3 otherwise; a sandbox `--root` and `check` are unaffected); a timed-out `command` takes its whole process group with it; a cron job, a download and a sysctl boot file are removed when they leave the policy.
 - [PLAN.md](PLAN.md): the order in which the open items get done.
 
 ## 2026-11-14

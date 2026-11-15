@@ -222,3 +222,21 @@ Run on 2026-11-15: systemd 257 as PID 1 in a privileged `debian:13-slim` contain
 **What the run found.** The first attempt ended with `rollback requested but there is no last known good policy`: the agent read the issue time of the stored policy with the standard base64 alphabet, while a token is base64url without padding, so the last known good policy was never usable and a rollback could not happen on any host. Fixed (`delbert_wire::jws::token_issued_at`, with a test on real signed tokens). The unit tests had only exercised the remediation with a policy handed to it.
 
 Also seen, and left as it is: a `Type=simple` service that dies right after `systemctl start` is reported as started by systemd, so a `service: started` resource without `remediation.verify` shows "changed" at every cycle instead of a failure. Not run: an RPM host, `kill: after_timeout` on a service that will not stop, `stop` without rollback, a forced release.
+
+## The chart on K3s
+
+`deploy/helm/test-on-k3s.sh <registry> <tag> <delbert-pki> <delbert-agent>` against any cluster that `kubectl` and `helm` point at; the `kubernetes` CI job runs it on a single-node K3s v1.31.14 installed on the runner (first green run: 2026-11-15, CI run 19). It creates the keys and the `delbert-pki` Secret, runs `helm install --wait` (Core as a thin image from the static binary, the real web image, the bundled PostgreSQL and NATS), reaches `/healthz` through the LoadBalancer Service with the generated CA, logs in with the generated admin password, creates a tenant, a policy and an enrollment key, starts an agent **outside** the cluster (the runner itself, sandbox root) and waits for it to report compliant; then `helm upgrade` with changed values and checks that the generated passwords did not change, the audit chain verifies and the agent finds the restarted Core by itself.
+
+It could not be run where this was developed: K3s starts in a privileged container there, but its pods do not (`runc create failed` in the nested sandbox). Not covered: an external database, the ingress of the web UI, more than one node, a K3s newer than 1.31.
+
+## What CI proved on its first runs (2026-11-10 to 2026-11-15)
+
+The jobs added with the installers went to `main` without anybody seeing a run. What happened when they ran:
+
+| Job | First result | What had to change |
+|-----|--------------|--------------------|
+| `windows` | green at the first run | nothing: unit tests, smoke test, MSI install and removal on Windows Server 2022 |
+| `packaging`: packages | failed | nfpm does not expand variables in `contents.src` (the script fills the placeholders); Fedora's rpm refuses unsigned packages (`--nosignature` until they are signed) |
+| `packaging`: Helm | green once reached | nothing: `helm lint` and both `helm template` variants |
+| `packaging`: container installer | failed | the runner has Podman installed and Docker running: the installer now picks an engine whose compose really answers, and has `--engine` |
+| `kubernetes` | green at the first run | nothing |

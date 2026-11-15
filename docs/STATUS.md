@@ -18,7 +18,7 @@ Snapshot for whoever continues the work (updated 2026-11-10). Design lives in [A
 | `delbert-operator` | Kubernetes Operator | `DelbertBinding` CRD, rendering, identity, bundle fetch and reconcile loop ([OPERATOR.md](OPERATOR.md)); verified by hand on K3s 1.31.14 (manifests in `deploy/kubernetes/operator`, image target `operator`); no CI test, no leader election. Target Kubernetes >= 1.31. Design: [ABSTRACT.md](ABSTRACT.md) §5 |
 | `web/` (Next.js) | administration UI, milestones M0-M4 (complete) | backend-for-frontend, see [web/README.md](../web/README.md) |
 
-About 221 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
+About 226 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
 
 ## Run it
 
@@ -54,7 +54,7 @@ See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI complete through
 
 ## MVP assessment (2026-11-10)
 
-**Verdict: feature-complete MVP candidate for Linux; not yet a released MVP.** What is missing is proof and a release, not features.
+**Verdict: MVP for Linux, proven except for the release itself.** Four of the five exit criteria are met; what is missing is the first published release.
 
 | Area | MVP needs | State |
 |------|-----------|-------|
@@ -64,13 +64,15 @@ See [ROADMAP.md](ROADMAP.md). The ones that matter most: web UI complete through
 | Install | containers, Kubernetes, packages | container install run for real; packages checked by content; chart and release pipeline written, **never run** |
 | Windows | optional for an MVP | preview, compiled only |
 
-Exit criteria, in order (each is a run, not a feature):
+Exit criteria (each is a run, not a feature), state on 2026-11-15:
 
-1. The `windows` and `packaging` CI jobs green (they went to `main` without anybody seeing a run).
-2. The Helm chart installed on a real K3s cluster, an agent enrolled against it.
-3. The agent as a systemd service on a real host (package install, `service` and remediation against a real systemd: today a scripted `systemctl` only).
-4. A backup and restore drill following [install.md](install.md), ending with `GET /v1/audit/verify`.
-5. Tag `v0.1.0` and check every artifact of the release (images, chart, packages, MSI, checksums).
+| # | Criterion | State |
+|---|-----------|-------|
+| 1 | CI green on `main`, `windows` and `packaging` included | done (run 19, 11 jobs) |
+| 2 | Helm chart on a real K3s, an agent enrolled from outside | done in CI (single node) |
+| 3 | Agent as a systemd service: package, `service`, remediation | done on systemd 257 (Debian); it found and fixed a bug that made every rollback impossible. RPM host not run |
+| 4 | Backup and restore drill | done on the container install |
+| 5 | Tag `v0.1.0` and check every artifact | **open**: publishing is a decision for the owner; packages and MSI are unsigned |
 
 Known and acceptable for an MVP, to say in the release notes: wire compatibility between versions is not guaranteed (agents reject verbs they do not know: upgrade agents first); no HA of the Core and NATS; packages unsigned; `specificity` conflict strategy, resolution records, SAML and LDAP/AD login, SIEM connector (NDJSON export exists), pagination of lists are post-MVP ([ROADMAP.md](ROADMAP.md)).
 

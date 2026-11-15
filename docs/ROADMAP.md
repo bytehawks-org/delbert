@@ -59,7 +59,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | `command` resource design (local allowlist, no shell, idempotency guard) | complete | 2026-10-23 |
 | `command` resource implementation | complete | 2026-11-10 |
 | Windows agent (preview, [WINDOWS.md](WINDOWS.md)): `file`/`copy`/`template`/`line_in_file` with drive paths, `service` on the SCM, registry facts, Windows Service (`service install/uninstall`), private data directory; cross-compiled, not yet run on Windows | partial | 2026-11-10 |
-| Windows agent: green `windows` CI job (smoke test, MSI) and a hand-run enrollment on Windows Server and Windows 11 | to-do | 2026-11-10 |
+| Windows agent: green `windows` CI job (unit tests, smoke test with a real service and the aliases, MSI installed and removed on Windows Server 2022) | complete | 2026-11-15 |
+| Windows agent: a hand-run enrollment against a Core on Windows Server and Windows 11 | to-do | 2026-11-15 |
 | Windows agent: ACL parameters (`owner`/`group`/`mode` are refused today), `package` backend (MSI with pinned hash), remediation for Windows services, Event Log, `registry` verb, reboots, arm64, code signing | to-do | 2026-11-10 |
 | Workspace skeleton: policy, Core, Agent crates | complete | 2026-10-23 |
 | Workspace skeleton: Proxy crate | complete | 2026-10-23 |
@@ -104,7 +105,7 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | `command`: the whole process group is killed at timeout | complete | 2026-11-15 |
 | `command`: output and exit code of a successful run in the audit trail (needs masking of secrets), supplementary groups of the user, policy-side hash of the executable | to-do | 2026-11-15 |
 | Agent: `authorized_key`, user passwords from secrets, authoritative group membership, per-user crontab spool, streaming download above 256 MiB, Windows counterparts (local users, Scheduled Tasks, commands) | to-do | 2026-11-10 |
-| MVP exit criteria ([STATUS.md](STATUS.md) "MVP assessment"): CI green on the new jobs, chart installed on K3s, agent service on a real systemd host, backup/restore drill, first tag `v0.1.0` | to-do | 2026-11-10 |
+| MVP exit criteria ([PLAN.md](PLAN.md) phase 0): CI green, backup/restore drill, agent on real systemd, chart on K3s: done 2026-11-15; open: signed packages and the first tag `v0.1.0` | partial | 2026-11-15 |
 | New verbs in the console: form/snippets and schema completion in the policy editor (the YAML editor and the validation already accept them) | to-do | 2026-11-10 |
 | Orphans for the new verbs: a cron job, a download and a sysctl boot file are removed when they leave the policy | complete | 2026-11-15 |
 | Orphans: a block or a mount that leaves the policy stays (needs `state: absent`) | to-do | 2026-11-15 |
@@ -124,7 +125,7 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Frontend: manual accessibility review with a screen reader (axe covers only part of WCAG) | to-do | 2026-10-24 |
 | Frontend M4: live status (SSE), dashboard with overview endpoint, axe accessibility audit, performance budget, visual regression | complete | 2026-10-24 |
 | `git init` | complete | 2026-10-24 |
-| CI pipeline (tests, clippy, fmt, image build); `windows` job (portable crates, agent smoke test, MSI) and `packaging` job (static build, deb/rpm in Debian and Fedora containers, chart, container installer) added 2026-11-10, results not seen yet | partial | 2026-11-10 |
+| CI pipeline: tests, clippy, images, `windows` (agent on Windows Server 2022, MSI), `packaging` (static build, deb/rpm in Debian and Fedora, chart lint, container installer), `kubernetes` (chart on K3s); all green on 2026-11-15 | complete | 2026-11-15 |
 | Audit browse and export API (`GET /v1/audit`, `/v1/audit/export`) | complete | 2026-10-23 |
 | Artifact storage outside PostgreSQL: local directory and S3-compatible (Garage verified) | complete | 2026-10-23 |
 | Artifacts: streaming upload (multipart/range) beyond 64 MiB, garbage collection of unreferenced objects, retention | to-do | 2026-10-23 |
@@ -146,9 +147,10 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Key rotation: internal CA, NATS issuer, secrets age key, proxy certificate ([ROTATION.md](ROTATION.md)) | complete | 2026-10-23 |
 | Quickstart and installation guides ([quickstart.md](quickstart.md), [install.md](install.md)) | complete | 2026-10-23 |
 | Helm chart (`deploy/helm/delbert`: Core, NATS, web UI, optional PostgreSQL, generated passwords, NetworkPolicy for the database); `helm lint`/`template` in CI | complete | 2026-11-10 |
-| Helm chart installed on a real K3s cluster; PodDisruptionBudget; drop the plain manifests of the control plane once the chart is proven | to-do | 2026-11-10 |
+| Helm chart installed on a real K3s (single node, in CI, with an agent outside the cluster and an upgrade) | complete | 2026-11-15 |
+| Helm chart: multi-node cluster, external PostgreSQL and ingress exercised; PodDisruptionBudget; drop the plain manifests of the control plane | to-do | 2026-11-15 |
 | Static (musl) builds of every binary; deb/rpm packages (nfpm) for agent, Core, proxy and tools with systemd units and service accounts; `install-agent.sh` | complete | 2026-11-10 |
-| Windows installer: MSI (WiX 5) and `install-agent.ps1`, built and installed by CI | partial | 2026-11-10 |
+| Windows installer: MSI (WiX 5) built, installed and removed by CI; `install-agent.ps1` not run (needs a release) | partial | 2026-11-15 |
 | Release workflow on a tag: images on ghcr.io (cosign, SBOM, provenance), chart as OCI artifact, packages, MSI, install scripts, container bundle, `SHA256SUMS` (written, never run) | partial | 2026-11-10 |
 | Releases: first tag; arm64 images; signed packages and an apt/dnf repository; signed MSI | to-do | 2026-11-10 |
 | Single-host container install (`deploy/container`: compose for Podman/Docker, `install.sh`, keys created by a one-shot container); verified with Docker | complete | 2026-11-10 |

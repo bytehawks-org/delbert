@@ -2,7 +2,7 @@
 
 How to run Delbert for real: the control plane (Core, PostgreSQL, NATS, web UI), agents on Linux and Windows hosts, and optionally a proxy at a branch office. For a ten-minute trial on one machine see [quickstart.md](quickstart.md).
 
-**State of the project:** unreleased (v0.x). The installers below exist in this repository and a release workflow publishes them when a tag `vX.Y.Z` is pushed ([Releases](#releases)); **no release has been published yet**, so until the first tag you build the artifacts yourself ([Building](#building-the-artifacts-yourself)). What was run for real and what was only written is listed in [How far the installers are verified](#how-far-the-installers-are-verified). Read the "Known limits" at the end before relying on it.
+**State of the project:** unreleased (v0.x). The installers below exist in this repository, are exercised by CI on every push, and a release workflow publishes them when a tag `vX.Y.Z` is pushed ([Releases](#releases)); **no release has been published yet**, so until the first tag you build the artifacts yourself ([Building](#building-the-artifacts-yourself)). What was run for real is listed in [How far the installers are verified](#how-far-the-installers-are-verified). Read the "Known limits" at the end before relying on it.
 
 ## Pick your path
 
@@ -313,17 +313,19 @@ For the container install with your own images: `./install.sh --host <name> --re
 
 ## How far the installers are verified
 
-| Piece | Verified how (2026-11-10) |
-|-------|---------------------------|
-| `delbert-pki bootstrap` | run; idempotent second run |
-| Container install (`install.sh`, compose) without the web UI | run with Docker 29: keys created by the one-shot container, NATS callout, Core healthy; a tenant, a policy and an enrollment key created; a static agent enrolled through the published name and ports and applied the policy |
-| Web UI in the container install | not run (the service definition mirrors the e2e stack) |
-| Static (musl) binaries of every crate | built; Core and agent run as above |
-| Package content: maintainer scripts, users, modes, `core.toml` accepted by `--check-config`, agent apply/check | run in Debian 13 and Fedora containers on a hand-laid layout |
-| The `.deb` / `.rpm` files themselves (nfpm), `install-agent.sh` download path | **not built here**: first exercised by the `packaging` CI job (`test-packages.sh`) |
-| Helm chart | **not rendered here** (no Helm in the development sandbox): `helm lint` and `helm template` run in the `packaging` CI job; never installed on a cluster |
-| Windows agent, service, MSI, `install-agent.ps1` | compiled for Windows only: see [WINDOWS.md](WINDOWS.md); first run is the `windows` CI job |
-| Release workflow | never run (no tag pushed) |
+State on 2026-11-15. "CI" means the workflow on `main` (run 19, all jobs green); details of each run are in [TESTING.md](TESTING.md).
+
+| Piece | Verified how |
+|-------|--------------|
+| `delbert-pki bootstrap` | run; idempotent second run; used by every install below |
+| Container install (`install.sh`, compose) without the web UI | run with Docker, by hand and in CI: keys from the one-shot container, NATS callout, Core healthy; a static agent enrolled through the published name and ports and applied a policy |
+| Backup and restore of the container install | drill run by hand: every volume removed, restored, audit chain verified, agent reconnected |
+| Web UI in the container install | **not run** (the image is built and runs in the K3s test) |
+| `.deb` and `.rpm` built by nfpm | CI: installed in clean Debian 13 and Fedora containers (users, modes, units, aliases, `--check-config`, agent apply/check), then removed |
+| Agent as a systemd service | by hand on systemd 257 (Debian, in a privileged container) with a `.deb` of the same content: `install-agent.sh --package`, `service`, upgrade, removal, remediation with rollback. **Not run:** an RPM host, the download path of `install-agent.sh` (needs a release) |
+| Helm chart | CI: `helm lint`, two `helm template` variants, and a real install on single-node K3s 1.31 (`deploy/helm/test-on-k3s.sh`): every pod ready (Core, NATS, PostgreSQL, web UI), API through the LoadBalancer Service, an agent enrolled from outside the cluster, `helm upgrade` keeping passwords, audit chain and agent. **Not run:** an external PostgreSQL, the web ingress, a multi-node cluster |
+| Windows agent, service, MSI, aliases | CI on Windows Server 2022: unit tests of the portable crates, the smoke test (files, a real service, the agent's own service, the three command names), the MSI installed and removed. **Not run:** an enrollment against a Core, `install-agent.ps1`, Windows 11 |
+| Release workflow | **never run** (no tag pushed); packages and MSI are unsigned |
 
 ## Troubleshooting
 
@@ -337,7 +339,7 @@ For the container install with your own images: `./install.sh --host <name> --re
 ## Known limits
 
 - No release published yet; packages are unsigned and there is no apt/dnf repository; images are amd64 only.
-- Helm chart never installed on a cluster; no PodDisruptionBudget or HA of NATS and the Core; the bundled PostgreSQL is a single instance without backups of its own.
+- Helm chart installed only on a single-node K3s in CI; no PodDisruptionBudget or HA of NATS and the Core; the bundled PostgreSQL is a single instance without backups of its own.
 - No Quadlet units for Podman; the web UI has no package (container image only) and needs a TLS reverse proxy in the single-host install.
 - Windows agent is a preview ([WINDOWS.md](WINDOWS.md)): no `package`, ACLs, remediation or containers there.
 - The CA certificate reaches agents out of band (there is no fingerprint-pinned download from the Core).
