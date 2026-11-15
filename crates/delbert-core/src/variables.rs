@@ -414,6 +414,102 @@ pub async fn render(State(st): State<AppState>, Authn(user): Authn, Path((tenant
     Ok(Json(Preview { templates, notes: vec!["secrets are shown as ********".into(), "host facts (hostname, os_id, os_version_id) are placeholders: the agent fills them in".into()] }))
 }
 
+/// Agents looked at when a policy is saved: enough to catch a mistake, bounded for a large fleet.
+const WARN_AGENTS: i64 = 200;
+
+/// The names a template or expression reads from `vars` (`vars.port`, `vars.db.host` → `port`, `db`).
+fn vars_used(names: std::collections::HashSet<String>) -> std::collections::BTreeSet<String> {
+    names.iter().filter_map(|n| n.strip_prefix("vars.")).filter_map(|rest| rest.split('.').next()).filter(|n| !n.is_empty()).map(str::to_owned).collect()
+}
+
+/// Advisory checks of a policy that is being saved: for each template and each `when`, the
+/// variables it reads that a targeted agent would not have (policy defaults, the template's own
+/// `vars` and the shared, tenant, group and agent layers are all counted as defined). A warning,
+/// not an error: a variable may be created after the policy. Nothing here can fail a save; a
+/// problem while checking is logged and yields no warning.
+pub async fn policy_warnings(st: &AppState, tid: sqlx::types::Uuid, yaml: &str) -> Vec<String> {
+    match warnings_inner(st, tid, yaml).await {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::warn!("could not check the variables of a policy: {e}");
+            Vec::new()
+        }
+    }
+}
+
+async fn warnings_inner(st: &AppState, tid: sqlx::types::Uuid, yaml: &str) -> Result<Vec<String>, String> {
+    let policy = delbert_policy::from_yaml(yaml).map_err(|e| e.to_string())?;
+    let env = minijinja::Environment::new();
+    let mut warnings = Vec::new();
+
+    // What each resource reads from `vars`, minus what it defines for itself.
+    let catalog = crate::artifacts::catalog(st, tid).await.map_err(|e| e.to_string())?;
+    let mut used: Vec<(String, std::collections::BTreeSet<String>)> = Vec::new();
+    for r in &policy.spec.resources {
+        let mut names = std::collections::BTreeSet::new();
+        if let Some(when) = &r.when {
+            if let Ok(expr) = env.compile_expression(when) {
+                names.extend(vars_used(expr.undeclared_variables(true)));
+            }
+        }
+        if let Some(t) = &r.template {
+            let name = t.src.strip_prefix("artifact://").unwrap_or(&t.src);
+            match catalog.get(name) {
+                None => warnings.push(format!("resource '{}': the template artifact '{name}' does not exist yet", r.id)),
+                Some(pinned) => {
+                    let source = crate::artifacts::read_small(st, tid, name, &pinned.sha256, MAX_TEMPLATE_BYTES).await.ok().and_then(|b| String::from_utf8(b).ok());
+                    match source.as_deref().map(|s| env.template_from_str(s)) {
+                        Some(Ok(template)) => names.extend(vars_used(template.undeclared_variables(true)).into_iter().filter(|n| !t.vars.contains_key(n))),
+                        Some(Err(e)) => warnings.push(format!("resource '{}': the template '{name}' does not parse: {e}", r.id)),
+                        None => {}
+                    }
+                }
+            }
+        }
+        names.retain(|n| !policy.spec.vars.contains_key(n));
+        if !names.is_empty() {
+            used.push((r.id.clone(), names));
+        }
+    }
+    if used.is_empty() {
+        return Ok(warnings);
+    }
+
+    // The agents the policy targets (the same rule as the compiler), and what each of them has.
+    let target = &policy.spec.target;
+    let agents: Vec<(String, Vec<String>)> = sqlx::query_as("SELECT name, groups FROM agents WHERE tenant_id = $1 ORDER BY name").bind(tid).fetch_all(&st.pool).await.map_err(|e| e.to_string())?;
+    let targeted: Vec<&(String, Vec<String>)> = agents
+        .iter()
+        .filter(|(name, groups)| (target.groups.is_empty() && target.agents.is_empty()) || target.groups.iter().any(|g| groups.contains(g)) || target.agents.contains(name))
+        .take(WARN_AGENTS as usize)
+        .collect();
+    // variable -> (resource, agents that lack it)
+    let mut missing: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
+    if targeted.is_empty() {
+        let (resolved, _) = resolve(st, tid, &target.groups, "").await.map_err(|e| e.to_string())?;
+        for (resource, names) in &used {
+            for name in names.iter().filter(|n| !resolved.iter().any(|r| &r.name == *n)) {
+                warnings.push(format!("resource '{resource}': variable '{name}' is not defined for the policy's target (no agent is enrolled in it yet)"));
+            }
+        }
+        return Ok(warnings);
+    }
+    for (agent, groups) in targeted {
+        let (resolved, _) = resolve(st, tid, groups, agent).await.map_err(|e| e.to_string())?;
+        for (resource, names) in &used {
+            for name in names.iter().filter(|n| !resolved.iter().any(|r| &r.name == *n)) {
+                missing.entry((name.clone(), resource.clone())).or_default().push(agent.clone());
+            }
+        }
+    }
+    for ((name, resource), agents) in missing {
+        let shown = agents.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+        let more = if agents.len() > 3 { format!(" and {} more", agents.len() - 3) } else { String::new() };
+        warnings.push(format!("resource '{resource}': variable '{name}' is not defined for {shown}{more}"));
+    }
+    Ok(warnings)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

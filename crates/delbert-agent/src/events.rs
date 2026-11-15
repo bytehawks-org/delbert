@@ -14,7 +14,8 @@
 //! An unreachable Core is not an event (it is an availability problem, visible in the report).
 //!
 //! Events carry names and attribute names only (`detail` is for example `content, mode`), never
-//! file contents or secrets. Delivery is at least once: events wait in a spool directory (one
+//! file contents or secrets. The one exception is the `command` verb, whose exit code and the
+//! beginning of its output are recorded with the policy's secrets masked (see `command.rs`). Delivery is at least once: events wait in a spool directory (one
 //! crash-safe file each) until the Core, or the site proxy, acknowledges them; an id chosen here
 //! lets the receiver drop a second delivery. The spool is bounded: a long outage loses the oldest
 //! events, and says so with `events.dropped`. Losing the directory loses only what was not yet

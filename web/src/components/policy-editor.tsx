@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { diffLines } from "@/lib/diff";
 import { callCore } from "@/lib/mutate";
 
-type Check = { state: "idle" | "checking" } | { state: "ok"; name: string; next: number; approval: boolean } | { state: "bad"; error: string };
+type Check = { state: "idle" | "checking" } | { state: "ok"; name: string; next: number; approval: boolean; warnings: string[] } | { state: "bad"; error: string };
 
 /** YAML editor: every pause in typing asks the Core to validate (nothing is stored), and the change is shown against `base`. */
 export function PolicyEditor({ tenant, initial, base, baseLabel }: { tenant: string; initial: string; base: string | null; baseLabel: string }) {
@@ -21,8 +21,8 @@ export function PolicyEditor({ tenant, initial, base, baseLabel }: { tenant: str
     if (!yaml.trim()) return setCheck({ state: "bad", error: t("empty") });
     setCheck({ state: "checking" });
     const handle = setTimeout(async () => {
-      const r = await callCore<{ name: string; next_version: number; approval_required: boolean }>("POST", `/v1/tenants/${encodeURIComponent(tenant)}/policies/validate`, { yaml });
-      setCheck(r.ok && r.data ? { state: "ok", name: r.data.name, next: r.data.next_version, approval: r.data.approval_required } : { state: "bad", error: r.error ?? "?" });
+      const r = await callCore<{ name: string; next_version: number; approval_required: boolean; warnings?: string[] }>("POST", `/v1/tenants/${encodeURIComponent(tenant)}/policies/validate`, { yaml });
+      setCheck(r.ok && r.data ? { state: "ok", name: r.data.name, next: r.data.next_version, approval: r.data.approval_required, warnings: r.data.warnings ?? [] } : { state: "bad", error: r.error ?? "?" });
     }, 500);
     return () => clearTimeout(handle);
   }, [yaml, tenant, t]);
@@ -65,6 +65,17 @@ export function PolicyEditor({ tenant, initial, base, baseLabel }: { tenant: str
           <span role="alert" className="text-danger">
             ✗ {check.error}
           </span>
+        )}
+        {/* Advisory: the policy can be saved, but these variables are missing for some agent. */}
+        {check.state === "ok" && check.warnings.length > 0 && (
+          <div className="mt-2 text-muted" data-testid="policy-warnings">
+            <p className="font-medium">{t("warnings")}</p>
+            <ul className="list-disc pl-5">
+              {check.warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
       {saveError && (

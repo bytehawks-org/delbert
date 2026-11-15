@@ -30,7 +30,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Global (platform-owned) artifacts inherited by tenants (tenant first, then platform; `globals:*`; agents move when a shared file changes) | complete | 2026-10-24 |
 | Four-eyes approval for changes to shared artifacts and to variables (today authenticated, authorized and audited, but live at once) | to-do | 2026-10-24 |
 | Template variables and constants: layers shared, tenant, group, agent; locked constants; resolved by the Core into the signed policy; "render for agent" preview | complete | 2026-10-24 |
-| Variables: undefined `vars.x` is caught by the preview, not yet at policy save; inline `copy.content` is not templated | partial | 2026-10-24 |
+| Variables: a save (and the editor's dry run) warns about `vars.x` that a targeted agent would not have; a warning, not a refusal | complete | 2026-11-15 |
+| Variables: inline `copy.content` is not templated; warnings do not cover `secrets.x` and facts | to-do | 2026-11-15 |
 | "ByteHawks" theme applied to this console (tokens, fonts, logo, sidebar layout) | complete | 2026-10-24 |
 | Shared "ByteHawks" theme for all admin dashboards: extract the tokens, fonts and base components (`ui/`, shell, nav) into a package other dashboards import | to-do | 2026-10-24 |
 | Agent events: per-agent rate limit is a fixed 1000/hour; configurable limits, event for command output (when `command` exists), UI view of an agent's events | to-do | 2026-10-24 |
@@ -104,7 +105,8 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Agent: `block_in_file`, `user`, `group`, `sysctl`, `cron` (`/etc/cron.d`, argv, local allow-list `DELBERT_CRON_ALLOW`); verified on a real Debian root (shadow tools) | complete | 2026-11-10 |
 | Agent: `get_url` (mandatory SHA-256, no request when the file is already right), `mount` (fstab line + mount/umount/remount), `command` (local allow-list with optional hash pin, argv, mandatory guard and timeout, declared user); run for real: HTTPS download, tmpfs mount, a command as `nobody` and a timeout | complete | 2026-11-10 |
 | `command`: the whole process group is killed at timeout | complete | 2026-11-15 |
-| `command`: output and exit code of a successful run in the audit trail (needs masking of secrets), supplementary groups of the user, policy-side hash of the executable | to-do | 2026-11-15 |
+| `command`: exit code and the beginning of the output in the report and the audit event, with the policy's secrets masked | complete | 2026-11-15 |
+| `command`: supplementary groups of the user, policy-side hash of the executable | to-do | 2026-11-15 |
 | Agent: `authorized_key`, user passwords from secrets, authoritative group membership, per-user crontab spool, streaming download above 256 MiB, Windows counterparts (local users, Scheduled Tasks, commands) | to-do | 2026-11-10 |
 | MVP exit criteria ([PLAN.md](PLAN.md) phase 0): CI green, backup/restore drill, agent on real systemd, chart on K3s: done 2026-11-15; open: signed packages and the first tag `v0.1.0` | partial | 2026-11-15 |
 | New verbs in the console: form/snippets and schema completion in the policy editor (the YAML editor and the validation already accept them) | to-do | 2026-11-10 |

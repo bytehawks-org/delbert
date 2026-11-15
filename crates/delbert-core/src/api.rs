@@ -603,6 +603,11 @@ pub struct PolicyVersionOut {
     pub version: i64,
     /// `false` when the tenant requires approval: the version is a draft.
     pub live: bool,
+    /// Things worth a look that do not stop the save: variables a template or a `when` uses and
+    /// a targeted agent would not have (they may be defined later; until then the resource fails
+    /// on that agent). Empty when there is nothing to say.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -627,7 +632,9 @@ pub struct PolicyOut {
 pub async fn create_policy(State(st): State<AppState>, Authn(user): Authn, Path(tenant): Path<String>, Json(body): Json<NewPolicy>) -> ApiResult<(StatusCode, Json<PolicyVersionOut>)> {
     let tid = user.tenant(&st.pool, &tenant, "policies:write").await?;
     crate::content::ensure_unowned(&st.pool, tid, "policy", &parse_policy_name(&body.yaml)).await?;
-    Ok((StatusCode::CREATED, Json(store_policy_version(&st, tid, &tenant, &body.yaml, &user.username).await?)))
+    let mut saved = store_policy_version(&st, tid, &tenant, &body.yaml, &user.username).await?;
+    saved.warnings = crate::variables::policy_warnings(&st, tid, &body.yaml).await;
+    Ok((StatusCode::CREATED, Json(saved)))
 }
 
 #[derive(Serialize, ToSchema)]
@@ -637,6 +644,9 @@ pub struct PolicyCheck {
     pub next_version: i64,
     /// A save creates a draft that needs approval (otherwise it goes live at once).
     pub approval_required: bool,
+    /// The warnings a save would return (see `PolicyVersionOut.warnings`).
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 #[utoipa::path(post, path = "/v1/tenants/{tenant}/policies/validate", tag = "policies", security(("bearer" = [])), request_body = NewPolicy,
@@ -652,7 +662,8 @@ pub async fn validate_policy_dry_run(State(st): State<AppState>, Authn(user): Au
         .fetch_one(&st.pool)
         .await?;
     let approval_required: bool = sqlx::query_scalar("SELECT approval_required FROM tenants WHERE id = $1").bind(tid).fetch_one(&st.pool).await?;
-    Ok(Json(PolicyCheck { name, next_version, approval_required }))
+    let warnings = crate::variables::policy_warnings(&st, tid, &body.yaml).await;
+    Ok(Json(PolicyCheck { name, next_version, approval_required, warnings }))
 }
 
 /// Parse and check a policy for a tenant; returns its name.
@@ -706,7 +717,7 @@ pub(crate) async fn store_policy_version(st: &AppState, tid: Uuid, tenant: &str,
     if !approval_required {
         notify_tenant(st, tenant, tid).await;
     }
-    Ok(PolicyVersionOut { name, version, live: !approval_required })
+    Ok(PolicyVersionOut { name, version, live: !approval_required, warnings: Vec::new() })
 }
 
 #[utoipa::path(get, path = "/v1/tenants/{tenant}/policies", tag = "policies", security(("bearer" = [])),

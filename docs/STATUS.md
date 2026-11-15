@@ -18,7 +18,7 @@ Snapshot for whoever continues the work (updated 2026-11-10). Design lives in [A
 | `delbert-operator` | Kubernetes Operator | `DelbertBinding` CRD, rendering, identity, bundle fetch and reconcile loop ([OPERATOR.md](OPERATOR.md)); verified by hand on K3s 1.31.14 (manifests in `deploy/kubernetes/operator`, image target `operator`); no CI test, no leader election. Target Kubernetes >= 1.31. Design: [ABSTRACT.md](ABSTRACT.md) §5 |
 | `web/` (Next.js) | administration UI, milestones M0-M4 (complete) | backend-for-frontend, see [web/README.md](../web/README.md) |
 
-About 228 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
+About 230 automated tests (unit, PostgreSQL, NATS; optional S3/git/Keycloak-backed checks run with environment variables). Container end-to-end scenarios and the real-system checks (Garage, Keycloak, Forgejo, key rotation) are in [TESTING.md](TESTING.md). Start with [quickstart.md](quickstart.md); deployment in [install.md](install.md). Repository: `bytehawks-org/delbert` on GitHub (`main`). Nothing is deployed anywhere.
 
 ## Run it
 

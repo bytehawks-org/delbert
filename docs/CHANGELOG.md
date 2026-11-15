@@ -14,6 +14,8 @@
 - **Test:** `mfa_totp_recovery_and_reset` failed once in CI (run 21) because it asked twice for "the code of now" and a 30-second step ended in between (12:00:29 and 12:00:30 in the log); it now replays the exact code of the confirmation.
 - **Paging:** `GET /v1/tenants/{t}/agents` takes `limit` and `after`, answers `X-Next-After` when more exist and is capped at 10000 without parameters; the body is still an array.
 - **Signed packages:** deb and rpm are signed in CI and in releases, with the repository secret `PACKAGE_SIGNING_KEY` or, without it, with a staging key made for the run; the public key is published as `delbert-signing-key.asc`; `install-agent.sh` imports it and lets rpm verify. `packaging/generate-signing-key.sh` creates a key ([install.md](install.md) "Signing the packages"). The release builds both architectures in one job so that they share the key.
+- **`command` in the audit trail:** exit code and the first 200 characters of the output and error output, with every value of the policy's secrets replaced by `***` before cutting, logging or sending.
+- **Undefined variables:** saving a policy, and the editor's dry run, return `warnings` for every `vars.x` read by a template or a `when` that a targeted agent would not have (policy defaults, the template's own `vars` and the shared, tenant, group and agent layers count as defined), for a template artifact that does not exist yet, and for a template that does not parse. Advisory: the save succeeds. The console lists them under the editor (EN/IT).
 - [PLAN.md](PLAN.md): the order in which the open items get done.
 
 ## 2026-11-14

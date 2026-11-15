@@ -194,3 +194,7 @@ Migrations run as the schema owner. The Core runs as a login role that is a memb
 ## Paging
 
 `GET /v1/tenants/{t}/agents` is the list that grows with the fleet: it is ordered by name and takes `?limit=` (1 to 10000) and `?after=<name>`. The body stays a plain array; when more agents exist the response has the header `X-Next-After`, the value to pass as `after` for the next page. Without `limit` the cap of 10000 applies (and the header says when it cut), so the list is never unbounded. `GET /v1/audit` has its own keyset paging (`before`, `next`). The other lists hold administrative objects (tenants, users, roles, policies, sources, providers...) and are returned whole.
+
+## Warnings on a policy save
+
+`POST /v1/tenants/{t}/policies` and `POST .../policies/validate` return `warnings`: a list of sentences, empty when there is nothing to say. Today they are about variables: a `vars.<name>` read by a template or by a `when` that some targeted agent would not have (up to 200 targeted agents are checked; the policy's `spec.vars`, the template's own `vars` and the shared, tenant, group and agent layers count as defined), a template artifact that does not exist yet, a template that does not parse. They never stop a save: a variable can be created after the policy, and until then the resource fails on the agents named in the warning.

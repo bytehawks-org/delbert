@@ -13,9 +13,12 @@
 //!   killed at `timeout_seconds` together with everything it started (its process group), and sees only `PATH`, `HOME`, `USER`, `LOGNAME`, `LC_ALL=C` and
 //!   the policy's `env`.
 //!
-//! What reaches the Core: that the command ran (a `resource.changed` event with its subject and
-//! the guard's reason) or failed (exit code and the first 300 characters of its error output).
-//! The output of a successful run stays in the agent's log. Not available on Windows.
+//! What reaches the Core, in the report and in the `resource.changed` / `resource.failed` audit
+//! event: the program (never its arguments), the guard's reason, the exit code and the beginning
+//! of its output and error output. **Secrets are masked first**: every value of the policy's
+//! secrets that appears in the output is replaced by `***` before anything is cut, logged or
+//! sent. A program that prints a secret it obtained elsewhere cannot be recognised: schedule
+//! such programs with care. Not available on Windows.
 
 use std::time::Duration;
 
@@ -28,6 +31,40 @@ use crate::runner::{CmdOutput, ExecRequest};
 use crate::verbs::{Check, Verb};
 
 const PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+/// Characters of each output stream that go into the report and the audit event.
+const EXCERPT: usize = 200;
+
+/// `text` on one line, with every secret of the policy replaced by `***`, cut to [`EXCERPT`].
+/// Masking comes first, so a cut can never leave half a secret behind.
+fn excerpt(ctx: &Ctx, text: &str) -> String {
+    let mut masked = text.to_owned();
+    // Longest first: a secret that contains another must not be left half visible.
+    let mut values: Vec<&String> = ctx.secrets.values().filter(|v| !v.is_empty()).collect();
+    values.sort_by_key(|v| std::cmp::Reverse(v.len()));
+    for value in values {
+        masked = masked.replace(value.as_str(), "***");
+    }
+    let line: String = masked.split_whitespace().collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).collect();
+    match line.char_indices().nth(EXCERPT) {
+        Some((cut, _)) => format!("{}…", &line[..cut]),
+        None => line,
+    }
+}
+
+/// What is recorded about a finished program: exit code and what it printed, masked.
+fn summary(ctx: &Ctx, out: &CmdOutput) -> Vec<String> {
+    let mut notes = vec![match out.code {
+        Some(code) => format!("exit {code}"),
+        None => "ended by a signal".to_string(),
+    }];
+    for (label, text) in [("output", &out.stdout), ("error output", &out.stderr)] {
+        let shown = excerpt(ctx, text);
+        if !shown.is_empty() {
+            notes.push(format!("{label}: {shown}"));
+        }
+    }
+    notes
+}
 
 /// Refuse an executable that the administrator of this host did not list (or whose content is
 /// not the pinned one).
@@ -108,10 +145,14 @@ impl Verb for CommandSpec {
             return Ok(());
         }
         let out = exec(self, ctx, &self.argv)?;
-        tracing::info!("command {} (user {}): exit {:?}, {} bytes of output, {} of error output", self.argv[0], self.user, out.code, out.stdout.len(), out.stderr.len());
-        let argv: Vec<&str> = self.argv.iter().map(String::as_str).collect();
-        // Only the program is named in the error: arguments may carry values that are not for the audit trail.
-        out.check(&argv[..1]).map(drop)
+        let notes = summary(ctx, &out);
+        tracing::info!("command {} (user {}): {}", self.argv[0], self.user, notes.join("; "));
+        if !out.ok() {
+            // Only the program is named: arguments may carry values that are not for the audit trail.
+            bail!("`{}` failed: {}", self.argv[0], notes.join("; "));
+        }
+        ctx.notes.lock().unwrap().extend(notes);
+        Ok(())
     }
 }
 
@@ -189,7 +230,8 @@ mod tests {
         let both = CommandSpec { onlyif: vec!["/usr/bin/pending".into()], unless: vec!["/usr/bin/done".into()], argv: vec!["/usr/local/bin/migrate".into(), "--token=abc".into()], ..spec() };
         assert_eq!(both.check(&c).unwrap(), Check::Drift(vec!["'onlyif' holds".into(), "'unless' does not hold".into()]));
         let err = both.apply(&c).unwrap_err().to_string();
-        assert!(err.contains("`/usr/local/bin/migrate` failed (exit Some(7))") && !err.contains("--token"), "{err}");
+        assert_eq!(err, "`/usr/local/bin/migrate` failed: exit 7; output: secret detail; error output: secret detail");
+        assert!(!err.contains("--token"), "{err}");
         assert!(r.calls().iter().any(|call| call == "[1500:1501] /usr/local/bin/migrate --token=abc"));
     }
 
@@ -207,6 +249,28 @@ mod tests {
         assert!(spec.apply(&ctx).unwrap_err().to_string().contains("user 'app' does not exist"));
         ctx.command_allow = vec![format!("/usr/local/bin/migrate@{}", "0".repeat(64))];
         assert!(spec.check(&ctx).unwrap_err().to_string().contains("does not match the SHA-256"));
+    }
+
+    #[test]
+    fn what_a_command_printed_is_recorded_with_the_secrets_masked() {
+        let printed = "connecting as app\npassword=hunter2 token=hunter2-extended\n\tdone\n";
+        let (tmp, mut ctx, _) = ctx(&["/usr/local/bin/migrate"], vec![(&["/usr/local/bin/migrate"], 0, printed)]);
+        ctx.secrets = [("db".to_string(), "hunter2".to_string()), ("api".to_string(), "hunter2-extended".to_string()), ("empty".to_string(), String::new())].into();
+        let spec = CommandSpec { creates: Some("/var/lib/app/done".into()), ..spec() };
+        spec.apply(&ctx).unwrap();
+        let notes = ctx.notes.lock().unwrap().clone();
+        assert_eq!(notes, vec!["exit 0".to_string(), "output: connecting as app password=*** token=*** done".into()]);
+        // The longer secret is masked whole, not as "***-extended"; nothing of either survives.
+        assert!(!notes.join(" ").contains("hunter2") && !notes.join(" ").contains("extended"));
+        // A long output is cut after masking, and a failure is masked too.
+        assert_eq!(excerpt(&ctx, &"x".repeat(500)).chars().count(), EXCERPT + 1);
+        let long = format!("{}hunter2", "y".repeat(EXCERPT - 3));
+        assert!(!excerpt(&ctx, &long).contains("hun"), "a cut must not expose the start of a secret");
+        let (_t, mut failing, _) = super::tests::ctx(&["/usr/local/bin/migrate"], vec![(&["/usr/local/bin/migrate"], 2, "cannot log in with hunter2")]);
+        failing.secrets = ctx.secrets.clone();
+        let err = spec.apply(&failing).unwrap_err().to_string();
+        assert!(err.contains("exit 2") && err.contains("cannot log in with ***") && !err.contains("hunter2"), "{err}");
+        drop(tmp);
     }
 
     #[test]

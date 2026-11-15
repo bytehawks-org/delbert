@@ -241,7 +241,8 @@
     "save": "Salva come nuova versione",
     "saving": "Salvataggio…",
     "changes": "Modifiche rispetto a {base}",
-    "noChanges": "Nessuna modifica."
+    "noChanges": "Nessuna modifica.",
+    "warnings": "Da controllare prima di salvare (la policy è valida; una variabile può essere definita anche dopo):"
   },
   "versionActions": {
     "comment": "Commento (obbligatorio per rifiutare)",

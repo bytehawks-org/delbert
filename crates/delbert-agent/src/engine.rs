@@ -37,12 +37,15 @@ pub struct Ctx {
     pub command_allow: Vec<String>,
     /// How verbs run system tools. Commands are refused when `root` is not `/`.
     pub runner: Arc<dyn Runner>,
+    /// What a verb wants recorded about the change it just made, beyond the drift it found (the
+    /// `command` verb: exit code and masked output). Taken by the engine after each apply.
+    pub notes: std::sync::Mutex<Vec<String>>,
 }
 
 impl Ctx {
     pub fn new(root: PathBuf, artifacts: PathBuf) -> Self {
         let runner: Arc<dyn Runner> = if root == Path::new("/") { Arc::new(SystemRunner) } else { Arc::new(SandboxRunner) };
-        Ctx { root, artifacts, vars: BTreeMap::new(), secrets: BTreeMap::new(), artifact_hashes: BTreeMap::new(), facts_dir: PathBuf::new(), cron_allow: Vec::new(), command_allow: Vec::new(), hash_key: Vec::new(), secrets_dir: "/run/delbert/secrets".into(), runner }
+        Ctx { root, artifacts, vars: BTreeMap::new(), secrets: BTreeMap::new(), artifact_hashes: BTreeMap::new(), facts_dir: PathBuf::new(), cron_allow: Vec::new(), command_allow: Vec::new(), hash_key: Vec::new(), secrets_dir: "/run/delbert/secrets".into(), runner, notes: std::sync::Mutex::new(Vec::new()) }
     }
 
     /// Map an absolute policy path into the root. A Windows drive path (`C:/app` or `C:\app`)
@@ -232,9 +235,13 @@ fn run_one(r: &Resource, ctx: &Ctx, mode: Mode) -> Status {
     if mode == Mode::Check {
         return Status::Drifted(drift);
     }
+    let mut drift = drift;
+    ctx.notes.lock().unwrap().clear();
     if let Err(e) = verb.apply(ctx) {
         return Status::Failed(format!("{e:#}"));
     }
+    // What the verb reported about the change goes with it into the report and the audit event.
+    drift.append(&mut ctx.notes.lock().unwrap());
     // A command on a handler is an action too ("run this when that changed"): its guard decided
     // that it had to run, and is not asked again afterwards.
     if verb.is_action() || (r.handler && r.command.is_some()) {
@@ -569,8 +576,9 @@ spec:
         let status = |id: &str| report.resources.iter().find(|r| r.id == id).unwrap().status.clone();
         // The fake program did not create its marker: the guard still asks for a run, so it failed.
         assert!(matches!(status("once"), Status::Failed(m) if m.contains("not converged")), "{:?}", status("once"));
-        // The handler ran because the file changed; its guard is not asked again.
-        assert!(matches!(status("reload"), Status::Changed(_)), "{:?}", status("reload"));
+        // The handler ran because the file changed; its guard is not asked again. What it did is
+        // in the report: the guard's reason, then the exit code (the fake program prints nothing).
+        assert_eq!(status("reload"), Status::Changed(vec!["'onlyif' holds".into(), "exit 0".into()]));
         assert!(runner.calls().contains(&"/usr/sbin/app reload".to_string()));
         assert_eq!(report.resources.iter().find(|r| r.id == "reload").unwrap().subject, "command /usr/sbin/app");
     }

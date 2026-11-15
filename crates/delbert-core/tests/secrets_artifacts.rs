@@ -138,3 +138,43 @@ async fn artifacts_are_versioned_pinned_and_served_only_to_proven_agents(pool: P
     let (_, list) = admin.call("GET", "/v1/tenants/acme/artifacts", None).await;
     assert_eq!((list[0]["name"].clone(), list[0]["version"].clone()), (json!("db.j2"), json!(2)));
 }
+
+#[sqlx::test]
+async fn saving_a_policy_warns_about_variables_a_targeted_agent_lacks(pool: PgPool) {
+    let admin = admin_client(state(pool, vec![Strategy::Error], None)).await;
+    assert_eq!(admin.call("POST", "/v1/tenants", Some(json!({ "name": "acme" }))).await.0, StatusCode::CREATED);
+    for (name, group) in [("web-01", "web"), ("web-02", "web"), ("db-01", "db")] {
+        assert_eq!(admin.call("POST", "/v1/tenants/acme/agents", Some(json!({ "name": name, "groups": [group] }))).await.0, StatusCode::CREATED);
+    }
+    let template = b"port={{ vars.port }} env={{ vars.env }} host={{ facts.hostname }} local={{ vars.local }}\n".to_vec();
+    assert_eq!(admin.raw("PUT", "/v1/tenants/acme/artifacts/app.j2", vec![("content-type", "application/octet-stream".into())], template).await.0, StatusCode::CREATED);
+    let yaml = concat!(
+        "apiVersion: delbert/v1\nkind: Policy\nmetadata: { name: app, tenant: acme }\nspec:\n  target: { groups: [web] }\n  vars: { env: prod }\n  resources:\n",
+        "    - id: conf\n      template: { src: \"artifact://app.j2\", dest: /etc/app.conf, vars: { local: 1 } }\n",
+        "    - id: debug\n      when: \"vars.mode == 'on' and facts.os_family == 'debian'\"\n      file: { path: /etc/app.debug }\n",
+    );
+    let body = json!({ "yaml": yaml });
+
+    // The dry run and the save say the same; the save still succeeds.
+    let (s, check) = admin.call("POST", "/v1/tenants/acme/policies/validate", Some(body.clone())).await;
+    assert_eq!(s, StatusCode::OK, "{check}");
+    let expected = json!(["resource 'debug': variable 'mode' is not defined for web-01, web-02", "resource 'conf': variable 'port' is not defined for web-01, web-02"]);
+    assert_eq!(check["warnings"], expected);
+    let (s, saved) = admin.call("POST", "/v1/tenants/acme/policies", Some(body.clone())).await;
+    assert_eq!((s, saved["version"].clone(), saved["warnings"].clone()), (StatusCode::CREATED, json!(1), expected));
+
+    // Defined afterwards, at different layers: one agent only, then the group. db-01 never counts.
+    assert!(admin.call("PUT", "/v1/tenants/acme/variables/port?scope=agent&target=web-01", Some(json!({ "value": 8080 }))).await.0.is_success());
+    assert!(admin.call("PUT", "/v1/tenants/acme/variables/mode?scope=group&target=web", Some(json!({ "value": "on" }))).await.0.is_success());
+    let (_, check) = admin.call("POST", "/v1/tenants/acme/policies/validate", Some(body.clone())).await;
+    assert_eq!(check["warnings"], json!(["resource 'conf': variable 'port' is not defined for web-02"]));
+    assert!(admin.call("PUT", "/v1/tenants/acme/variables/port", Some(json!({ "value": 80 }))).await.0.is_success());
+    let (_, check) = admin.call("POST", "/v1/tenants/acme/policies/validate", Some(body)).await;
+    assert_eq!(check["warnings"], json!([]));
+
+    // A target nobody is enrolled in yet, and a template that is not there.
+    let other = yaml.replace("groups: [web]", "groups: [edge]").replace("name: app,", "name: edge,").replace("app.j2", "missing.j2");
+    let (s, check) = admin.call("POST", "/v1/tenants/acme/policies/validate", Some(json!({ "yaml": other }))).await;
+    assert_eq!(s, StatusCode::OK, "{check}");
+    assert_eq!(check["warnings"], json!(["resource 'conf': the template artifact 'missing.j2' does not exist yet", "resource 'debug': variable 'mode' is not defined for the policy's target (no agent is enrolled in it yet)"]));
+}

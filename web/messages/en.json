@@ -241,7 +241,8 @@
     "save": "Save as new version",
     "saving": "Saving…",
     "changes": "Changes against {base}",
-    "noChanges": "No changes."
+    "noChanges": "No changes.",
+    "warnings": "Worth a look before saving (the policy is valid; a variable may also be defined later):"
   },
   "versionActions": {
     "comment": "Comment (required to reject)",
