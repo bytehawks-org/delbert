@@ -193,3 +193,15 @@ Seen on 2026-11-10: `deploy:x:1800:1800:Deploy user:/home/deploy:/bin/bash`, `gr
 
 - **`get_url`:** on the development host with a sandbox root (`delbert-agent apply get.yaml --root /tmp/r`): a file fetched over HTTPS from `raw.githubusercontent.com` with its real hash was written (identical to the local copy); the same URL with a wrong hash failed with "nothing was written" and left no file.
 - **`mount` and `command`:** the static agent as root in `docker run --privileged debian:13-slim`, policy: a directory, a `tmpfs` mounted on it (`opts: "size=8m,noexec"`), a command `touch` with `creates` as `user: nobody`, and a `sleep 30` with `timeout_seconds: 2`. Seen on 2026-11-10: without `DELBERT_COMMAND_ALLOW` the commands fail with the allow-list message; with it, `/proc/mounts` shows `tmpfs /srv/scratch tmpfs rw,noexec,relatime,size=8192k`, `/etc/fstab` has the line, the marker file belongs to uid 65534, the slow command is reported as `timed out after 2s and was killed`; a second check finds mount and marker compliant. Not run: NFS or block devices, `remount` on a real mount, a busy unmount.
+
+## Backup and restore drill
+
+Run on 2026-11-15 with Docker 29 on the container install (thin images from the static binaries, no web UI), following [install.md](install.md) "Backup and restore" to the letter.
+
+1. State: a tenant, a template artifact, a policy that uses it, an agent enrolled and compliant; 11 audit events, `GET /v1/audit/verify` clean.
+2. Backup with the three documented commands (`pg_dump -Fc`, the keys volume, the Core volume) plus `.env`.
+3. Disaster: `compose down -v` (every volume removed). The agent container kept running with its identity.
+4. Restore with the commands now in install.md (keys and Core data into fresh volumes first, `pg_restore --no-owner` into the database the init script prepared, `./install.sh`).
+5. Seen: `{"events":12,"first_bad":null}` (the new login is the twelfth), the same CA, the policy listed, the agent reconnected by itself and reported compliant; the runtime role still has SELECT and INSERT but neither UPDATE nor DELETE on `audit_events`; after deleting the agent's artifact cache and the rendered file, the file came back (the artifact was downloaded from the restored store).
+
+What the drill changed: the restore steps did not say that the keys must be back **before** the first start (an empty keys volume makes the one-shot service create a new CA); the order and the exact commands are now documented. Not covered: Kubernetes and package installs, S3 artifacts, content directories with data, a restore on a different host name.

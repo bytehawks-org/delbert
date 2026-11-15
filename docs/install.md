@@ -258,7 +258,23 @@ kubectl -n delbert exec deploy/delbert-core -- tar -C /var/lib/delbert-core -czf
 
 NATS (JetStream) and the agents' local state need no backup: agents rebuild from the Core, and they keep their identity on disk.
 
-Restore: 1) recreate PostgreSQL and restore the dump (`pg_restore`; create the roles first), 2) restore the key files and the artifact store/content directories, 3) start the Core with the same configuration (migrations are idempotent), 4) start NATS with the same issuer key. Agents reconnect on their own. The audit trail's hash chain is restored with the database; verify it with `GET /v1/audit/verify` afterwards. Test a restore before you need one.
+Restore: 1) restore the key files and the artifact store/content directories, 2) recreate PostgreSQL with its roles and restore the dump (`pg_restore`), 3) start NATS with the same issuer key and the Core with the same configuration (migrations are idempotent). Agents reconnect on their own. The audit trail's hash chain is restored with the database; verify it with `GET /v1/audit/verify` afterwards. Test a restore before you need one.
+
+For the container install, on a host with the bundle, the saved `.env` and the three backup files in `./backup` (run on 2026-11-15 after removing every volume: [TESTING.md](TESTING.md) "Backup and restore drill"):
+
+```sh
+# 1. keys and Core data into fresh volumes, BEFORE anything starts: with an empty keys volume
+#    the first start would create a new CA and every agent would have to enroll again
+podman compose run --rm --no-deps -T --user 0 -v "$PWD/backup":/in:ro,Z --entrypoint sh init \
+  -c 'tar -C /keys -xzf /in/keys.tar.gz'
+podman compose run --rm --no-deps -T --user 0 -v "$PWD/backup":/in:ro,Z --entrypoint sh core \
+  -c 'tar -C /var/lib/delbert-core -xzf /in/core-data.tar.gz'
+# 2. PostgreSQL: the first start creates the roles from .env, then the dump goes in
+podman compose up -d postgres
+podman compose exec -T postgres pg_restore -U delbert -d delbert --no-owner < backup/delbert.dump
+# 3. everything else, with the same .env
+./install.sh
+```
 
 ## Upgrades
 
