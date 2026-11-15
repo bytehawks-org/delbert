@@ -145,9 +145,11 @@ One executable of the agent, three names. The name it is started with chooses th
 ```sh
 overlook validate policy.yaml        # does it parse and validate?
 overlook check policy.yaml           # what would change? exit 0 compliant, 2 drift, 1 failure
-dg apply policy.yaml                 # converge (same as: delbert apply policy.yaml)
+dg apply policy.yaml --root /tmp/try # converge a sandbox directory (same as: delbert apply ...)
 overlook check-signed policy.jws --trusted-keys trusted-keys.txt --agent-id web-01 --tenant acme
 ```
+
+**Unsigned files.** A managed host applies only policies signed by the Core: `apply-signed` and the agent service. `delbert apply file.yaml` on the real system is refused (exit code 3) unless the local configuration allows it (`DELBERT_ALLOW_LOCAL_POLICY=true` in `/etc/delbert/agent.env`, or `--allow-local-policy`); with `--root <directory>` it always works, because a sandbox root cannot touch the host. `overlook check file.yaml` is never refused: it changes nothing.
 
 A command of the other family is refused with a pointer and **exit code 64** (`overlook apply` → "use `delbert apply` or `dg apply`"), so a habit cannot change a host by accident, and a read-only job (monitoring, a pipeline) can be given `overlook` alone. Exit codes: 0 compliant, 1 failure, 2 drift, 3 signed policy rejected, 64 wrong family of command.
 

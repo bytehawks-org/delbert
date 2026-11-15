@@ -28,7 +28,7 @@ The agent is one executable with three names: `delbert` (or `dg`) for the comman
 
 ```sh
 overlook check policy.yaml     # exit 2 if the host drifted from the policy, changes nothing
-dg apply policy.yaml           # converge it
+dg apply policy.yaml --root /tmp/sandbox   # converge a sandbox; the real system takes signed policies only
 ```
 
 ## Install

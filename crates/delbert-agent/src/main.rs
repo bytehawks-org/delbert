@@ -136,6 +136,17 @@ struct LocalArgs {
     /// by ':', each optionally pinned as `path@<sha256>`. Empty (the default): every command is refused.
     #[arg(long, env = "DELBERT_COMMAND_ALLOW", value_delimiter = ':')]
     command_allow: Vec<String>,
+    /// Let `apply` converge the real system from an unsigned policy file. Off by default: on a
+    /// managed host only policies signed by the Core are applied (`apply-signed`, `run`).
+    #[arg(long, env = "DELBERT_ALLOW_LOCAL_POLICY", default_value_t = false, action = clap::ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
+    allow_local_policy: bool,
+}
+
+/// May `apply` use an unsigned policy file with these settings? Always in a sandbox root (it
+/// cannot touch the host); on the real root only with the local opt-in. Checking is never
+/// refused: it changes nothing.
+fn local_apply_allowed(host: &HostArgs) -> bool {
+    host.root != std::path::Path::new("/") || host.local.allow_local_policy
 }
 
 #[derive(Args)]
@@ -503,6 +514,10 @@ async fn main() -> anyhow::Result<ExitCode> {
             return Ok(execute(&p.spec.resources, p.spec.vars, a.host, Mode::Check));
         }
         Command::Imperative(Imperative::Apply(a)) => {
+            if !local_apply_allowed(&a.host) {
+                eprintln!("REJECTED: {} is not signed. A managed host applies only policies signed by the Core (`apply-signed`, or the agent service). To apply a local file to this system, allow it in the local configuration (DELBERT_ALLOW_LOCAL_POLICY=true or --allow-local-policy); to try it safely use --root <directory>.", a.file.display());
+                return Ok(ExitCode::from(3));
+            }
             let p = load(&a.file)?;
             return Ok(execute(&p.spec.resources, p.spec.vars, a.host, Mode::Apply));
         }
@@ -537,6 +552,24 @@ mod tests {
         Cli::command().debug_assert();
         ImperativeCli::command().debug_assert();
         AnalysisCli::command().debug_assert();
+    }
+
+    #[test]
+    fn an_unsigned_policy_reaches_the_real_root_only_with_the_local_opt_in() {
+        let host = |args: &[&str]| {
+            let mut argv = vec!["delbert-agent", "apply", "p.yaml"];
+            argv.extend_from_slice(args);
+            match Cli::try_parse_from(argv).unwrap().command {
+                Command::Imperative(Imperative::Apply(a)) => a.host,
+                _ => unreachable!(),
+            }
+        };
+        assert!(!local_apply_allowed(&host(&[])));
+        assert!(!local_apply_allowed(&host(&["--root", "/"])));
+        assert!(!local_apply_allowed(&host(&["--allow-local-policy=false"])));
+        assert!(local_apply_allowed(&host(&["--root", "/tmp/sandbox"])));
+        assert!(local_apply_allowed(&host(&["--allow-local-policy"])));
+        assert!(local_apply_allowed(&host(&["--allow-local-policy=true"])));
     }
 
     #[test]

@@ -32,7 +32,7 @@ Each item is a place where today's behaviour is weaker than what the design prom
 
 | # | Item | Size | Why now |
 |---|------|------|---------|
-| 1.1 | Local YAML mode off in production: `apply`/`check` of an unsigned file only with a local opt-in (`DELBERT_ALLOW_LOCAL_POLICY`), `apply-signed` the default path | S | `CLAUDE.md`: agents verify before applying. The `dg apply file.yaml` alias made the unsigned path more visible |
+| 1.1 | **Done 2026-11-15.** Local YAML mode off in production: `apply`/`check` of an unsigned file only with a local opt-in (`DELBERT_ALLOW_LOCAL_POLICY`), `apply-signed` the default path | S | `CLAUDE.md`: agents verify before applying. The `dg apply file.yaml` alias made the unsigned path more visible |
 | 1.2 | `command`: kill the whole process group at timeout; output and exit code in the audit trail with secrets masked; supplementary groups | M | ABSTRACT §3 asks for the output in the audit; a timed-out child can leave grandchildren today |
 | 1.3 | Orphans for `cron`, `sysctl`, `block_in_file`, `mount`: removed when they leave the policy, like files (`keep_if_absent_in_policy` to keep) | M | a job that silently survives its policy is the opposite of state enforcement |
 | 1.4 | Undefined `vars.x` refused at policy save (today only the preview catches it) | S | fail at authoring time, not on the agent |

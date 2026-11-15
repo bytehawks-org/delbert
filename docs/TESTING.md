@@ -183,7 +183,7 @@ Unit tests use a fake command runner and a sandbox root. To see the real tools, 
 
 ```sh
 delbert-agent check policy.yaml                                              # drift, exit 2
-delbert-agent apply policy.yaml --cron-allow /usr/local/bin/backup.sh        # everything "changed", exit 0
+delbert-agent apply policy.yaml --allow-local-policy --cron-allow /usr/local/bin/backup.sh   # everything "changed", exit 0 (the opt-in for an unsigned file was added later)
 DELBERT_CRON_ALLOW=/usr/local/bin/backup.sh delbert-agent check policy.yaml  # everything "ok", exit 0
 ```
 

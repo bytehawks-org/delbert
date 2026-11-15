@@ -7,6 +7,9 @@
 param([Parameter(Mandatory)][string]$Agent)
 $ErrorActionPreference = 'Stop'
 $Agent = (Resolve-Path $Agent).Path
+# This test applies unsigned policy files to the real system: the local opt-in a managed host
+# does not have (docs/POLICY.md "The command line").
+$env:DELBERT_ALLOW_LOCAL_POLICY = 'true'
 
 # Run the agent and require one of the expected exit codes (0 compliant, 2 drift, 1 failure).
 function Invoke-Agent([int]$Expect, [string[]]$Arguments) {

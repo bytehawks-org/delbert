@@ -101,3 +101,22 @@ fn help_lists_only_the_commands_of_the_family() {
     assert!(!dg.contains("validate") && !dg.contains("schema"), "{dg}");
     assert!(Path::new(env!("CARGO_BIN_EXE_delbert-agent")).is_file());
 }
+
+#[test]
+fn an_unsigned_policy_is_refused_on_the_real_root_without_the_local_opt_in() {
+    let s = Setup::new();
+    // A destination that must never appear: the policy is refused before anything is read.
+    let marker = s.dir.path().join("must-not-exist");
+    let policy = s.dir.path().join("real.yaml");
+    fs::write(&policy, POLICY.replace("/etc/motd", marker.to_str().unwrap())).unwrap();
+    let out = Command::new(s.dir.path().join("dg")).args(["apply", policy.to_str().unwrap()]).env_remove("DELBERT_ALLOW_LOCAL_POLICY").output().unwrap();
+    assert_eq!(out.status.code(), Some(3));
+    assert!(stderr(&out).contains("is not signed") && stderr(&out).contains("DELBERT_ALLOW_LOCAL_POLICY"), "{}", stderr(&out));
+    assert!(!marker.exists());
+    // Looking is always allowed, and the opt-in is a local setting.
+    let out = Command::new(s.dir.path().join("overlook")).args(["check", policy.to_str().unwrap()]).output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let out = Command::new(s.dir.path().join("dg")).args(["apply", policy.to_str().unwrap()]).env("DELBERT_ALLOW_LOCAL_POLICY", "true").output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(fs::read_to_string(&marker).unwrap(), "hello\n");
+}
