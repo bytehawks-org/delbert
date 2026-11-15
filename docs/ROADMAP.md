@@ -155,7 +155,7 @@ Status per functional area, from [SCOPE.md](SCOPE.md) and [DESIDERATA.md](DESIDE
 | Releases: first tag; arm64 images; signed packages and an apt/dnf repository; signed MSI | to-do | 2026-11-10 |
 | Single-host container install (`deploy/container`: compose for Podman/Docker, `install.sh`, keys created by a one-shot container); verified with Docker | complete | 2026-11-10 |
 | `delbert-pki bootstrap`: every key and certificate of a new installation in one idempotent step | complete | 2026-11-10 |
-| Agents: fingerprint-pinned download of the CA certificate from the Core (today `ca.pem` travels out of band) | to-do | 2026-11-10 |
+| Agents: fingerprint-pinned download of the CA certificate (`--ca-sha256`, public `GET /v1/ca` on the Core and the proxy, `delbert-pki fingerprint`); run against the container install | complete | 2026-11-15 |
 | Quadlet units for single-host Podman (the compose install covers the case today); HA of NATS and the Core | to-do | 2026-11-10 |
 | Rotation: proxy renewal verified in a live branch scenario; automatic reload (no restart) of the proxy and its site NATS; CA rotation reaching proxies without waiting for their renewal | to-do | 2026-10-23 |
 | Frontend M3, slice 1: users, roles and the permission matrix (`GET /v1/permissions`) | complete | 2026-10-24 |

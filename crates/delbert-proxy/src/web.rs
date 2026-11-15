@@ -26,6 +26,8 @@ pub struct Web {
     /// NATS URL of this site, handed to agents instead of the Core's.
     pub public_nats_url: String,
     pub artifact_dir: PathBuf,
+    /// The Delbert CA of this proxy's identity, served to agents that enroll with a fingerprint.
+    pub ca_file: PathBuf,
 }
 
 fn error(status: StatusCode, msg: &str) -> Response {
@@ -40,8 +42,18 @@ pub fn router(web: Arc<Web>) -> Router {
     Router::new()
         .route("/healthz", get(|| async { Json(json!({ "status": "ok" })) }))
         .route("/v1/enroll", post(enroll))
+        .route("/v1/ca", get(ca_certificate))
         .route("/v1/agent/{tenant}/{agent}/artifacts/{name}", get(artifact))
         .with_state(web)
+}
+
+/// The CA certificates (public): an agent with only a fingerprint fetches them here and accepts
+/// the one that matches (same as the Core's `/v1/ca`). Read at each call, so a rotation shows.
+async fn ca_certificate(State(web): State<Arc<Web>>) -> Response {
+    match fs::read_to_string(&web.ca_file) {
+        Ok(pem) => ([(header::CONTENT_TYPE, "application/x-pem-file")], pem).into_response(),
+        Err(_) => error(StatusCode::NOT_FOUND, "no CA certificate"),
+    }
 }
 
 /// Agent enrollment: forwarded to the Core with the proxy's proof, so the agent becomes one of ours.

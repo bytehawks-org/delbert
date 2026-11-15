@@ -47,6 +47,9 @@ enum Cmd {
         #[arg(long, default_value_t = 365)]
         days: i64,
     },
+    /// Print the SHA-256 fingerprint of the CA certificate (<dir>/ca.pem): what an agent is given
+    /// as `--ca-sha256` to enroll without a copy of the file.
+    Fingerprint,
     /// Create everything a new installation needs, in one step: the CA, the server certificates
     /// of the Core (`core`) and of NATS (`nats`), the Core's NATS client certificate
     /// (`core-nats`), the secrets key, the NATS issuer and the policy signing key `k1`.
@@ -102,6 +105,11 @@ fn main() -> anyhow::Result<()> {
             let issued = load()?.issue_client(&name, &format!("urn:delbert:component:{name}"), days)?;
             write(&cli.dir.join(format!("{name}.pem")), &issued.cert_pem, false)?;
             write(&cli.dir.join(format!("{name}.key")), &issued.key_pem, true)?;
+        }
+        Cmd::Fingerprint => {
+            for fingerprint in delbert_pki::bundle::fingerprints(&fs::read_to_string(&cert)?) {
+                println!("{fingerprint}");
+            }
         }
         Cmd::Bootstrap { core_dns, nats_dns, days } => {
             use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};

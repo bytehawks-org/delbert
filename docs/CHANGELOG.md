@@ -10,6 +10,7 @@
 - **Chart on K3s:** new `kubernetes` CI job (`deploy/helm/test-on-k3s.sh`): install, API through the LoadBalancer Service, an agent enrolled from outside the cluster, upgrade. Green at its first run, with the whole workflow (11 jobs).
 - **Container installer:** picks an engine whose compose really answers; `--engine`.
 - **Phase 1:** an unsigned policy file reaches the real system only with the local opt-in `DELBERT_ALLOW_LOCAL_POLICY` (exit 3 otherwise; a sandbox `--root` and `check` are unaffected); a timed-out `command` takes its whole process group with it; a cron job, a download and a sysctl boot file are removed when they leave the policy.
+- **Enrollment with a fingerprint:** `--ca-sha256` instead of a copy of `ca.pem` (agent, `install-agent.sh`, `install-agent.ps1`, MSI property `CA_SHA256`); public `GET /v1/ca` on the Core and on the proxy; `delbert-pki fingerprint`. Only the certificate with the pinned SHA-256 is kept.
 - [PLAN.md](PLAN.md): the order in which the open items get done.
 
 ## 2026-11-14

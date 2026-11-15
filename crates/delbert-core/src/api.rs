@@ -1,4 +1,4 @@
-//! REST API of the Core (JSON). Everything except `/healthz`, `/v1/auth/login`
+//! REST API of the Core (JSON). Everything except `/healthz`, `/v1/ca`, `/v1/auth/login`
 //! and the API documentation requires a session token and the matching
 //! permission (see `auth.rs`). Agents use the NATS path (`bus.rs`), not this API.
 
@@ -180,6 +180,7 @@ pub type ApiResult<T> = Result<T, ApiError>;
 pub fn router(state: AppState) -> Router {
     let mut app = Router::new()
         .route("/healthz", get(healthz))
+        .route("/v1/ca", get(ca_certificate))
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/auth/logout", post(auth::logout))
         .route("/v1/content/sources", get(crate::content::list_sources).post(crate::content::create_source))
@@ -278,6 +279,18 @@ pub fn router(state: AppState) -> Router {
         app = app.merge(crate::openapi::docs());
     }
     app.with_state(state)
+}
+
+/// The CA certificates of this installation (PEM). Public on purpose: a certificate is not a
+/// secret, and a new agent that has only a fingerprint (`--ca-sha256`) fetches it here before it
+/// can trust this server; it accepts only the certificate whose SHA-256 matches.
+#[utoipa::path(get, path = "/v1/ca", tag = "system", responses((status = 200, description = "PEM bundle of the CA certificates", content_type = "application/x-pem-file", body = String), (status = 404, description = "No CA configured")))]
+pub async fn ca_certificate(State(st): State<AppState>) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match st.ca_bundle() {
+        Some(pem) => ([(axum::http::header::CONTENT_TYPE, "application/x-pem-file")], pem).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 #[utoipa::path(get, path = "/healthz", tag = "system", responses((status = 200, description = "OK"), (status = 503, description = "Database unavailable")))]

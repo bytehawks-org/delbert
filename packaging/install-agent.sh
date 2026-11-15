@@ -8,6 +8,8 @@
 # Options (or the environment variables in brackets):
 #   --core-url URL    the Core, or the site's proxy                    [DELBERT_CORE_URL]
 #   --ca-file FILE    the Delbert CA certificate (ca.pem)              [DELBERT_CA_FILE]
+#   --ca-sha256 HEX   or only its SHA-256 fingerprint: the agent fetches the certificate from
+#                     the Core and accepts it only if it matches       [DELBERT_CA_SHA256]
 #   --agent-id NAME   name of this host in Delbert (default: hostname) [DELBERT_AGENT_ID]
 #   --psk KEY         one-time enrollment key                          [DELBERT_ENROLL_PSK]
 #   --version X.Y.Z   release to install (default: the latest)         [DELBERT_VERSION]
@@ -19,6 +21,7 @@ set -eu
 REPO="${DELBERT_REPO:-bytehawks-org/delbert}"
 CORE_URL="${DELBERT_CORE_URL:-}"
 CA_FILE="${DELBERT_CA_FILE:-}"
+CA_SHA256="${DELBERT_CA_SHA256:-}"
 AGENT_ID="${DELBERT_AGENT_ID:-$(hostname -s 2>/dev/null || hostname)}"
 PSK="${DELBERT_ENROLL_PSK:-}"
 VERSION="${DELBERT_VERSION:-}"
@@ -33,11 +36,12 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --core-url) CORE_URL="$2"; shift 2 ;;
         --ca-file) CA_FILE="$2"; shift 2 ;;
+        --ca-sha256) CA_SHA256="$2"; shift 2 ;;
         --agent-id) AGENT_ID="$2"; shift 2 ;;
         --psk) PSK="$2"; shift 2 ;;
         --version) VERSION="$2"; shift 2 ;;
         --package) PACKAGE="$2"; shift 2 ;;
-        -h | --help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h | --help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "unknown option $1" ;;
     esac
 done
@@ -45,7 +49,11 @@ done
 [ "$(id -u)" -eq 0 ] || die "run as root"
 if [ -n "$PSK" ]; then
     [ -n "$CORE_URL" ] || die "--core-url is required with --psk"
-    [ -n "$CA_FILE" ] && [ -r "$CA_FILE" ] || die "--ca-file is required with --psk (the Delbert CA certificate)"
+    if [ -n "$CA_FILE" ]; then
+        [ -r "$CA_FILE" ] || die "cannot read $CA_FILE"
+    else
+        [ -n "$CA_SHA256" ] || die "--ca-file or --ca-sha256 is required with --psk (the Delbert CA)"
+    fi
 fi
 
 case "$(uname -m)" in
@@ -99,14 +107,19 @@ if [ -z "$PSK" ]; then
     exit 0
 fi
 
-install -m 0644 "$CA_FILE" /etc/delbert/ca.pem
+if [ -n "$CA_FILE" ]; then
+    install -m 0644 "$CA_FILE" /etc/delbert/ca.pem
+    CA_SETTING="DELBERT_CA_FILE=/etc/delbert/ca.pem"
+else
+    CA_SETTING="DELBERT_CA_SHA256=$CA_SHA256"
+fi
 # The file holds the enrollment key until the agent is enrolled: root only.
 umask 077
 {
     echo "# Written by install-agent.sh. The enrollment key is only needed for the first start"
     echo "# (the identity is then kept in /var/lib/delbert/identity)."
     echo "DELBERT_CORE_URL=$CORE_URL"
-    echo "DELBERT_CA_FILE=/etc/delbert/ca.pem"
+    echo "$CA_SETTING"
     echo "DELBERT_ENROLL_PSK=$PSK"
     echo "DELBERT_AGENT_ID=$AGENT_ID"
     echo "DELBERT_INTERVAL_SECS=300"

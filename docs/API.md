@@ -1,6 +1,6 @@
 # Delbert - Core API
 
-JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/swagger-ui` and `/openapi.json` (generated with utoipa; disable with `DELBERT_API_DOCS=false`). Everything except `/healthz`, `POST /v1/auth/login` and the documentation requires `Authorization: Bearer <session token>` and the permission listed below. Agents do not use this API: they talk to the Core over NATS ([ABSTRACT.md](ABSTRACT.md) §2).
+JSON over HTTP, served by `delbert-core` (Axum). Interactive documentation: `/swagger-ui` and `/openapi.json` (generated with utoipa; disable with `DELBERT_API_DOCS=false`). Everything except `/healthz`, `GET /v1/ca`, `POST /v1/auth/login` and the documentation requires `Authorization: Bearer <session token>` and the permission listed below. Agents do not use this API: they talk to the Core over NATS ([ABSTRACT.md](ABSTRACT.md) §2).
 
 ## Policy dry run
 
@@ -71,6 +71,7 @@ Policies, artifacts and tenant settings can come from a repository instead of th
 | Method and path | Permission | Purpose |
 |-----------------|------------|---------|
 | `GET /healthz` | public | Liveness and database reachability |
+| `GET /v1/ca` | public | The CA certificates of the installation (PEM). A certificate is not a secret; an agent enrolling with `--ca-sha256` fetches it here and keeps only the one with the pinned fingerprint |
 | `POST /v1/auth/login`, `POST /v1/auth/mfa`, `POST /v1/auth/logout`, `GET /v1/me` | public / pending / any session | Session handling |
 | `POST /v1/me/mfa/enroll|confirm|disable`, `GET/DELETE /v1/me/sessions` | any session | Own MFA and sessions |
 | `GET/POST /v1/sso/providers`, `GET/PUT/DELETE /v1/sso/providers/{name}`, `POST .../test` | `sso:read` / `sso:write` (global) | OIDC providers and group mappings; `test` runs discovery |

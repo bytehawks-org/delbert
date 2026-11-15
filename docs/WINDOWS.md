@@ -50,7 +50,7 @@ Use forward slashes in YAML (`C:/...`); backslashes work but need quoting. Line 
 
 ## Install
 
-Three equivalent ways; all need an elevated session. The agent needs the Core URL (or the site's proxy), the Delbert CA certificate (`ca.pem`), a name and a one-time enrollment key ([install.md](install.md) "Agents").
+Three equivalent ways; all need an elevated session. The agent needs the Core URL (or the site's proxy), the Delbert CA (the certificate `ca.pem`, or its fingerprint with `-CaSha256` / `CA_SHA256` / `--ca-sha256`), a name and a one-time enrollment key ([install.md](install.md) "Agents").
 
 ```powershell
 # 1. Script: downloads the MSI of the latest release, checks its SHA-256, installs, enrolls, starts.

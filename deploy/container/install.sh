@@ -135,5 +135,7 @@ echo "  NATS     : tls://$DELBERT_HOST:$DELBERT_NATS_PORT     (agents connect he
 if [ "$FIRST" -eq 1 ]; then
     echo "  Login    : admin / $ADMIN_PASSWORD"
     echo "             change the password, enable MFA, then empty DELBERT_BOOTSTRAP_ADMIN_PASSWORD in .env"
+    echo "  CA       : $(compose run --rm --no-deps -T init delbert-pki --dir /keys fingerprint 2>/dev/null | tail -1)"
+    echo "             (SHA-256 fingerprint: agents can enroll with --ca-sha256 instead of a copy of ca.pem)"
     echo "  Keys     : in the volume delbert_keys: back it up offline now (docs/install.md \"Backup\")"
 fi

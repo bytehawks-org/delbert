@@ -145,6 +145,7 @@ async fn run(a: RunArgs) -> Result<()> {
         allow,
         public_nats_url: a.public_nats_url.clone(),
         artifact_dir: a.state_dir.join("artifacts"),
+        ca_file: ca.clone(),
     });
     let tls = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key).await.context("loading the proxy certificate")?;
     let handle = axum_server::Handle::<std::net::SocketAddr>::new();

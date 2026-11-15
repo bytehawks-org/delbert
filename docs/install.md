@@ -170,7 +170,7 @@ First start: the Core runs the migrations, creates the user `admin` with the boo
 
 ## Agents
 
-An agent needs: the Core URL (or the site's proxy), the CA certificate (`ca.pem`), the name it will have, and a one-time **enrollment key** created by an administrator (web UI, or `POST /v1/tenants/<tenant>/enrollment-keys` with the groups the host belongs to, a use limit and an expiry; the key is shown once). On first start it generates its own key, obtains a certificate from the Core, and from then on renews it by itself.
+An agent needs: the Core URL (or the site's proxy), the CA (the certificate file `ca.pem`, or just its SHA-256 fingerprint), the name it will have, and a one-time **enrollment key** created by an administrator (web UI, or `POST /v1/tenants/<tenant>/enrollment-keys` with the groups the host belongs to, a use limit and an expiry; the key is shown once). On first start it generates its own key, obtains a certificate from the Core, and from then on renews it by itself.
 
 ### Linux host with systemd
 
@@ -179,6 +179,8 @@ An agent needs: the Core URL (or the site's proxy), the CA certificate (`ca.pem`
 sudo sh install-agent.sh --core-url https://delbert.example.com:8443 --ca-file ca.pem \
                          --agent-id web-01 --psk <enrollment key>
 ```
+
+**The CA without copying a file.** `--ca-sha256 <fingerprint>` replaces `--ca-file` (also `DELBERT_CA_SHA256`, `-CaSha256` on Windows, `CA_SHA256` for the MSI): the agent downloads the CA certificate from `/v1/ca` of the Core (or of the proxy) and accepts it only if its SHA-256 is the one given; anything else the server sends is dropped. The fingerprint is printed by `delbert-pki --dir keys fingerprint` and by the container installer; it is not a secret, but it must reach the host by a channel you trust, like the enrollment key.
 
 [`install-agent.sh`](../packaging/install-agent.sh) is published with each release; `--package <file>` installs a package you already have (air-gapped hosts), `--version` pins a release. It removes the enrollment key from `/etc/delbert/agent.env` once the agent is enrolled. The same by hand:
 
@@ -342,5 +344,4 @@ State on 2026-11-15. "CI" means the workflow on `main` (run 19, all jobs green);
 - Helm chart installed only on a single-node K3s in CI; no PodDisruptionBudget or HA of NATS and the Core; the bundled PostgreSQL is a single instance without backups of its own.
 - No Quadlet units for Podman; the web UI has no package (container image only) and needs a TLS reverse proxy in the single-host install.
 - Windows agent is a preview ([WINDOWS.md](WINDOWS.md)): no `package`, ACLs, remediation or containers there.
-- The CA certificate reaches agents out of band (there is no fingerprint-pinned download from the Core).
 - See [ROADMAP.md](ROADMAP.md) for everything else.

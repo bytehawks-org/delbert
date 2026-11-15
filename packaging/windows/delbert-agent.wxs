@@ -10,7 +10,9 @@
   archive and a manual install behave the same. Unattended install with enrollment:
 
     msiexec /i delbert-agent-0.1.0-x64.msi /qn CORE_URL=https://delbert.example.com:8443 ^
-        CA_FILE=C:\Temp\ca.pem AGENT_ID=web-01 ENROLL_PSK=<enrollment key>
+        CA_SHA256=<fingerprint of the CA> AGENT_ID=web-01 ENROLL_PSK=<enrollment key>
+
+  (or CA_FILE=C:\Temp\ca.pem instead of CA_SHA256)
 
   The enrollment key is used once by the install action and is not written to the registry, to
   the disk or to the installer log (hidden property, hidden command line). Data in
@@ -23,9 +25,11 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version of Delbert Agent is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- Public properties of an unattended install; all four are needed to enroll. -->
+    <!-- Public properties of an unattended install. To enroll: CORE_URL, AGENT_ID, ENROLL_PSK and
+         the CA, as a file (CA_FILE) or as the SHA-256 fingerprint of its certificate (CA_SHA256). -->
     <Property Id="CORE_URL" Secure="yes" />
     <Property Id="CA_FILE" Secure="yes" />
+    <Property Id="CA_SHA256" Secure="yes" />
     <Property Id="AGENT_ID" Secure="yes" />
     <Property Id="ENROLL_PSK" Secure="yes" Hidden="yes" />
     <Property Id="ENROLL_ARGS" Hidden="yes" />
@@ -61,6 +65,9 @@
     <SetProperty Id="ENROLL_ARGS" Sequence="execute" Before="RollbackService"
                  Value="--core-url &quot;[CORE_URL]&quot; --ca-file &quot;[CA_FILE]&quot; --agent-id &quot;[AGENT_ID]&quot; --psk &quot;[ENROLL_PSK]&quot;"
                  Condition="CORE_URL AND CA_FILE AND AGENT_ID AND ENROLL_PSK" />
+    <SetProperty Action="SetEnrollArgsPinned" Id="ENROLL_ARGS" Sequence="execute" Before="RollbackService"
+                 Value="--core-url &quot;[CORE_URL]&quot; --ca-sha256 &quot;[CA_SHA256]&quot; --agent-id &quot;[AGENT_ID]&quot; --psk &quot;[ENROLL_PSK]&quot;"
+                 Condition="CORE_URL AND CA_SHA256 AND NOT CA_FILE AND AGENT_ID AND ENROLL_PSK" />
 
     <!-- Deferred, as LocalSystem. `service install` is idempotent and starts the service when
          an identity exists (after an upgrade, or after enrolling with the properties above). -->

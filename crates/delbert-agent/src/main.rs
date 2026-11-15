@@ -223,10 +223,13 @@ enum ServiceCmd {
     /// Register the agent as an automatic Windows Service (run as Administrator). With the four
     /// enrollment options it also enrolls and starts the service; the key is not stored anywhere.
     Install {
-        #[arg(long, env = "DELBERT_CORE_URL", requires_all = ["ca_file", "psk", "agent_id"])]
+        #[arg(long, env = "DELBERT_CORE_URL", requires_all = ["psk", "agent_id"])]
         core_url: Option<String>,
         #[arg(long, env = "DELBERT_CA_FILE")]
         ca_file: Option<PathBuf>,
+        /// SHA-256 fingerprint of the Delbert CA certificate, instead of the file.
+        #[arg(long, env = "DELBERT_CA_SHA256")]
+        ca_sha256: Option<String>,
         #[arg(long, env = "DELBERT_ENROLL_PSK", hide_env_values = true)]
         psk: Option<String>,
         #[arg(long, env = "DELBERT_AGENT_ID")]
@@ -273,6 +276,10 @@ struct DaemonArgs {
     core_url: Option<String>,
     #[arg(long, env = "DELBERT_CA_FILE")]
     ca_file: Option<PathBuf>,
+    /// SHA-256 fingerprint of the Delbert CA certificate, instead of the file: the certificate is
+    /// fetched from the server and accepted only if it matches (`delbert-pki fingerprint`).
+    #[arg(long, env = "DELBERT_CA_SHA256")]
+    ca_sha256: Option<String>,
     #[arg(long, env = "DELBERT_ENROLL_PSK", hide_env_values = true)]
     psk: Option<String>,
     #[arg(long, env = "DELBERT_AGENT_ID")]
@@ -285,8 +292,12 @@ struct EnrollCmdArgs {
     #[arg(long, env = "DELBERT_CORE_URL")]
     core_url: String,
     /// Delbert CA certificate (PEM) shipped with the installer.
-    #[arg(long, env = "DELBERT_CA_FILE")]
-    ca_file: PathBuf,
+    #[arg(long, env = "DELBERT_CA_FILE", required_unless_present = "ca_sha256")]
+    ca_file: Option<PathBuf>,
+    /// SHA-256 fingerprint of the Delbert CA certificate, instead of the file: the certificate is
+    /// fetched from the server and accepted only if it matches (`delbert-pki fingerprint`).
+    #[arg(long, env = "DELBERT_CA_SHA256")]
+    ca_sha256: Option<String>,
     /// Enrollment key created by an administrator.
     #[arg(long, env = "DELBERT_ENROLL_PSK", hide_env_values = true)]
     psk: String,
@@ -361,10 +372,10 @@ fn execute_signed(args: SignedArgs, mode: Mode) -> anyhow::Result<ExitCode> {
 async fn daemon(a: DaemonArgs) -> anyhow::Result<()> {
     let identity = match delbert_agent::identity::Identity::load(&a.identity_dir) {
         Ok(id) => id,
-        Err(load_error) => match (a.core_url, a.ca_file, a.psk, a.agent_id) {
-            (Some(core_url), Some(ca_file), Some(psk), Some(agent_name)) => {
+        Err(load_error) => match (a.core_url, delbert_agent::identity::Ca::from_options(a.ca_file, a.ca_sha256), a.psk, a.agent_id) {
+            (Some(core_url), Some(ca), Some(psk), Some(agent_name)) => {
                 tracing::info!("no identity yet: enrolling as {agent_name}");
-                delbert_agent::identity::enroll(delbert_agent::identity::EnrollArgs { core_url, ca_file, psk, agent_name, identity_dir: a.identity_dir.clone() }).await?
+                delbert_agent::identity::enroll(delbert_agent::identity::EnrollArgs { core_url, ca, psk, agent_name, identity_dir: a.identity_dir.clone() }).await?
             }
             _ => return Err(load_error),
         },
@@ -412,14 +423,14 @@ mod service {
 
     pub async fn command(action: ServiceCmd) -> anyhow::Result<()> {
         match action {
-            ServiceCmd::Install { core_url, ca_file, psk, agent_id } => {
+            ServiceCmd::Install { core_url, ca_file, ca_sha256, psk, agent_id } => {
                 let data_dir = winsvc::data_dir();
                 winsvc::install(&data_dir)?;
                 println!("service {} installed; data directory {}", winsvc::SERVICE_NAME, data_dir.display());
                 let identity_dir = data_dir.join("identity");
-                if let (Some(core_url), Some(ca_file), Some(psk), Some(agent_name)) = (core_url, ca_file, psk, agent_id) {
+                if let (Some(core_url), Some(ca), Some(psk), Some(agent_name)) = (core_url, delbert_agent::identity::Ca::from_options(ca_file, ca_sha256), psk, agent_id) {
                     if delbert_agent::identity::Identity::load(&identity_dir).is_err() {
-                        let id = delbert_agent::identity::enroll(delbert_agent::identity::EnrollArgs { core_url, ca_file, psk, agent_name, identity_dir: identity_dir.clone() }).await?;
+                        let id = delbert_agent::identity::enroll(delbert_agent::identity::EnrollArgs { core_url, ca, psk, agent_name, identity_dir: identity_dir.clone() }).await?;
                         println!("enrolled as {}/{}", id.meta.tenant, id.meta.agent);
                     }
                 }
@@ -526,7 +537,7 @@ async fn main() -> anyhow::Result<ExitCode> {
         Command::Imperative(Imperative::Enroll(a)) => {
             let id = delbert_agent::identity::enroll(delbert_agent::identity::EnrollArgs {
                 core_url: a.core_url,
-                ca_file: a.ca_file,
+                ca: delbert_agent::identity::Ca::from_options(a.ca_file, a.ca_sha256).context("--ca-file or --ca-sha256 is required")?,
                 psk: a.psk,
                 agent_name: a.agent_id,
                 identity_dir: a.identity_dir,

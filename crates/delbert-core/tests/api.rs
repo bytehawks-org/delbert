@@ -47,6 +47,8 @@ async fn authentication_basics(pool: PgPool) {
     assert_eq!(anon.login("admin", "wrong-password-123").await.0, StatusCode::UNAUTHORIZED);
     assert_eq!(anon.login("ghost", "whatever-password").await.0, StatusCode::UNAUTHORIZED);
     assert_eq!(anon.call("GET", "/healthz", None).await.0, StatusCode::OK);
+    // The CA certificate is public (404 here: this test Core has no CA), never an authentication error.
+    assert!(matches!(anon.call("GET", "/v1/ca", None).await.0, StatusCode::OK | StatusCode::NOT_FOUND));
 
     let (s, me) = admin.call("GET", "/v1/me", None).await;
     assert_eq!((s, me["username"].as_str()), (StatusCode::OK, Some("admin")));

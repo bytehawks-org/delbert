@@ -22,6 +22,9 @@
 param(
     [string]$CoreUrl,
     [string]$CaFile,
+    # SHA-256 fingerprint of the CA certificate, instead of -CaFile: the agent fetches the
+    # certificate from the Core and accepts it only if it matches.
+    [string]$CaSha256,
     [string]$AgentId = $env:COMPUTERNAME.ToLower(),
     [string]$EnrollKey,
     [string]$Version,
@@ -34,8 +37,11 @@ $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 if (-not $admin) { throw 'Run this script in an elevated PowerShell (Administrator).' }
 if ($EnrollKey) {
     if (-not $CoreUrl) { throw '-CoreUrl is required with -EnrollKey.' }
-    if (-not $CaFile -or -not (Test-Path $CaFile)) { throw '-CaFile (the Delbert CA certificate) is required with -EnrollKey.' }
-    $CaFile = (Resolve-Path $CaFile).Path
+    if ($CaFile) {
+        if (-not (Test-Path $CaFile)) { throw "Cannot read $CaFile." }
+        $CaFile = (Resolve-Path $CaFile).Path
+    }
+    elseif (-not $CaSha256) { throw '-CaFile or -CaSha256 (the Delbert CA) is required with -EnrollKey.' }
 }
 
 $tmp = Join-Path $env:TEMP ("delbert-" + [guid]::NewGuid())
@@ -63,7 +69,8 @@ try {
     # The MSI enrolls and starts the service when the four enrollment properties are given.
     $arguments = @('/i', "`"$Msi`"", '/qn', '/norestart')
     if ($EnrollKey) {
-        $arguments += "CORE_URL=`"$CoreUrl`"", "CA_FILE=`"$CaFile`"", "AGENT_ID=`"$AgentId`"", "ENROLL_PSK=`"$EnrollKey`""
+        $arguments += "CORE_URL=`"$CoreUrl`"", "AGENT_ID=`"$AgentId`"", "ENROLL_PSK=`"$EnrollKey`""
+        if ($CaFile) { $arguments += "CA_FILE=`"$CaFile`"" } else { $arguments += "CA_SHA256=$CaSha256" }
     }
     $process = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
     if ($process.ExitCode -notin 0, 3010) { throw "msiexec failed with exit code $($process.ExitCode)" }

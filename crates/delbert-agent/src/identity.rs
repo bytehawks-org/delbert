@@ -105,6 +105,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn only_the_pinned_ca_is_kept_from_what_a_server_publishes() {
+        let ours = delbert_pki::RcgenCa::create("Ours", 30).unwrap();
+        let other = delbert_pki::RcgenCa::create("Other", 30).unwrap();
+        let bundle = format!("{}\n{}\n", other.cert_pem().trim(), ours.cert_pem().trim());
+        let pin = delbert_pki::bundle::fingerprints(ours.cert_pem()).remove(0);
+        // Exactly the pinned certificate, however the fingerprint is written.
+        let kept = pinned_ca(&bundle, &pin).unwrap();
+        assert_eq!(delbert_pki::bundle::fingerprints(&kept), vec![pin.clone()]);
+        let spelled: String = pin.to_uppercase().as_bytes().chunks(2).map(|c| String::from_utf8_lossy(c).into_owned()).collect::<Vec<_>>().join(":");
+        assert_eq!(pinned_ca(&bundle, &spelled).unwrap(), kept);
+        // A server with another CA, a short pin, an empty answer: refused.
+        assert!(pinned_ca(other.cert_pem(), &pin).unwrap_err().to_string().contains("does not have the pinned fingerprint"));
+        assert!(pinned_ca(&bundle, &pin[..40]).unwrap_err().to_string().contains("64 hexadecimal"));
+        assert!(pinned_ca("", &pin).is_err());
+        assert_eq!(Ca::from_options(Some("a.pem".into()), Some(pin.clone())), Some(Ca::File("a.pem".into())));
+        assert_eq!(Ca::from_options(None, Some(pin.clone())), Some(Ca::Pinned(pin)));
+        assert_eq!(Ca::from_options(None, None), None);
+    }
+
+
+    #[test]
     fn renewal_threshold_and_override() {
         let ca = delbert_pki::RcgenCa::create("CA", 365).unwrap();
         let (_, csr) = delbert_pki::new_identity("a").unwrap();
@@ -152,10 +173,54 @@ struct EnrollResponse {
     nats_url: Option<String>,
 }
 
+/// Where the trust anchor of an enrollment comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ca {
+    /// A CA certificate file given by the administrator.
+    File(PathBuf),
+    /// The SHA-256 fingerprint (hex) of the CA certificate: the certificate itself is fetched
+    /// from the server and accepted only if it has exactly this fingerprint.
+    Pinned(String),
+}
+
+impl Ca {
+    /// From the two command-line options; the file wins when both are given.
+    pub fn from_options(file: Option<PathBuf>, sha256: Option<String>) -> Option<Ca> {
+        file.map(Ca::File).or(sha256.map(Ca::Pinned))
+    }
+}
+
+/// The certificates of `bundle` whose SHA-256 fingerprint is `pin` (hex; case, colons and blanks
+/// do not matter). Everything else in the bundle is dropped: only what was pinned is trusted.
+pub fn pinned_ca(bundle: &str, pin: &str) -> Result<String> {
+    let want: String = pin.chars().filter(|c| c.is_ascii_hexdigit()).map(|c| c.to_ascii_lowercase()).collect();
+    if want.len() != 64 {
+        bail!("the CA fingerprint must be a SHA-256: 64 hexadecimal digits");
+    }
+    let kept: Vec<String> = delbert_pki::bundle::split(bundle).into_iter().filter(|pem| delbert_pki::bundle::fingerprints(pem).first() == Some(&want)).collect();
+    if kept.is_empty() {
+        bail!("the server's CA certificate does not have the pinned fingerprint: refusing");
+    }
+    Ok(kept.join("\n") + "\n")
+}
+
+/// Fetch the CA certificates the server publishes and keep the pinned one. The connection cannot
+/// be verified yet (verifying it is what the certificate is for), and does not need to be: the
+/// fingerprint decides, and nothing but the public certificate travels on it.
+async fn fetch_pinned_ca(core_url: &str, pin: &str) -> Result<String> {
+    let client = reqwest::Client::builder().danger_accept_invalid_certs(true).timeout(std::time::Duration::from_secs(30)).build()?;
+    let url = format!("{}/v1/ca", core_url.trim_end_matches('/'));
+    let response = client.get(&url).send().await.with_context(|| format!("cannot reach {url}"))?;
+    if !response.status().is_success() {
+        bail!("{url}: HTTP {}", response.status());
+    }
+    pinned_ca(&response.text().await?, pin)
+}
+
 pub struct EnrollArgs {
     pub core_url: String,
-    /// Delbert CA shipped with the installer: the only trust anchor for the HTTPS call.
-    pub ca_file: PathBuf,
+    /// The only trust anchor for the HTTPS call.
+    pub ca: Ca,
     pub psk: String,
     pub agent_name: String,
     pub identity_dir: PathBuf,
@@ -165,7 +230,10 @@ pub async fn enroll(args: EnrollArgs) -> Result<Identity> {
     if args.identity_dir.join("meta.json").exists() {
         bail!("{} already holds an identity; remove it first to enroll again", args.identity_dir.display());
     }
-    let ca_pem = fs::read_to_string(&args.ca_file).with_context(|| format!("reading {}", args.ca_file.display()))?;
+    let ca_pem = match &args.ca {
+        Ca::File(file) => fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?,
+        Ca::Pinned(pin) => fetch_pinned_ca(&args.core_url, pin).await?,
+    };
 
     // Keys are created here and the private parts stay here.
     let (key_pem, csr_pem) = delbert_pki::new_identity(&args.agent_name)?;
